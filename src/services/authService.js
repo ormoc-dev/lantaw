@@ -3,13 +3,14 @@ import { env } from "../config/env.js";
 import { getBasePath } from "../config/base.js";
 
 function appRedirectUrl() {
-  // Land on home hash after Google — hash router needs #/
+  // No hash in redirectTo — Supabase allow-list matches origin/path best.
+  // recoverSession() then sends the user to #/ after the code exchange.
   const host = window.location.hostname;
   if (host !== "localhost" && host !== "127.0.0.1") {
-    return `${env.siteUrl.replace(/\/$/, "")}/#/`;
+    return `${env.siteUrl.replace(/\/$/, "")}/`;
   }
   const base = getBasePath();
-  return `${window.location.origin}${base || ""}/#/`;
+  return `${window.location.origin}${base || ""}/`;
 }
 
 function cleanAuthParamsFromUrl(hash = "#/") {
@@ -73,7 +74,6 @@ export async function signInWithGoogle() {
     provider: "google",
     options: {
       redirectTo: appRedirectUrl(),
-      scopes: "openid email profile",
     },
   });
   if (error) throw error;

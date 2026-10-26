@@ -127,27 +127,39 @@ body {
   width: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
   padding:
-    max(1.25rem, env(safe-area-inset-top))
-    max(1.1rem, env(safe-area-inset-right))
-    max(1.5rem, env(safe-area-inset-bottom))
-    max(1.1rem, env(safe-area-inset-left));
+    max(1rem, env(safe-area-inset-top))
+    max(1rem, env(safe-area-inset-right))
+    max(1.25rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
   overflow-x: hidden;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .auth-page__glow {
   position: absolute;
-  top: -10%;
-  right: -15%;
-  width: min(90vw, 420px);
-  height: min(90vw, 420px);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(110, 182, 224, 0.2), transparent 68%);
-  filter: blur(10px);
-  animation: auth-float 10s var(--ease) infinite alternate;
+  filter: blur(12px);
   pointer-events: none;
+  animation: auth-float 12s var(--ease) infinite alternate;
+}
+
+.auth-page__glow--a {
+  top: -12%;
+  right: -18%;
+  width: min(88vw, 460px);
+  height: min(88vw, 460px);
+  background: radial-gradient(circle, rgba(110, 182, 224, 0.22), transparent 68%);
+}
+
+.auth-page__glow--b {
+  bottom: -20%;
+  left: -25%;
+  width: min(70vw, 360px);
+  height: min(70vw, 360px);
+  background: radial-gradient(circle, rgba(74, 120, 160, 0.18), transparent 70%);
+  animation-delay: -4s;
 }
 
 .auth-page__grain {
@@ -158,25 +170,36 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* No card/container — content sits on the page */
-.auth-flow {
+.auth-shell {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 28rem;
+  max-width: 72rem;
   margin: 0 auto;
-  padding: 0.5rem 0 1rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
   animation: auth-rise 0.65s var(--ease) both;
 }
 
-.auth-flow__head {
-  margin-bottom: 1.35rem;
+.auth-brand-pane {
+  flex-shrink: 0;
+}
+
+.auth-brand-pane__tag {
+  display: none;
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  max-width: 28ch;
 }
 
 .auth-brand {
-  margin: 0 0 1rem;
+  margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2.6rem, 12vw, 3.4rem);
+  font-size: clamp(2.5rem, 11vw, 3.25rem);
   font-weight: 800;
   letter-spacing: -0.045em;
   line-height: 0.95;
@@ -186,20 +209,29 @@ body {
   color: transparent;
 }
 
+.auth-flow {
+  width: 100%;
+  max-width: 100%;
+}
+
+.auth-flow__head {
+  margin-bottom: 1.15rem;
+}
+
 .auth-flow h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.35rem, 5.5vw, 1.65rem);
+  font-size: clamp(1.3rem, 5vw, 1.55rem);
   font-weight: 700;
   letter-spacing: -0.03em;
 }
 
 .auth-lead {
-  margin: 0.45rem 0 0;
+  margin: 0.4rem 0 0;
   color: var(--muted);
   line-height: 1.45;
-  font-size: clamp(0.92rem, 3.6vw, 1rem);
-  max-width: 28ch;
+  font-size: clamp(0.9rem, 3.4vw, 1rem);
+  max-width: 36ch;
 }
 
 .auth-tabs {
@@ -208,7 +240,7 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 0.25rem;
   padding: 0.25rem;
-  margin-bottom: 1.1rem;
+  margin-bottom: 1rem;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
 }
@@ -220,12 +252,14 @@ body {
   color: var(--muted);
   font: inherit;
   font-weight: 600;
-  padding: 0.7rem 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.5rem;
   border-radius: 10px;
   cursor: pointer;
   position: relative;
   z-index: 1;
   transition: color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .auth-tab.is-active {
@@ -243,8 +277,14 @@ body {
   z-index: 0;
 }
 
-.btn--google {
+.btn--google,
+.btn--primary {
   width: 100%;
+  min-height: 3rem;
+  font-size: 1rem;
+}
+
+.btn--google {
   gap: 0.7rem;
   background: #fff;
   color: #1f1f1f;
@@ -258,7 +298,6 @@ body {
 }
 
 .btn--primary {
-  width: 100%;
   margin-top: 0.15rem;
   background: linear-gradient(135deg, var(--accent), #4a8eb8);
   color: #041018;
@@ -276,7 +315,7 @@ body {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 0.75rem;
-  margin: 1.1rem 0;
+  margin: 1rem 0;
   color: var(--muted);
   font-size: 0.8rem;
 }
@@ -290,7 +329,7 @@ body {
 
 .auth-form {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.8rem;
 }
 
 .auth-field {
@@ -306,13 +345,14 @@ body {
 
 .auth-field input {
   width: 100%;
+  max-width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   border-radius: 12px;
-  padding: 0.95rem 1rem;
+  padding: 0.9rem 1rem;
   font: inherit;
-  font-size: 1rem; /* avoids iOS zoom */
+  font-size: 1rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -337,27 +377,19 @@ body {
   color: var(--err);
 }
 
+.auth-error--google {
+  margin-top: 0.75rem;
+}
+
 .auth-success {
   color: var(--ok);
 }
 
 .auth-foot {
-  margin: 1.25rem 0 0;
+  margin: 1.15rem 0 0;
   color: var(--muted);
   font-size: 0.92rem;
   text-align: left;
-}
-
-@media (min-width: 720px) {
-  .auth-page {
-    justify-content: center;
-    padding-left: 2rem;
-    padding-right: 2rem;
-  }
-
-  .auth-flow {
-    max-width: 26rem;
-  }
 }
 
 .auth-bar__avatar {
@@ -367,10 +399,158 @@ body {
   object-fit: cover;
 }
 
+/* —— Tablet —— */
+@media (min-width: 640px) {
+  .auth-page {
+    padding:
+      max(2rem, env(safe-area-inset-top))
+      max(2rem, env(safe-area-inset-right))
+      max(2rem, env(safe-area-inset-bottom))
+      max(2rem, env(safe-area-inset-left));
+    justify-content: center;
+  }
+
+  .auth-shell {
+    gap: 1.75rem;
+    max-width: 28rem;
+  }
+
+  .auth-brand {
+    font-size: clamp(3rem, 7vw, 3.6rem);
+  }
+
+  .auth-brand-pane__tag {
+    display: block;
+    font-size: 1rem;
+  }
+
+  .auth-flow__head {
+    margin-bottom: 1.35rem;
+  }
+
+  .auth-flow h1 {
+    font-size: 1.65rem;
+  }
+
+  .auth-lead {
+    font-size: 1.02rem;
+    max-width: 40ch;
+  }
+
+  .auth-tabs {
+    margin-bottom: 1.15rem;
+  }
+
+  .auth-form {
+    gap: 0.95rem;
+  }
+}
+
+/* —— Desktop / large tablet landscape —— */
+@media (min-width: 960px) {
+  .auth-page {
+    padding: 0;
+    justify-content: stretch;
+  }
+
+  .auth-shell {
+    max-width: none;
+    min-height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(22rem, 28rem);
+    gap: 0;
+    align-items: stretch;
+  }
+
+  .auth-brand-pane {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding:
+      clamp(2.5rem, 5vw, 4.5rem)
+      clamp(2rem, 4vw, 3.5rem)
+      clamp(2.5rem, 5vw, 4.5rem)
+      clamp(2.5rem, 6vw, 5rem);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    background: linear-gradient(
+      160deg,
+      rgba(36, 58, 86, 0.35) 0%,
+      transparent 55%
+    );
+  }
+
+  .auth-brand {
+    font-size: clamp(4rem, 6vw, 5.5rem);
+  }
+
+  .auth-brand-pane__tag {
+    display: block;
+    margin-top: 1.1rem;
+    font-size: clamp(1.05rem, 1.4vw, 1.2rem);
+    max-width: 22ch;
+  }
+
+  .auth-flow {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+    max-width: 28rem;
+    margin: 0;
+    padding:
+      clamp(2rem, 4vh, 3rem)
+      clamp(1.75rem, 3vw, 3rem);
+    box-sizing: border-box;
+  }
+
+  .auth-page__glow--a {
+    width: min(50vw, 560px);
+    height: min(50vw, 560px);
+    top: -8%;
+    right: 35%;
+  }
+
+  .auth-page__glow--b {
+    left: -8%;
+    bottom: -10%;
+  }
+}
+
+@media (min-width: 1280px) {
+  .auth-shell {
+    grid-template-columns: minmax(0, 1.15fr) minmax(24rem, 30rem);
+  }
+
+  .auth-flow {
+    max-width: 30rem;
+    padding-right: clamp(2.5rem, 5vw, 4.5rem);
+  }
+}
+
+/* Short phones — keep everything reachable without huge brand */
+@media (max-height: 700px) and (max-width: 639px) {
+  .auth-brand {
+    font-size: 2.2rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .auth-flow__head {
+    margin-bottom: 0.85rem;
+  }
+
+  .auth-shell {
+    gap: 0.85rem;
+  }
+
+  .auth-divider {
+    margin: 0.75rem 0;
+  }
+}
+
 @keyframes auth-rise {
   from {
     opacity: 0;
-    transform: translateY(18px);
+    transform: translateY(16px);
   }
   to {
     opacity: 1;
@@ -383,7 +563,7 @@ body {
     transform: translate3d(0, 0, 0) scale(1);
   }
   to {
-    transform: translate3d(-40px, 30px, 0) scale(1.08);
+    transform: translate3d(-36px, 28px, 0) scale(1.06);
   }
 }
 
