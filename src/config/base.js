@@ -1,6 +1,6 @@
 /**
  * App base path:
- * - Netlify root → ""
+ * - Root deploys (Vercel/Netlify) → ""
  * - XAMPP /movie/ → "/movie"
  */
 export function getBasePath() {

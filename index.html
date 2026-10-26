@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0b0f14" />
     <meta name="description" content="Personal movie library PWA" />
     <script>
-      // Fix asset paths for Netlify (/) and XAMPP (/movie/)
+      // Fix asset paths for root deploys (Vercel/Netlify) and XAMPP (/movie/)
       (function () {
         var path = location.pathname.replace(/\/index\.html$/, "");
         var base = path === "/movie" || path.indexOf("/movie/") === 0 ? "/movie/" : "/";

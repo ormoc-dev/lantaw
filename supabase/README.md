@@ -1,6 +1,6 @@
 # Fix Google login: Unable to exchange external code
 
-You reach Netlify again, but login fails. That means **Supabase cannot talk to Google** with the Client ID/Secret you saved (almost always `invalid_client` / wrong secret).
+You reach the deployed app again, but login fails. That means **Supabase cannot talk to Google** with the Client ID/Secret you saved (almost always `invalid_client` / wrong secret).
 
 ## Do this now (works for most people)
 
@@ -10,13 +10,13 @@ You reach Netlify again, but login fails. That means **Supabase cannot talk to G
 2. Open the **Web application** OAuth client (ID should start with `833921049517-...`)
 3. Confirm:
    - **Authorized JavaScript origins**
-     - `https://lantaw.netlify.app`
+     - `https://lantaw-smoky.vercel.app`
      - `http://localhost` (optional for local)
    - **Authorized redirect URIs** — must be exactly:
      ```
      https://xzsynwcpzljzgaghetem.supabase.co/auth/v1/callback
      ```
-     (Do **not** put `lantaw.netlify.app` here — that belongs in origins only.)
+     (Do **not** put the Vercel site URL here — that belongs in origins only.)
 4. Click **Reset secret** / **Add secret** → copy the **new** Client Secret (`GOCSPX-...`)
 
 ### 2. Paste into Supabase
@@ -26,7 +26,7 @@ You reach Netlify again, but login fails. That means **Supabase cannot talk to G
 3. Paste the **same** Client ID + the **new** Client Secret
 4. Save
 
-### 3. Confirm Site URL (local + Netlify)
+### 3. Confirm Site URL (local + Vercel)
 
 You develop on **XAMPP localhost**, not `:3000`.
 
@@ -39,13 +39,13 @@ For local work, set:
 - **Redirect URLs:**
   - `http://localhost/movie/**`
   - `http://localhost/movie/#/**`
-  - `https://lantaw.netlify.app/**` (keep for production)
+  - `https://lantaw-smoky.vercel.app/**` (keep for production)
 
-When you switch back to Netlify testing, you can set Site URL to `https://lantaw.netlify.app` again (Redirect URLs can list both).
+For production on Vercel, set Site URL to `https://lantaw-smoky.vercel.app` (Redirect URLs can list both local and production).
 
 ### 4. Test
 
-Incognito → `https://lantaw.netlify.app/` → Continue with Google
+Incognito → `https://lantaw-smoky.vercel.app/` → Continue with Google
 
 ## Check logs if it still fails
 

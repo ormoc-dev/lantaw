@@ -8,9 +8,11 @@ export const env = {
   supabaseUrl: "https://xzsynwcpzljzgaghetem.supabase.co",
   supabaseAnonKey: "sb_publishable_id6kL1SjDSem3f1BBBMZHA_mGhyeXhu",
 
-  // Use runtime origin in production to avoid hardcoding a specific Netlify subdomain.
+  // Use runtime origin in production to avoid hardcoding one deploy hostname.
   siteUrl:
-    typeof window !== "undefined" ? window.location.origin : "https://lantaw.netlify.app",
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://lantaw-smoky.vercel.app",
   localSiteUrl: "http://localhost/movie",
 
   tmdbApiKey: "0da320d23d1a48a9bfc19aa7f2316470",
