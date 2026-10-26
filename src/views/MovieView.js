@@ -1,4 +1,5 @@
-import { getMovieDetail } from "../services/movieService.js";
+import { getMovieDetail, getTvDetail } from "../services/movieService.js";
+import { addRecentMovie } from "../services/recentService.js";
 import { linkTo } from "../router/index.js";
 import {
   addToWatchlist,
@@ -7,6 +8,14 @@ import {
 } from "../services/watchlistService.js";
 
 export async function MovieView(root, params = {}) {
+  return renderMediaDetail(root, params, "movie");
+}
+
+export async function TvView(root, params = {}) {
+  return renderMediaDetail(root, params, "tv");
+}
+
+async function renderMediaDetail(root, params, mediaType) {
   const id = params.id;
 
   root.innerHTML = `
@@ -15,14 +24,17 @@ export async function MovieView(root, params = {}) {
   `;
 
   if (!id) {
-    root.innerHTML = `<p class="muted">Missing movie id.</p>`;
+    root.innerHTML = `<p class="muted">Missing id.</p>`;
     return { unmount() {} };
   }
 
   try {
-    const movie = await getMovieDetail(id);
+    const movie =
+      mediaType === "tv" ? await getTvDetail(id) : await getMovieDetail(id);
+    addRecentMovie(movie);
     const genres = (movie.genres || []).map((g) => g.name).join(" · ");
     let saved = await isInWatchlist(Number(id));
+    const trailerKey = movie.trailer?.key;
 
     root.innerHTML = `
       <a class="back" href="${linkTo("/")}">← Back</a>
@@ -46,21 +58,61 @@ export async function MovieView(root, params = {}) {
             <p class="muted">${escapeHtml(genres)}</p>
             <p>${escapeHtml(movie.overview || "")}</p>
             <div class="detail__actions" id="actions"></div>
+            <div class="detail__player" id="player" hidden></div>
           </div>
         </div>
       </article>
     `;
 
     const actions = root.querySelector("#actions");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn";
+    const player = root.querySelector("#player");
+
+    if (trailerKey) {
+      const trailerBtn = document.createElement("button");
+      trailerBtn.type = "button";
+      trailerBtn.className = "btn btn--primary";
+      trailerBtn.textContent = "Watch trailer";
+      trailerBtn.addEventListener("click", () => {
+        player.hidden = false;
+        player.innerHTML = `
+          <div class="detail__player-frame">
+            <iframe
+              src="https://www.youtube.com/embed/${escapeHtml(
+                trailerKey
+              )}?autoplay=1&rel=0"
+              title="Trailer"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen
+            ></iframe>
+          </div>
+          <a
+            class="link-btn"
+            href="https://www.youtube.com/watch?v=${encodeURIComponent(
+              trailerKey
+            )}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >Open on YouTube</a>
+        `;
+        player.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+      actions.appendChild(trailerBtn);
+    } else {
+      const note = document.createElement("p");
+      note.className = "muted detail__no-trailer";
+      note.textContent = "No trailer available.";
+      actions.appendChild(note);
+    }
+
+    const watchBtn = document.createElement("button");
+    watchBtn.type = "button";
+    watchBtn.className = "btn btn--ghost";
     const syncLabel = () => {
-      btn.textContent = saved ? "Remove from watchlist" : "Add to watchlist";
+      watchBtn.textContent = saved ? "Remove from watchlist" : "Add to watchlist";
     };
     syncLabel();
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
+    watchBtn.addEventListener("click", async () => {
+      watchBtn.disabled = true;
       try {
         if (saved) {
           await removeByTmdbId(Number(id));
@@ -77,10 +129,10 @@ export async function MovieView(root, params = {}) {
       } catch (err) {
         alert(err.message);
       } finally {
-        btn.disabled = false;
+        watchBtn.disabled = false;
       }
     });
-    actions.appendChild(btn);
+    actions.appendChild(watchBtn);
   } catch (err) {
     root.innerHTML = `
       <a class="back" href="${linkTo("/")}">← Back</a>

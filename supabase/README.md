@@ -26,14 +26,22 @@ You reach Netlify again, but login fails. That means **Supabase cannot talk to G
 3. Paste the **same** Client ID + the **new** Client Secret
 4. Save
 
-### 3. Confirm Site URL
+### 3. Confirm Site URL (local + Netlify)
+
+You develop on **XAMPP localhost**, not `:3000`.
+
+Open the app at: **http://localhost/movie/**
 
 [URL Configuration](https://supabase.com/dashboard/project/xzsynwcpzljzgaghetem/auth/url-configuration)
 
-- Site URL: `https://lantaw.netlify.app`
-- Redirect URLs (add both):
-  - `https://lantaw.netlify.app/**`
-  - `https://lantaw.netlify.app/#/**`
+For local work, set:
+- **Site URL:** `http://localhost/movie/`
+- **Redirect URLs:**
+  - `http://localhost/movie/**`
+  - `http://localhost/movie/#/**`
+  - `https://lantaw.netlify.app/**` (keep for production)
+
+When you switch back to Netlify testing, you can set Site URL to `https://lantaw.netlify.app` again (Redirect URLs can list both).
 
 ### 4. Test
 

@@ -1,34 +1,51 @@
 import { assertEnv } from "../config/env.js";
 import { checkTmdbConnection } from "../lib/tmdb.js";
-import { getHomeCatalog } from "../services/movieService.js";
-import { CategoryRow } from "../components/CategoryRow.js";
-import { AuthBar } from "../components/AuthBar.js";
+import { getHomeCatalog, searchMovies } from "../services/movieService.js";
+import { CategoryChips } from "../components/CategoryChips.js";
+import { HomeSearchBar } from "../components/HomeSearchBar.js";
+import { FeaturedHero } from "../components/FeaturedHero.js";
+import { MediaGrid } from "../components/MediaGrid.js";
 import { linkTo } from "../router/index.js";
 
 export async function HomeView(root) {
-  root.innerHTML = `
-    <div class="home">
-      <header class="home-top">
-        <div class="home-top__brand">
-          <a class="brand brand--link" href="${linkTo("/")}">Movie</a>
-        </div>
-        <div class="home-top__actions" id="top">
-          <nav class="home-top__nav">
-            <a href="${linkTo("/watchlist")}">Watchlist</a>
-          </nav>
-        </div>
-      </header>
+  const page = document.createElement("div");
+  page.className = "home";
 
-      <div id="home-body">
-        <p class="muted home-loading">Loading categories…</p>
-      </div>
-    </div>
-  `;
+  const body = document.createElement("div");
+  body.id = "home-body";
+  body.innerHTML = `<p class="muted home-loading">Loading…</p>`;
 
-  const auth = await AuthBar(root.querySelector("#top"));
-  const body = root.querySelector("#home-body");
+  const searchBar = HomeSearchBar({
+    onSearch: async (q) => {
+      if (!q) {
+        location.hash = "#/";
+        return;
+      }
+      body.innerHTML = `<p class="muted home-loading">Searching…</p>`;
+      try {
+        const { results } = await searchMovies(q);
+        body.innerHTML = "";
+        const head = document.createElement("div");
+        head.className = "home-search-results__head";
+        head.innerHTML = `
+          <h2>Results for “${escapeHtml(q)}”</h2>
+          <a class="link-btn" href="${linkTo("/")}">Clear</a>
+        `;
+        body.append(
+          head,
+          MediaGrid({ items: results, emptyText: "No movies found." })
+        );
+      } catch (err) {
+        body.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+      }
+    },
+  });
+
+  page.append(searchBar, CategoryChips({ activeId: "" }), body);
+  root.innerHTML = "";
+  root.appendChild(page);
+
   const missing = assertEnv();
-
   if (missing.includes("tmdbApiKey")) {
     body.innerHTML = `
       <div class="home-empty">
@@ -36,11 +53,7 @@ export async function HomeView(root) {
         <p class="muted">Edit <code>src/config/env.js</code> and set <code>tmdbApiKey</code>.</p>
       </div>
     `;
-    return {
-      unmount() {
-        auth.unmount();
-      },
-    };
+    return { unmount() {} };
   }
 
   const tmdb = await checkTmdbConnection();
@@ -51,11 +64,7 @@ export async function HomeView(root) {
         <p class="muted">${escapeHtml(tmdb.message)}</p>
       </div>
     `;
-    return {
-      unmount() {
-        auth.unmount();
-      },
-    };
+    return { unmount() {} };
   }
 
   try {
@@ -63,54 +72,13 @@ export async function HomeView(root) {
     body.innerHTML = "";
 
     if (catalog.hero) {
-      const hero = document.createElement("section");
-      hero.className = "home-hero";
-      const bg = catalog.hero.backdrop || catalog.hero.poster || "";
-      hero.innerHTML = `
-        <div class="home-hero__bg" style="${
-          bg ? `background-image:url('${bg}')` : ""
-        }"></div>
-        <div class="home-hero__content">
-          <p class="home-hero__eyebrow">Featured</p>
-          <h2>${escapeHtml(catalog.hero.title)}</h2>
-          <p class="home-hero__overview">${escapeHtml(
-            truncate(catalog.hero.overview, 160)
-          )}</p>
-          <a class="btn btn--primary home-hero__cta" href="${linkTo(
-            `/movie/${catalog.hero.id}`
-          )}">View details</a>
-        </div>
-      `;
-      body.appendChild(hero);
+      body.appendChild(FeaturedHero({ item: catalog.hero }));
     }
 
-    const chips = document.createElement("nav");
-    chips.className = "category-chips";
-    chips.setAttribute("aria-label", "Categories");
-    catalog.rows.forEach((row) => {
-      const a = document.createElement("a");
-      a.className = "category-chip";
-      a.href = `#cat-${row.id}`;
-      a.textContent = row.title;
-      a.addEventListener("click", (e) => {
-        e.preventDefault();
-        document.getElementById(`cat-${row.id}`)?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-      chips.appendChild(a);
-    });
-    body.appendChild(chips);
-
-    const catalogEl = document.createElement("div");
-    catalogEl.className = "home-catalog";
-    catalog.rows.forEach((row) => {
-      catalogEl.appendChild(
-        CategoryRow({ id: row.id, title: row.title, movies: row.movies })
-      );
-    });
-    body.appendChild(catalogEl);
+    const intro = document.createElement("p");
+    intro.className = "muted home-category-hint";
+    intro.textContent = "Pick a category above to browse full lists.";
+    body.appendChild(intro);
   } catch (err) {
     body.innerHTML = `
       <div class="home-empty">
@@ -120,16 +88,7 @@ export async function HomeView(root) {
     `;
   }
 
-  return {
-    unmount() {
-      auth.unmount();
-    },
-  };
-}
-
-function truncate(str = "", n = 140) {
-  if (str.length <= n) return str;
-  return `${str.slice(0, n).trim()}…`;
+  return { unmount() {} };
 }
 
 function escapeHtml(str = "") {

@@ -36,6 +36,8 @@ export const tmdb = {
   nowPlaying: (page = 1) => tmdbFetch("/movie/now_playing", { page }),
   upcoming: (page = 1) => tmdbFetch("/movie/upcoming", { page }),
   trending: (timeWindow = "week") => tmdbFetch(`/trending/movie/${timeWindow}`),
+  trendingAll: (timeWindow = "week") =>
+    tmdbFetch(`/trending/all/${timeWindow}`),
   byGenre: (genreId, page = 1) =>
     tmdbFetch("/discover/movie", {
       with_genres: genreId,
@@ -43,11 +45,27 @@ export const tmdb = {
       sort_by: "popularity.desc",
       include_adult: false,
     }),
+  discoverMovies: (params = {}) =>
+    tmdbFetch("/discover/movie", {
+      sort_by: "popularity.desc",
+      include_adult: false,
+      ...params,
+    }),
+  discoverTv: (params = {}) =>
+    tmdbFetch("/discover/tv", {
+      sort_by: "popularity.desc",
+      include_adult: false,
+      ...params,
+    }),
+  popularTv: (page = 1) => tmdbFetch("/tv/popular", { page }),
   search: (query, page = 1) =>
     tmdbFetch("/search/movie", { query, page, include_adult: false }),
   movie: (id) => tmdbFetch(`/movie/${id}`),
+  tv: (id) => tmdbFetch(`/tv/${id}`),
   credits: (id) => tmdbFetch(`/movie/${id}/credits`),
+  tvCredits: (id) => tmdbFetch(`/tv/${id}/credits`),
   videos: (id) => tmdbFetch(`/movie/${id}/videos`),
+  tvVideos: (id) => tmdbFetch(`/tv/${id}/videos`),
 };
 
 export async function checkTmdbConnection() {

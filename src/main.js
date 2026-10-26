@@ -1,6 +1,5 @@
 import { createApp } from "./App.js";
 import { recoverSession } from "./services/authService.js";
-import { assetUrl } from "./config/base.js";
 
 async function boot() {
   let session = null;
@@ -10,7 +9,6 @@ async function boot() {
     console.warn("Session recovery failed:", err?.message || err);
   }
 
-  // If Google login succeeded, never stay on #/login
   if (session && (location.hash === "#/login" || !location.hash)) {
     location.hash = "#/";
   }
@@ -20,12 +18,19 @@ async function boot() {
   app.mount();
 }
 
-boot();
+boot().catch((err) => {
+  console.error(err);
+  const root = document.getElementById("app");
+  if (root) {
+    root.innerHTML = `<p style="padding:1.5rem;color:#e8eef6;font-family:sans-serif">App failed to start. Open DevTools → Console for details.<br/><small>${String(
+      err?.message || err
+    )}</small></p>`;
+  }
+});
 
+// Clear stale service workers so localhost always shows latest files
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register(assetUrl("/sw.js")).catch(() => {
-      /* offline cache optional */
-    });
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((r) => r.unregister());
   });
 }

@@ -4,7 +4,12 @@ const ITEMS = [
   {
     path: "/",
     label: "Home",
-    match: (p) => p === "/" || p.startsWith("/movie/"),
+    match: (p) =>
+      p === "/" ||
+      p.startsWith("/movie/") ||
+      p.startsWith("/tv/") ||
+      p.startsWith("/recent") ||
+      ["/recommend", "/filipino", "/movies", "/tv-show", "/anime"].includes(p),
     icon: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
@@ -78,7 +83,7 @@ export function createBottomNav() {
     });
   }
 
-  window();
+  sync();
   window.addEventListener("hashchange", sync);
 
   return {

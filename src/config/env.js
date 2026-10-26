@@ -8,8 +8,9 @@ export const env = {
   supabaseUrl: "https://xzsynwcpzljzgaghetem.supabase.co",
   supabaseAnonKey: "sb_publishable_id6kL1SjDSem3f1BBBMZHA_mGhyeXhu",
 
-  // Used after Google login — must also be in Supabase Redirect URLs
+  // Production (Netlify). Local XAMPP uses http://localhost/movie/ automatically.
   siteUrl: "https://lantaw.netlify.app",
+  localSiteUrl: "http://localhost/movie",
 
   tmdbApiKey: "0da320d23d1a48a9bfc19aa7f2316470",
   tmdbBaseUrl: "https://api.themoviedb.org/3",

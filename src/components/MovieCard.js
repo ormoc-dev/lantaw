@@ -3,7 +3,9 @@ import { linkTo } from "../router/index.js";
 export function MovieCard(movie) {
   const el = document.createElement("a");
   el.className = "movie-card";
-  el.href = linkTo(`/movie/${movie.id}`);
+  const path =
+    movie.mediaType === "tv" ? `/tv/${movie.id}` : `/movie/${movie.id}`;
+  el.href = linkTo(path);
 
   const img = movie.poster
     ? `<img src="${movie.poster}" alt="" loading="lazy" />`
