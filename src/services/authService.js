@@ -1,27 +1,40 @@
 import { getSupabase } from "../lib/supabase.js";
-import { env } from "../config/env.js";
 import { getBasePath } from "../config/base.js";
 
+const AUTH_ERROR_KEY = "lantaw-auth-error";
+
+/**
+ * Always return to the exact origin + app base the user started from.
+ * Hardcoding localhost vs Netlify breaks PKCE (code verifier is origin-bound).
+ */
 function appRedirectUrl() {
-  // Local XAMPP: http://localhost/movie/
-  // Production:  env.siteUrl (Netlify domain)
-  // recoverSession() sends the user to #/ after the code exchange.
-  const host = window.location.hostname;
-  if (host === "localhost" || host === "127.0.0.1") {
-    const local = (env.localSiteUrl || `${window.location.origin}${getBasePath()}`).replace(
-      /\/$/,
-      ""
-    );
-    return `${local}/`;
-  }
-  return `${env.siteUrl.replace(/\/$/, "")}/`;
+  const base = getBasePath();
+  return `${window.location.origin}${base}/`;
 }
 
 function cleanAuthParamsFromUrl(hash = "#/") {
   const url = new URL(window.location.href);
   url.search = "";
   url.hash = hash.startsWith("#") ? hash : `#${hash}`;
-  window.history.replaceState({}, "", `${url.pathname}${url.hash}`);
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+export function consumeAuthError() {
+  try {
+    const msg = sessionStorage.getItem(AUTH_ERROR_KEY);
+    if (msg) sessionStorage.removeItem(AUTH_ERROR_KEY);
+    return msg;
+  } catch {
+    return null;
+  }
+}
+
+function stashAuthError(message) {
+  try {
+    sessionStorage.setItem(AUTH_ERROR_KEY, message);
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function getSession() {
@@ -32,14 +45,16 @@ export async function getSession() {
 
 /**
  * Finish Google/email OAuth before the router decides login vs home.
- * PKCE returns ?code=... — getSession() alone is not enough.
+ * PKCE returns ?code=... — getSession() alone is not enough until exchanged.
  */
 export async function recoverSession() {
   const supabase = getSupabase();
   const params = new URLSearchParams(window.location.search);
 
-  if (params.get("error")) {
-    // Leave query for LoginView to read, then it cleans up
+  if (params.get("error") || params.get("error_description")) {
+    const desc =
+      params.get("error_description") || params.get("error") || "Sign-in failed";
+    stashAuthError(decodeURIComponent(String(desc).replace(/\+/g, " ")));
     return null;
   }
 
@@ -48,6 +63,17 @@ export async function recoverSession() {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       console.error("OAuth code exchange failed:", error.message);
+      // Session may already exist if a prior attempt stored it
+      const { data: fallback } = await supabase.auth.getSession();
+      if (fallback?.session) {
+        cleanAuthParamsFromUrl("#/");
+        return fallback.session;
+      }
+      stashAuthError(
+        error.message ||
+          "Google signed you in at Supabase, but this browser could not open the app session. Use the same URL you started from (localhost vs Netlify), and add it under Supabase → Authentication → URL Configuration → Redirect URLs."
+      );
+      cleanAuthParamsFromUrl("#/login");
       return null;
     }
     cleanAuthParamsFromUrl("#/");
@@ -78,6 +104,7 @@ export async function signInWithGoogle() {
     provider: "google",
     options: {
       redirectTo: appRedirectUrl(),
+      skipBrowserRedirect: false,
     },
   });
   if (error) throw error;
@@ -181,7 +208,6 @@ export async function resolveUserProfile(user) {
   const avatar = profile?.avatar_url || avatarFromUser(user) || null;
   const email = profile?.email || user.email || "";
 
-  // Keep profiles in sync with Google/email identity when empty or stale.
   const patch = {};
   if (avatar && profile && profile.avatar_url !== avatar) patch.avatar_url = avatar;
   if (!profile?.avatar_url && avatar) patch.avatar_url = avatar;

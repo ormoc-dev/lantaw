@@ -28,24 +28,24 @@ You reach the deployed app again, but login fails. That means **Supabase cannot 
 
 ### 3. Confirm Site URL (local + Netlify)
 
-You develop on **XAMPP localhost**, not `:3000`.
-
-Open the app at: **http://localhost/movie/**
+Google can create the user in Supabase while the **app** still lands on `/login` if the redirect URL / PKCE origin doesn’t match. The app now redirects back to **whatever origin you started from**.
 
 [URL Configuration](https://supabase.com/dashboard/project/xzsynwcpzljzgaghetem/auth/url-configuration)
 
-For local work, set:
-- **Site URL:** `http://localhost/movie/`
-- **Redirect URLs:**
-  - `http://localhost/movie/**`
-  - `http://localhost/movie/#/**`
-  - `https://lantaw.netlify.app/**` (keep for production)
+Add **all** of these under **Redirect URLs** (keep them listed even when Site URL is one of them):
+- `http://localhost/movie/**`
+- `http://localhost/movie/`
+- `https://lantaw.netlify.app/**`
+- `https://lantaw.netlify.app/`
 
-When you switch back to Netlify testing, set Site URL to `https://lantaw.netlify.app` (Redirect URLs can list both local and production).
+**Site URL** can be the one you use most (`http://localhost/movie/` or `https://lantaw.netlify.app`).
+
+Open the app at the **same** host you allowlisted (don’t start on `127.0.0.1` if only `localhost` is listed).
 
 ### 4. Test
 
-Incognito → `https://lantaw.netlify.app/` → Continue with Google
+Hard refresh → Continue with Google → you should land on home (`#/`), not login.
+If login still shows, read the red error on the page (it explains redirect / session handoff failures).
 
 ## Check logs if it still fails
 

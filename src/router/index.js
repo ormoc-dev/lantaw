@@ -16,8 +16,9 @@ export function createRouter(rootEl) {
 
   onAuthChange((session) => {
     const pathname = (location.hash.replace(/^#/, "") || "/").split("?")[0];
-    if (session && pathname === "/login") {
-      location.hash = "#/";
+    if (session && (pathname === "/login" || !location.hash)) {
+      if (location.hash !== "#/") location.hash = "#/";
+      else render();
       return;
     }
     if (!session && !PUBLIC_PATHS.has(pathname)) {

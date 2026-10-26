@@ -8,12 +8,8 @@ export const env = {
   supabaseUrl: "https://xzsynwcpzljzgaghetem.supabase.co",
   supabaseAnonKey: "sb_publishable_id6kL1SjDSem3f1BBBMZHA_mGhyeXhu",
 
-  // Use runtime origin in production to avoid hardcoding one deploy hostname.
-  siteUrl:
-    typeof window !== "undefined"
-      ? window.location.origin
-      : "https://lantaw.netlify.app",
-  localSiteUrl: "http://localhost/movie",
+  // Prefer window.location in authService.appRedirectUrl (PKCE is origin-bound).
+  siteUrl: "https://lantaw.netlify.app",
 
   tmdbApiKey: "0da320d23d1a48a9bfc19aa7f2316470",
   tmdbBaseUrl: "https://api.themoviedb.org/3",

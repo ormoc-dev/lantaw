@@ -10,7 +10,8 @@ export function getSupabase() {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        // recoverSession() exchanges ?code= — avoid double-consume with client init
+        detectSessionInUrl: false,
         flowType: "pkce",
       },
     });

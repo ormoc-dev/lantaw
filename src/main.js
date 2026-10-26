@@ -9,8 +9,11 @@ async function boot() {
     console.warn("Session recovery failed:", err?.message || err);
   }
 
-  if (session && (location.hash === "#/login" || !location.hash)) {
-    location.hash = "#/";
+  // After Google OAuth, land in the app — not back on /login
+  if (session) {
+    if (!location.hash || location.hash === "#/login") {
+      location.hash = "#/";
+    }
   }
 
   const root = document.getElementById("app");

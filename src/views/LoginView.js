@@ -1,4 +1,5 @@
 import {
+  consumeAuthError,
   getSession,
   signIn,
   signInWithGoogle,
@@ -134,11 +135,11 @@ export async function LoginView(root) {
   tabSignup.addEventListener("click", () => setMode("signup"));
   switchBtn.addEventListener("click", () => setMode("signup"));
 
-  const oauthError = new URLSearchParams(window.location.search).get(
-    "error_description"
-  );
+  const oauthError =
+    new URLSearchParams(window.location.search).get("error_description") ||
+    consumeAuthError();
   if (oauthError) {
-    const friendly = decodeURIComponent(oauthError.replace(/\+/g, " "));
+    const friendly = decodeURIComponent(String(oauthError).replace(/\+/g, " "));
     errorEl.textContent = friendly.includes("exchange external code")
       ? "Google login failed. In Supabase → Authentication → Providers → Google, paste a fresh Client Secret from Google Cloud (Reset secret), then try again."
       : friendly;
