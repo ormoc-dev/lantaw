@@ -139,6 +139,21 @@ export async function LoginView(root) {
   tabSignup.addEventListener("click", () => setMode("signup"));
   switchBtn.addEventListener("click", () => setMode("signup"));
 
+  // Surface Google/Supabase OAuth failures returned in the URL
+  const oauthError = new URLSearchParams(window.location.search).get(
+    "error_description"
+  );
+  if (oauthError) {
+    const friendly = decodeURIComponent(oauthError.replace(/\+/g, " "));
+    errorEl.textContent =
+      friendly.includes("exchange external code")
+        ? "Google login failed: Supabase could not verify your Google Client Secret. Reset the secret in Google Cloud and paste it again in Supabase → Authentication → Providers → Google."
+        : friendly;
+    errorEl.hidden = false;
+    const clean = `${window.location.origin}${window.location.pathname}${window.location.hash || "#/login"}`;
+    window.history.replaceState({}, "", clean);
+  }
+
   requestAnimationFrame(() => moveInk(tabSignin));
   window.addEventListener("resize", () => {
     moveInk(mode === "signup" ? tabSignup : tabSignin);

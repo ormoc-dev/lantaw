@@ -27,10 +27,8 @@ export async function signInWithGoogle() {
     provider: "google",
     options: {
       redirectTo: appRedirectUrl(),
-      queryParams: {
-        access_type: "offline",
-        prompt: "select_account",
-      },
+      // Keep scopes minimal — extra params can complicate Google exchange
+      scopes: "openid email profile",
     },
   });
   if (error) throw error;
