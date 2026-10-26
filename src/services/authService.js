@@ -1,9 +1,12 @@
 import { getSupabase } from "../lib/supabase.js";
+import { env } from "../config/env.js";
 import { getBasePath } from "../config/base.js";
 
 function appRedirectUrl() {
-  // Netlify: https://lantaw.netlify.app/
-  // XAMPP:   http://localhost/movie/
+  const host = window.location.hostname;
+  if (host !== "localhost" && host !== "127.0.0.1") {
+    return `${env.siteUrl.replace(/\/$/, "")}/`;
+  }
   const base = getBasePath();
   return `${window.location.origin}${base || ""}/`;
 }
@@ -19,7 +22,6 @@ export async function getUser() {
   return session?.user ?? null;
 }
 
-/** Google / Gmail sign-in via Supabase OAuth */
 export async function signInWithGoogle() {
   const { data, error } = await getSupabase().auth.signInWithOAuth({
     provider: "google",
@@ -35,12 +37,35 @@ export async function signInWithGoogle() {
   return data;
 }
 
+export async function signIn({ email, password }) {
+  const { data, error } = await getSupabase().auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function signUp({ email, password, displayName }) {
+  const { data, error } = await getSupabase().auth.signUp({
+    email: email.trim(),
+    password,
+    options: {
+      data: {
+        display_name: displayName?.trim() || undefined,
+      },
+      emailRedirectTo: appRedirectUrl(),
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function signOut() {
   const { error } = await getSupabase().auth.signOut();
   if (error) throw error;
 }
 
-/** Subscribe to auth changes. Returns unsubscribe fn. */
 export function onAuthChange(callback) {
   const { data } = getSupabase().auth.onAuthStateChange((_event, session) => {
     callback(session);

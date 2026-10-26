@@ -1,35 +1,28 @@
-# Supabase setup
+# Supabase + Google + Netlify
 
-## 1. Run migrations
+## Fix “redirects to localhost:3000”
 
-Dashboard → **SQL Editor** → run in order:
+That URL comes from **Supabase Site URL**, not from Netlify code.
 
-1. `migrations/202603260001_init_auth_and_watchlist.sql`
-2. `migrations/202603260002_google_profile_fields.sql`
-
-## 2. Enable Google login (Gmail)
-
-### A. Google Cloud Console
-
-1. [APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
-2. Open your **Web application** OAuth client
-3. **Authorized JavaScript origins** — add:
-   - `http://localhost`
-   - `https://lantaw.netlify.app`
-4. **Authorized redirect URIs** — keep:
-   - `https://xzsynwcpzljzgaghetem.supabase.co/auth/v1/callback`
-5. Save
-
-### B. Supabase Dashboard
-
-1. **Authentication → Providers → Google** → Enable + Client ID/Secret
-2. **Authentication → URL Configuration**
+1. Open [Supabase Dashboard](https://supabase.com/dashboard) → project `xzsynwcpzljzgaghetem`
+2. **Authentication** → **URL Configuration**
+3. Set:
    - **Site URL:** `https://lantaw.netlify.app`
-   - **Redirect URLs** (add all you use):
+   - **Redirect URLs** (one per line):
      - `https://lantaw.netlify.app/**`
      - `http://localhost/movie/**`
-     - `http://localhost/**`
+4. Save
 
-## 3. Deploy
+If the Netlify URL is missing from Redirect URLs, Supabase ignores `redirectTo` and sends users to Site URL (often still `http://localhost:3000`).
 
-Push to Git → Netlify auto-deploys from repo root (`netlify.toml` publish = `.`).
+## Google provider
+
+1. **Authentication** → **Providers** → **Google** → enabled
+2. Client ID + Secret must match Google Cloud
+3. Google Cloud → OAuth client:
+   - **Authorized JavaScript origins:** `https://lantaw.netlify.app`, `http://localhost`
+   - **Authorized redirect URIs:** `https://xzsynwcpzljzgaghetem.supabase.co/auth/v1/callback`
+
+## “Unable to exchange external code”
+
+Usually wrong Client Secret, or Google redirect URI not exactly the Supabase callback above. Re-paste Client ID/Secret in Supabase and Save.
