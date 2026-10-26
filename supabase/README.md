@@ -10,7 +10,7 @@ You reach the deployed app again, but login fails. That means **Supabase cannot 
 2. Open the **Web application** OAuth client (ID should start with `833921049517-...`)
 3. Confirm:
    - **Authorized JavaScript origins**
-     - `https://lantaw-smoky.vercel.app`
+     - `https://lantaw-mocha.vercel.app`
      - `http://localhost` (optional for local)
    - **Authorized redirect URIs** — must be exactly:
      ```
@@ -39,13 +39,13 @@ For local work, set:
 - **Redirect URLs:**
   - `http://localhost/movie/**`
   - `http://localhost/movie/#/**`
-  - `https://lantaw-smoky.vercel.app/**` (keep for production)
+  - `https://lantaw-mocha.vercel.app/**` (keep for production)
 
-For production on Vercel, set Site URL to `https://lantaw-smoky.vercel.app` (Redirect URLs can list both local and production).
+For production on Vercel, set Site URL to `https://lantaw-mocha.vercel.app` (Redirect URLs can list both local and production).
 
 ### 4. Test
 
-Incognito → `https://lantaw-smoky.vercel.app/` → Continue with Google
+Incognito → `https://lantaw-mocha.vercel.app/` → Continue with Google
 
 ## Check logs if it still fails
 
