@@ -8,8 +8,9 @@ export const env = {
   supabaseUrl: "https://xzsynwcpzljzgaghetem.supabase.co",
   supabaseAnonKey: "sb_publishable_id6kL1SjDSem3f1BBBMZHA_mGhyeXhu",
 
-  // Production (Netlify). Local XAMPP uses http://localhost/movie/ automatically.
-  siteUrl: "https://lantaw.netlify.app",
+  // Use runtime origin in production to avoid hardcoding a specific Netlify subdomain.
+  siteUrl:
+    typeof window !== "undefined" ? window.location.origin : "https://lantaw.netlify.app",
   localSiteUrl: "http://localhost/movie",
 
   tmdbApiKey: "0da320d23d1a48a9bfc19aa7f2316470",
