@@ -322,7 +322,7 @@ function renderStreamPlayer(movie, mediaType) {
           frameborder="0"
           style="border: 0; border-radius: 12px;"
           allow="autoplay; fullscreen; picture-in-picture"
-          sandbox="allow-scripts allow-presentation"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
           referrerpolicy="no-referrer"
           allowfullscreen
         ></iframe>
@@ -340,7 +340,7 @@ function renderStreamPlayer(movie, mediaType) {
         frameborder="0"
         style="border: 0; border-radius: 12px;"
         allow="autoplay; fullscreen; picture-in-picture"
-        sandbox="allow-scripts allow-presentation"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
         referrerpolicy="no-referrer"
         allowfullscreen
       ></iframe>
