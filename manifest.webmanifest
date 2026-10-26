@@ -1,18 +1,31 @@
 {
-  "name": "Movie",
-  "short_name": "Movie",
-  "description": "Personal movie library",
+  "name": "Lantaw",
+  "short_name": "Lantaw",
+  "description": "Filipino movies, TV shows, and anime",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0b0f14",
-  "theme_color": "#0b0f14",
+  "orientation": "portrait-primary",
+  "background_color": "#000000",
+  "theme_color": "#ff0a43",
   "icons": [
     {
-      "src": "public/icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "public/icons/LOGO.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "public/icons/LOGO.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "public/icons/LOGO.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

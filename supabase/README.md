@@ -50,3 +50,11 @@ Incognito → `https://lantaw.netlify.app/` → Continue with Google
 ## Check logs if it still fails
 
 Supabase → **Logs** → **Auth** — look for `invalid_client` / `Unauthorized`. That confirms the secret/ID pair is wrong.
+
+## Friends / Chat / Watch together
+
+Run this SQL in Supabase ? SQL Editor:
+
+- `supabase/migrations/202603260003_friends_chat_watch.sql`
+
+Optional: enable Realtime for `friend_messages` (Database ? Replication) so chat updates live.

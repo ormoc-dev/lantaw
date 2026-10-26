@@ -3,6 +3,7 @@ import { checkTmdbConnection } from "../lib/tmdb.js";
 import { getHomeCatalog, searchMovies } from "../services/movieService.js";
 import { CategoryChips } from "../components/CategoryChips.js";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
+import { HomeSticky } from "../components/HomeSticky.js";
 import { FeaturedHero } from "../components/FeaturedHero.js";
 import { MediaGrid } from "../components/MediaGrid.js";
 import { linkTo } from "../router/index.js";
@@ -41,7 +42,8 @@ export async function HomeView(root) {
     },
   });
 
-  page.append(searchBar, CategoryChips({ activeId: "" }), body);
+  const top = HomeSticky([searchBar, CategoryChips({ activeId: "" })]);
+  page.append(top.sticky, top.spacer, body);
   root.innerHTML = "";
   root.appendChild(page);
 
@@ -53,7 +55,7 @@ export async function HomeView(root) {
         <p class="muted">Edit <code>src/config/env.js</code> and set <code>tmdbApiKey</code>.</p>
       </div>
     `;
-    return { unmount() {} };
+    return { unmount: () => top.unmount() };
   }
 
   const tmdb = await checkTmdbConnection();
@@ -64,7 +66,7 @@ export async function HomeView(root) {
         <p class="muted">${escapeHtml(tmdb.message)}</p>
       </div>
     `;
-    return { unmount() {} };
+    return { unmount: () => top.unmount() };
   }
 
   try {
@@ -99,7 +101,7 @@ export async function HomeView(root) {
     `;
   }
 
-  return { unmount() {} };
+  return { unmount: () => top.unmount() };
 }
 
 function escapeHtml(str = "") {

@@ -1,5 +1,6 @@
 import { createRouter } from "./router/index.js";
 import { createBottomNav } from "./components/BottomNav.js";
+import { createProfileTop } from "./components/ProfileTop.js";
 import { HomeView } from "./views/HomeView.js";
 import { MovieView, TvView } from "./views/MovieView.js";
 import { LoginView } from "./views/LoginView.js";
@@ -8,6 +9,7 @@ import { ShortsView } from "./views/ShortsView.js";
 import { RankingsView } from "./views/RankingsView.js";
 import { DiscoverView } from "./views/DiscoverView.js";
 import { MeView } from "./views/MeView.js";
+import { FriendsView } from "./views/FriendsView.js";
 import { RecentView } from "./views/RecentView.js";
 import { RecommendView } from "./views/categories/RecommendView.js";
 import { FilipinoView } from "./views/categories/FilipinoView.js";
@@ -18,11 +20,15 @@ import { AnimeView } from "./views/categories/AnimeView.js";
 export function createApp(root) {
   const shell = document.createElement("div");
   shell.className = "app-shell";
-  shell.innerHTML = `<main id="view"></main>`;
+  shell.innerHTML = `
+    <div class="app-header-bg" aria-hidden="true"></div>
+    <main id="view"></main>
+  `;
   root.appendChild(shell);
 
   const bottomNav = createBottomNav();
-  shell.appendChild(bottomNav.el);
+  const profileTop = createProfileTop();
+  shell.append(bottomNav.el, profileTop.el);
 
   const router = createRouter(shell.querySelector("#view"));
   router.add("/", HomeView);
@@ -36,6 +42,7 @@ export function createApp(root) {
   router.add("/rankings", RankingsView);
   router.add("/discover", DiscoverView);
   router.add("/me", MeView);
+  router.add("/friends", FriendsView);
   router.add("/recent", RecentView);
   router.add("/watchlist", WatchlistView);
   router.add("/movie/:id", MovieView);
@@ -45,6 +52,7 @@ export function createApp(root) {
     mount() {
       router.start();
       bottomNav.sync();
+      profileTop.sync();
     },
   };
 }

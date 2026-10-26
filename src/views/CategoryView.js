@@ -5,6 +5,7 @@ import {
 } from "../services/movieService.js";
 import { CategoryChips } from "../components/CategoryChips.js";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
+import { HomeSticky } from "../components/HomeSticky.js";
 import { MediaGrid } from "../components/MediaGrid.js";
 import { FeaturedHero } from "../components/FeaturedHero.js";
 import { linkTo } from "../router/index.js";
@@ -57,7 +58,11 @@ export async function CategoryView(root, { categoryId } = {}) {
     },
   });
 
-  page.append(searchBar, CategoryChips({ activeId: category.id }), body);
+  const top = HomeSticky([
+    searchBar,
+    CategoryChips({ activeId: category.id }),
+  ]);
+  page.append(top.sticky, top.spacer, body);
   root.innerHTML = "";
   root.appendChild(page);
 
@@ -87,7 +92,7 @@ export async function CategoryView(root, { categoryId } = {}) {
     body.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
   }
 
-  return { unmount() {} };
+  return { unmount: () => top.unmount() };
 }
 
 function escapeHtml(str = "") {

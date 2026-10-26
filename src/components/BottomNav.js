@@ -58,26 +58,100 @@ const ITEMS = [
 ];
 
 export function createBottomNav() {
-  const nav = document.createElement("nav");
-  nav.className = "bottom-nav";
-  nav.setAttribute("aria-label", "Main");
+  const wrap = document.createElement("div");
+  wrap.className = "mobile-nav";
+  wrap.innerHTML = `
+    <button
+      type="button"
+      class="mobile-nav__toggle"
+      aria-label="Open menu"
+      aria-expanded="false"
+      aria-controls="mobile-nav-drawer"
+    >
+      <span class="mobile-nav__burger" aria-hidden="true"></span>
+    </button>
+    <div class="mobile-nav__overlay" hidden></div>
+    <nav id="mobile-nav-drawer" class="mobile-nav__drawer" aria-label="Main" hidden>
+      <div class="mobile-nav__drawer-head">
+        <strong>Menu</strong>
+        <button type="button" class="mobile-nav__close" aria-label="Close menu">✕</button>
+      </div>
+      <div class="mobile-nav__items">
+        ${ITEMS.map(
+          (item) => `
+            <a class="mobile-nav__item" href="${linkTo(item.path)}" data-path="${item.path}">
+              <span class="mobile-nav__icon">${item.icon}</span>
+              <span class="mobile-nav__label">${item.label}</span>
+            </a>
+          `
+        ).join("")}
+      </div>
+    </nav>
+  `;
 
-  nav.innerHTML = ITEMS.map(
-    (item) => `
-      <a class="bottom-nav__item" href="${linkTo(item.path)}" data-path="${item.path}">
-        <span class="bottom-nav__icon">${item.icon}</span>
-        <span class="bottom-nav__label">${item.label}</span>
-      </a>
-    `
-  ).join("");
+  const toggleBtn = wrap.querySelector(".mobile-nav__toggle");
+  const closeBtn = wrap.querySelector(".mobile-nav__close");
+  const overlay = wrap.querySelector(".mobile-nav__overlay");
+  const drawer = wrap.querySelector(".mobile-nav__drawer");
+  let open = false;
+  let ignoreToggleUntil = 0;
+
+  const setOpen = (next) => {
+    open = next;
+    drawer.hidden = !next;
+    overlay.hidden = !next;
+    wrap.classList.toggle("is-open", next);
+    toggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
+    toggleBtn.setAttribute("aria-label", next ? "Close menu" : "Open menu");
+    document.body.classList.toggle("has-mobile-nav-open", next);
+  };
+
+  const closeMenu = () => {
+    if (!open) return;
+    setOpen(false);
+    // Prevent the same tap/click from reopening via the hamburger underneath.
+    ignoreToggleUntil = Date.now() + 350;
+  };
+
+  const openMenu = () => {
+    if (open) return;
+    setOpen(true);
+  };
+
+  const onToggle = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (Date.now() < ignoreToggleUntil) return;
+    if (open) closeMenu();
+    else openMenu();
+  };
+
+  const onClose = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeMenu();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === "Escape") closeMenu();
+  };
+
+  toggleBtn.addEventListener("click", onToggle);
+  closeBtn.addEventListener("click", onClose);
+  overlay.addEventListener("click", onClose);
+  wrap.querySelectorAll(".mobile-nav__item").forEach((item) => {
+    item.addEventListener("click", () => closeMenu());
+  });
+  window.addEventListener("keydown", onEscape);
 
   function sync() {
+    closeMenu();
     const pathname = (location.hash.replace(/^#/, "") || "/").split("?")[0];
     const hide = pathname === "/login";
-    nav.hidden = hide;
-    document.body.classList.toggle("has-bottom-nav", !hide);
+    wrap.hidden = hide;
+    document.body.classList.toggle("has-mobile-nav", !hide);
 
-    nav.querySelectorAll(".bottom-nav__item").forEach((el) => {
+    wrap.querySelectorAll(".mobile-nav__item").forEach((el) => {
       const item = ITEMS.find((i) => i.path === el.dataset.path);
       el.classList.toggle("is-active", Boolean(item?.match(pathname)));
     });
@@ -87,11 +161,12 @@ export function createBottomNav() {
   window.addEventListener("hashchange", sync);
 
   return {
-    el: nav,
+    el: wrap,
     sync,
     destroy() {
       window.removeEventListener("hashchange", sync);
-      nav.remove();
+      window.removeEventListener("keydown", onEscape);
+      wrap.remove();
     },
   };
 }

@@ -1,4 +1,4 @@
-const CACHE = "movie-v2";
+const CACHE = "movie-v13";
 
 function basePath() {
   const path = self.location.pathname.replace(/\/sw\.js$/, "");
