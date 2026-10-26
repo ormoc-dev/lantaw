@@ -1,13 +1,9 @@
+# Static site — no npm build
 [build]
   publish = "."
-  command = "echo 'Static JS PWA — no build step'"
+  command = ""
 
-# Serve index.html for unknown paths (OAuth return, refresh, etc.)
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-
-# Don't publish git / local secrets docs as needed
-[build.processing]
-  skip_processing = false
