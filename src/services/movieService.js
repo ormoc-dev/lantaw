@@ -1,4 +1,5 @@
 import { tmdb, posterUrl, backdropUrl } from "../lib/tmdb.js";
+import { getOmdbByImdbId, getOmdbByTitle } from "../lib/omdb.js";
 
 function mapTitle(m) {
   return {
@@ -145,14 +146,25 @@ export async function searchMovies(query, page = 1) {
   return mapList(await tmdb.search(query, page), "movie");
 }
 
+async function attachOmdb(detail, { imdbId, title, year }) {
+  try {
+    let omdb = await getOmdbByImdbId(imdbId);
+    if (!omdb) omdb = await getOmdbByTitle(title, year);
+    return { ...detail, omdb };
+  } catch {
+    return { ...detail, omdb: null };
+  }
+}
+
 export async function getMovieDetail(id) {
-  const [movie, credits, videos] = await Promise.all([
+  const [movie, credits, videos, external] = await Promise.all([
     tmdb.movie(id),
     tmdb.credits(id),
     tmdb.videos(id),
+    tmdb.movieExternalIds(id).catch(() => ({})),
   ]);
 
-  return {
+  const detail = {
     ...mapTitle({ ...movie, media_type: "movie" }),
     runtime: movie.runtime,
     genres: movie.genres || [],
@@ -160,23 +172,45 @@ export async function getMovieDetail(id) {
     trailer: (videos.results || []).find(
       (v) => v.site === "YouTube" && v.type === "Trailer"
     ),
+    imdbId: external.imdb_id || movie.imdb_id || null,
   };
+
+  return attachOmdb(detail, {
+    imdbId: detail.imdbId,
+    title: detail.title,
+    year: detail.releaseDate?.slice(0, 4),
+  });
 }
 
 export async function getTvDetail(id) {
-  const [show, credits, videos] = await Promise.all([
+  const [show, credits, videos, external] = await Promise.all([
     tmdb.tv(id),
     tmdb.tvCredits(id),
     tmdb.tvVideos(id),
+    tmdb.tvExternalIds(id).catch(() => ({})),
   ]);
 
-  return {
+  const detail = {
     ...mapTitle({ ...show, media_type: "tv" }),
     runtime: show.episode_run_time?.[0] || null,
     genres: show.genres || [],
+    seasons: (show.seasons || [])
+      .filter((season) => Number(season.season_number) > 0)
+      .map((season) => ({
+        seasonNumber: Number(season.season_number),
+        name: season.name || `Season ${season.season_number}`,
+        episodeCount: Number(season.episode_count) || 1,
+      })),
     cast: (credits.cast || []).slice(0, 12),
     trailer: (videos.results || []).find(
       (v) => v.site === "YouTube" && v.type === "Trailer"
     ),
+    imdbId: external.imdb_id || null,
   };
+
+  return attachOmdb(detail, {
+    imdbId: detail.imdbId,
+    title: detail.title,
+    year: detail.releaseDate?.slice(0, 4),
+  });
 }

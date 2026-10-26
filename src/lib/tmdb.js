@@ -2,15 +2,23 @@ import { env } from "../config/env.js";
 
 async function tmdbFetch(path, params = {}) {
   const url = new URL(`${env.tmdbBaseUrl}${path}`);
-  url.searchParams.set("api_key", env.tmdbApiKey);
+  const headers = { Accept: "application/json" };
+  const key = env.tmdbApiKey || "";
 
-  for (const [key, value] of Object.entries(params)) {
+  // Support both v3 api_key and v4 Read Access Token (eyJ…)
+  if (key.startsWith("eyJ")) {
+    headers.Authorization = `Bearer ${key}`;
+  } else {
+    url.searchParams.set("api_key", key);
+  }
+
+  for (const [keyName, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== "") {
-      url.searchParams.set(key, String(value));
+      url.searchParams.set(keyName, String(value));
     }
   }
 
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), { headers });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`TMDB ${res.status}: ${body || res.statusText}`);
@@ -62,6 +70,8 @@ export const tmdb = {
     tmdbFetch("/search/movie", { query, page, include_adult: false }),
   movie: (id) => tmdbFetch(`/movie/${id}`),
   tv: (id) => tmdbFetch(`/tv/${id}`),
+  movieExternalIds: (id) => tmdbFetch(`/movie/${id}/external_ids`),
+  tvExternalIds: (id) => tmdbFetch(`/tv/${id}/external_ids`),
   credits: (id) => tmdbFetch(`/movie/${id}/credits`),
   tvCredits: (id) => tmdbFetch(`/tv/${id}/credits`),
   videos: (id) => tmdbFetch(`/movie/${id}/videos`),

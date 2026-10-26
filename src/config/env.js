@@ -15,6 +15,10 @@ export const env = {
   tmdbApiKey: "0da320d23d1a48a9bfc19aa7f2316470",
   tmdbBaseUrl: "https://api.themoviedb.org/3",
   tmdbImageBase: "https://image.tmdb.org/t/p",
+
+  // OMDb key from activation email — not the VERIFYKEY in the URL
+  // https://www.omdbapi.com/apikey.aspx
+  omdbApiKey: "419c2d70",
 };
 
 export function assertEnv() {

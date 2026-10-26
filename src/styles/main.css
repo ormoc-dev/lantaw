@@ -1403,6 +1403,38 @@ body.has-bottom-nav #view.view--auth {
   }
 }
 
+.omdb-ratings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0.75rem 0;
+}
+
+.omdb-ratings__item {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 7.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.omdb-ratings__item span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.omdb-ratings__item strong {
+  font-size: 0.95rem;
+}
+
+.detail__credits-line {
+  margin: 0.5rem 0 0;
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
 .detail__actions {
   margin-top: 1.25rem;
   display: flex;
@@ -1437,6 +1469,31 @@ body.has-bottom-nav #view.view--auth {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.stream-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.stream-controls label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.stream-controls select,
+.stream-controls input {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.65rem;
 }
 
 .watch-card {
