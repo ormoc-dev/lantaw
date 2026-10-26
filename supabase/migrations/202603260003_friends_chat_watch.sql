@@ -147,3 +147,20 @@ drop trigger if exists watch_parties_set_updated_at on public.watch_parties;
 create trigger watch_parties_set_updated_at
   before update on public.watch_parties
   for each row execute function public.set_updated_at();
+
+-- Realtime (also in 202603260005_friends_realtime.sql for existing projects)
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.friendships;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.friend_messages;
+  exception when duplicate_object then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.watch_parties;
+  exception when duplicate_object then null;
+  end;
+end $$;

@@ -8,11 +8,14 @@ import {
   listMessages,
   listWatchParties,
   markChatRead,
+  partyWatchPath,
   removeFriendship,
   respondToFriendRequest,
-  searchProfileByEmail,
+  searchProfiles,
+  notifyFriendsBadge,
   sendFriendRequest,
   sendMessage,
+  subscribeFriendsRealtime,
   updateWatchPartyStatus,
 } from "../services/friendsService.js";
 import { linkTo } from "../router/index.js";
@@ -29,7 +32,12 @@ export async function FriendsView(root) {
   let parties = [];
   let activity = { requests: 0, chats: 0, invites: 0, chatIds: [] };
   let activeChatId = null;
-  let unsubRealtime = null;
+  let unsubChat = null;
+  let unsubPage = null;
+  let liveTimer = null;
+  let liveBusy = false;
+  let liveQueued = false;
+  let chatPaint = null;
 
   const page = document.createElement("div");
   page.className = "page-pad friends-page";
@@ -127,10 +135,25 @@ export async function FriendsView(root) {
 
       panel.innerHTML = `
         <form class="fp-add" id="add-friend">
-          <input type="email" name="email" placeholder="Add by email" required autocomplete="email" />
-          <button class="btn btn--primary" type="submit">Add</button>
+          <div class="fp-search fp-add__search">
+            <div class="fp-search__box">
+              <input
+                type="search"
+                id="add-search"
+                placeholder="Search by name or email"
+                autocomplete="off"
+                aria-autocomplete="list"
+                aria-controls="add-menu"
+              />
+              <button type="button" class="fp-search__clear" id="add-clear" hidden>✕</button>
+            </div>
+            <div class="fp-search__menu" id="add-menu" hidden></div>
+            <input type="hidden" name="userId" id="add-user-id" />
+            <div class="fp-search__picked" id="add-picked" hidden></div>
+          </div>
+          <button class="btn btn--primary" type="submit" id="add-submit" disabled>Add</button>
         </form>
-        <p class="fp-status muted" id="add-msg"></p>
+        <p class="fp-status muted" id="add-msg">Type a name or email to see suggestions.</p>
 
         ${
           incoming.length || outgoing.length
@@ -171,7 +194,7 @@ export async function FriendsView(root) {
       if (!accepted.length) {
         friendsBox.innerHTML = emptyState(
           "No friends yet",
-          "Invite someone with their account email."
+          "Search by name or email to send a request."
         );
       } else {
         friendsBox.innerHTML = accepted
@@ -185,22 +208,136 @@ export async function FriendsView(root) {
           .join("");
       }
 
-      panel.querySelector("#add-friend").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const msg = panel.querySelector("#add-msg");
-        const email = e.currentTarget.email.value.trim();
-        msg.textContent = "Sending…";
+      const addForm = panel.querySelector("#add-friend");
+      const addInput = panel.querySelector("#add-search");
+      const addMenu = panel.querySelector("#add-menu");
+      const addUserId = panel.querySelector("#add-user-id");
+      const addPicked = panel.querySelector("#add-picked");
+      const addClear = panel.querySelector("#add-clear");
+      const addSubmit = panel.querySelector("#add-submit");
+      const addMsg = panel.querySelector("#add-msg");
+      let selectedAdd = null;
+      let addSearchToken = 0;
+      let addSearchTimer = null;
+
+      const setAddPick = (profile) => {
+        selectedAdd = profile;
+        if (!profile) {
+          addUserId.value = "";
+          addPicked.hidden = true;
+          addPicked.innerHTML = "";
+          addClear.hidden = true;
+          addInput.hidden = false;
+          addInput.value = "";
+          addSubmit.disabled = true;
+          addMenu.hidden = true;
+          return;
+        }
+        addUserId.value = profile.id;
+        addInput.hidden = true;
+        addClear.hidden = false;
+        addPicked.hidden = false;
+        addPicked.innerHTML = `
+          ${avatarHtml(profile, "fp-avatar--sm")}
+          <div>
+            <strong>${escapeHtml(profile.display_name || "User")}</strong>
+            <span>${escapeHtml(profile.email || "")}</span>
+          </div>
+        `;
+        addMenu.hidden = true;
+        addSubmit.disabled = false;
+        addMsg.textContent = "Ready to send request.";
+      };
+
+      const paintAddMenu = (rows) => {
+        if (!rows.length) {
+          addMenu.innerHTML = `<p class="fp-search__empty">No people found</p>`;
+          addMenu.hidden = false;
+          return;
+        }
+        addMenu.innerHTML = rows
+          .map(
+            (p) => `
+          <button type="button" class="fp-search__option" data-add-id="${p.id}">
+            ${avatarHtml(p, "fp-avatar--sm")}
+            <div>
+              <strong>${escapeHtml(p.display_name || "User")}</strong>
+              <span>${escapeHtml(p.email || "")}</span>
+            </div>
+          </button>`
+          )
+          .join("");
+        addMenu.hidden = false;
+        addMenu.querySelectorAll("[data-add-id]").forEach((btn) => {
+          btn.addEventListener("mousedown", (ev) => ev.preventDefault());
+          btn.addEventListener("click", () => {
+            const profile = rows.find((r) => r.id === btn.dataset.addId);
+            setAddPick(profile || null);
+          });
+        });
+      };
+
+      const runAddSearch = async (query) => {
+        const token = ++addSearchToken;
+        const q = query.trim();
+        if (q.length < 1) {
+          addMenu.hidden = true;
+          addMenu.innerHTML = "";
+          return;
+        }
+        addMsg.textContent = "Searching…";
         try {
-          const profile = await searchProfileByEmail(email);
-          if (!profile) throw new Error("No account found for that email");
-          await sendFriendRequest(profile.id);
-          e.currentTarget.reset();
-          msg.textContent = "Request sent.";
+          const rows = await searchProfiles(q, { limit: 8 });
+          if (token !== addSearchToken) return;
+          paintAddMenu(rows);
+          addMsg.textContent = rows.length
+            ? "Pick someone from the list."
+            : "No match — try another name or email.";
+        } catch (err) {
+          if (token !== addSearchToken) return;
+          addMenu.hidden = true;
+          addMsg.textContent = err.message || "Search failed";
+        }
+      };
+
+      addInput.addEventListener("input", () => {
+        if (selectedAdd) setAddPick(null);
+        addSubmit.disabled = true;
+        clearTimeout(addSearchTimer);
+        addSearchTimer = setTimeout(() => runAddSearch(addInput.value), 220);
+      });
+
+      addInput.addEventListener("focus", () => {
+        if (addInput.value.trim() && !selectedAdd) runAddSearch(addInput.value);
+      });
+
+      addClear.addEventListener("click", () => {
+        setAddPick(null);
+        addMsg.textContent = "Type a name or email to see suggestions.";
+        addInput.focus();
+      });
+
+      addForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        const userId = addUserId.value || selectedAdd?.id;
+        if (!userId) {
+          addMsg.textContent = "Pick a person from the suggestions first.";
+          return;
+        }
+        addMsg.textContent = "Sending…";
+        addSubmit.disabled = true;
+        try {
+          await sendFriendRequest(userId);
+          addMsg.textContent = "Request sent.";
+          if (form && typeof form.reset === "function") form.reset();
+          setAddPick(null);
           await refreshData();
           renderShell();
           renderPanel();
         } catch (err) {
-          msg.textContent = err.message || "Could not send request";
+          addMsg.textContent = err.message || "Could not send request";
+          addSubmit.disabled = false;
         }
       });
 
@@ -298,6 +435,7 @@ export async function FriendsView(root) {
 
       const box = panel.querySelector("#chat-messages");
       const paint = (messages) => {
+        if (!box.isConnected) return;
         if (!messages.length) {
           box.innerHTML = `<p class="muted fp-chat__empty">No messages yet.</p>`;
           markChatRead(activeChatId);
@@ -319,6 +457,7 @@ export async function FriendsView(root) {
         const latest = messages[messages.length - 1];
         markChatRead(activeChatId, latest?.created_at);
       };
+      chatPaint = paint;
 
       const syncTabBadges = () => {
         const tabs = page.querySelector(".fp-tabs");
@@ -339,40 +478,51 @@ export async function FriendsView(root) {
         box.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
       }
 
-      if (unsubRealtime) unsubRealtime();
+      if (unsubChat) unsubChat();
+      const chatId = activeChatId;
       const channel = getSupabase()
-        .channel(`chat-${activeChatId}`)
+        .channel(`chat-${chatId}-${Date.now()}`)
         .on(
           "postgres_changes",
           {
             event: "INSERT",
             schema: "public",
             table: "friend_messages",
-            filter: `friendship_id=eq.${activeChatId}`,
+            filter: `friendship_id=eq.${chatId}`,
           },
-          async () => {
+          async (payload) => {
             try {
-              paint(await listMessages(activeChatId));
+              if (payload?.new && payload.new.friendship_id === chatId) {
+                // Fast path: append via full reload for correct order
+                paint(await listMessages(chatId));
+              } else {
+                paint(await listMessages(chatId));
+              }
+              activity = await getFriendsActivityCounts().catch(() => activity);
+              syncTabBadges();
+              notifyFriendsBadge();
             } catch (_) {
               /* ignore */
             }
           }
         )
         .subscribe();
-      unsubRealtime = () => {
+      unsubChat = () => {
         getSupabase().removeChannel(channel);
-        unsubRealtime = null;
+        unsubChat = null;
+        chatPaint = null;
       };
 
       panel.querySelector("#chat-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const input = e.currentTarget.body;
-        const text = input.value.trim();
+        const form = e.currentTarget;
+        const input = form?.body;
+        const text = input?.value?.trim();
         if (!text) return;
         input.value = "";
         try {
-          await sendMessage(activeChatId, text);
-          paint(await listMessages(activeChatId));
+          await sendMessage(chatId, text);
+          paint(await listMessages(chatId));
         } catch (err) {
           alert(err.message);
         }
@@ -451,8 +601,6 @@ export async function FriendsView(root) {
       partyList.innerHTML = parties
         .map((p) => {
           const mineHost = p.host_id === me.id;
-          const path =
-            p.media_type === "tv" ? `/tv/${p.tmdb_id}` : `/movie/${p.tmdb_id}`;
           return `
             <div class="fp-party">
               ${
@@ -466,10 +614,18 @@ export async function FriendsView(root) {
                   p.status
                 )}</span>
                 <div class="fp-row__actions">
-                  <a class="fp-btn fp-btn--solid" href="${linkTo(path)}">Open</a>
+                  <a class="fp-btn fp-btn--solid" href="${linkTo(
+                    partyWatchPath(p)
+                  )}">${
+                    p.status === "active"
+                      ? "Join room"
+                      : mineHost
+                        ? "Open & wait"
+                        : "Open"
+                  }</a>
                   ${
                     p.status === "invited" && !mineHost
-                      ? `<button class="fp-btn" type="button" data-party-accept="${p.id}">Accept</button>
+                      ? `<button class="fp-btn fp-btn--solid" type="button" data-party-accept="${p.id}">Accept & watch</button>
                          <button class="fp-btn" type="button" data-party-decline="${p.id}">Decline</button>`
                       : ""
                   }
@@ -669,7 +825,7 @@ export async function FriendsView(root) {
       }
       msg.textContent = "Sending…";
       try {
-        await createWatchParty({
+        const party = await createWatchParty({
           friendshipId: selectedFriend.id,
           guestId: selectedFriend.otherId,
           mediaType: selectedMedia.mediaType || "movie",
@@ -677,11 +833,8 @@ export async function FriendsView(root) {
           title: selectedMedia.title || "Untitled",
           poster: selectedMedia.poster || null,
         });
-        msg.textContent = "Invite sent.";
-        setFriend(null);
-        setMedia(null);
-        await refreshData();
-        renderPanel();
+        msg.textContent = "Invite sent — opening room…";
+        location.hash = linkTo(partyWatchPath(party));
       } catch (err) {
         msg.textContent = err.message || "Failed to invite";
       }
@@ -689,7 +842,13 @@ export async function FriendsView(root) {
 
     panel.querySelectorAll("[data-party-accept]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        await updateWatchPartyStatus(btn.dataset.partyAccept, "active");
+        const id = btn.dataset.partyAccept;
+        const party = parties.find((p) => p.id === id);
+        await updateWatchPartyStatus(id, "active");
+        if (party) {
+          location.hash = linkTo(partyWatchPath({ ...party, status: "active" }));
+          return;
+        }
         await refreshData();
         renderShell();
         renderPanel();
@@ -713,6 +872,66 @@ export async function FriendsView(root) {
     });
   }
 
+  const syncTabBadgesOnly = () => {
+    const tabs = page.querySelector(".fp-tabs");
+    if (!tabs) return;
+    const peopleBtn = tabs.querySelector('[data-tab="friends"]');
+    const chatBtn = tabs.querySelector('[data-tab="chat"]');
+    const watchBtn = tabs.querySelector('[data-tab="watch"]');
+    const countEl = page.querySelector(".fp-count");
+    const acceptedCount = friendships.filter((f) => f.status === "accepted").length;
+    if (peopleBtn) peopleBtn.innerHTML = `People${tabBadge(activity.requests)}`;
+    if (chatBtn) chatBtn.innerHTML = `Chat${tabBadge(activity.chats)}`;
+    if (watchBtn) watchBtn.innerHTML = `Watch${tabBadge(activity.invites)}`;
+    if (countEl) {
+      countEl.textContent = `${acceptedCount} friend${acceptedCount === 1 ? "" : "s"}`;
+    }
+  };
+
+  async function applyLiveUpdate(payload) {
+    if (liveBusy) {
+      liveQueued = true;
+      return;
+    }
+    liveBusy = true;
+    try {
+      const table = payload?.table || payload?.source;
+      await refreshData();
+      notifyFriendsBadge();
+
+      // Keep chat composer intact; only refresh bubbles for this thread
+      if (tab === "chat" && table === "friend_messages") {
+        const row = payload?.new;
+        if (row?.friendship_id && row.friendship_id === activeChatId && chatPaint) {
+          try {
+            chatPaint(await listMessages(activeChatId));
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        syncTabBadgesOnly();
+        return;
+      }
+
+      // People / Watch (and friendship list changes while chatting) — full refresh
+      renderShell();
+      await renderPanel();
+    } finally {
+      liveBusy = false;
+      if (liveQueued) {
+        liveQueued = false;
+        scheduleLiveRefresh({ source: "queued" });
+      }
+    }
+  }
+
+  function scheduleLiveRefresh(payload) {
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => {
+      applyLiveUpdate(payload).catch(() => {});
+    }, 180);
+  }
+
   renderShell();
   try {
     await refreshData();
@@ -720,19 +939,27 @@ export async function FriendsView(root) {
   } catch (err) {
     page.querySelector("#friends-panel").innerHTML = `
       ${emptyState("Couldn’t load Friends", err.message)}
-      <p class="muted">Run migration <code>202603260003_friends_chat_watch.sql</code> in Supabase.</p>
+      <p class="muted">Run migrations <code>202603260003_friends_chat_watch.sql</code> and <code>202603260005_friends_realtime.sql</code> in Supabase.</p>
     `;
     return {
       unmount() {
-        if (unsubRealtime) unsubRealtime();
+        clearTimeout(liveTimer);
+        unsubChat?.();
+        unsubPage?.();
       },
     };
   }
   await renderPanel();
 
+  unsubPage = subscribeFriendsRealtime((payload) => {
+    scheduleLiveRefresh(payload);
+  });
+
   return {
     unmount() {
-      if (unsubRealtime) unsubRealtime();
+      clearTimeout(liveTimer);
+      unsubChat?.();
+      unsubPage?.();
     },
   };
 }

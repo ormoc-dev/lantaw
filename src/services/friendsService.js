@@ -62,19 +62,66 @@ function decorate(row, myId, profiles) {
   };
 }
 
+/** Escape PostgREST filter wildcards in user input. */
+function sanitizeSearch(query) {
+  return String(query || "")
+    .trim()
+    .replace(/[%_,]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 64);
+}
+
+/**
+ * Suggest profiles by display name or email (partial match).
+ * Excludes the current user.
+ */
+export async function searchProfiles(query, { limit = 8 } = {}) {
+  const user = await requireUser();
+  const safe = sanitizeSearch(query);
+  if (safe.length < 1) return [];
+
+  const pattern = `%${safe}%`;
+  const sb = getSupabase();
+  const select = "id, email, display_name, avatar_url";
+
+  const [byName, byEmail] = await Promise.all([
+    sb
+      .from("profiles")
+      .select(select)
+      .ilike("display_name", pattern)
+      .neq("id", user.id)
+      .limit(limit),
+    sb
+      .from("profiles")
+      .select(select)
+      .ilike("email", pattern)
+      .neq("id", user.id)
+      .limit(limit),
+  ]);
+
+  if (byName.error) throw byName.error;
+  if (byEmail.error) throw byEmail.error;
+
+  const map = new Map();
+  for (const row of [...(byName.data || []), ...(byEmail.data || [])]) {
+    if (row?.id) map.set(row.id, row);
+  }
+  return [...map.values()].slice(0, limit);
+}
+
+/** @deprecated Prefer searchProfiles — kept for exact single lookup. */
 export async function searchProfileByEmail(email) {
-  await requireUser();
   const q = String(email || "").trim().toLowerCase();
   if (!q) return null;
-
-  const { data, error } = await getSupabase()
-    .from("profiles")
-    .select("id, email, display_name, avatar_url")
-    .ilike("email", q)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
+  const rows = await searchProfiles(q, { limit: 10 });
+  return (
+    rows.find((r) => String(r.email || "").toLowerCase() === q) ||
+    rows.find(
+      (r) => String(r.display_name || "").toLowerCase() === q
+    ) ||
+    rows[0] ||
+    null
+  );
 }
 
 export async function sendFriendRequest(addresseeId) {
@@ -231,6 +278,113 @@ export async function updateWatchPartyStatus(partyId, status) {
   return data;
 }
 
+export async function getWatchParty(partyId) {
+  const user = await requireUser();
+  const { data, error } = await getSupabase()
+    .from("watch_parties")
+    .select("*")
+    .eq("id", partyId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  if (data.host_id !== user.id && data.guest_id !== user.id) {
+    throw new Error("You’re not part of this watch party");
+  }
+
+  const profiles = await profilesByIds([data.host_id, data.guest_id]);
+  return {
+    ...data,
+    host: profiles[data.host_id] || null,
+    guest: profiles[data.guest_id] || null,
+    isHost: data.host_id === user.id,
+    isGuest: data.guest_id === user.id,
+  };
+}
+
+export function partyWatchPath(party) {
+  if (!party) return "/";
+  const base =
+    party.media_type === "tv" ? `/tv/${party.tmdb_id}` : `/movie/${party.tmdb_id}`;
+  return `${base}?party=${party.id}`;
+}
+
+export async function listWatchPartyMessages(partyId, { limit = 80 } = {}) {
+  await requireUser();
+  const { data, error } = await getSupabase()
+    .from("watch_party_messages")
+    .select("id, party_id, sender_id, body, created_at")
+    .eq("party_id", partyId)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function sendWatchPartyMessage(partyId, body) {
+  const user = await requireUser();
+  const text = String(body || "").trim();
+  if (!text) throw new Error("Message can’t be empty");
+  if (text.length > 280) throw new Error("Keep comments under 280 characters");
+
+  const { data, error } = await getSupabase()
+    .from("watch_party_messages")
+    .insert({
+      party_id: partyId,
+      sender_id: user.id,
+      body: text,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/** Subscribe to one party’s status + live comments. */
+export function subscribeWatchParty(partyId, { onParty, onMessage } = {}) {
+  let channel = null;
+  try {
+    const sb = getSupabase();
+    channel = sb
+      .channel(`watch-party-${partyId}-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "watch_parties",
+          filter: `id=eq.${partyId}`,
+        },
+        (payload) => onParty?.(payload)
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "watch_party_messages",
+          filter: `party_id=eq.${partyId}`,
+        },
+        (payload) => onMessage?.(payload)
+      )
+      .subscribe();
+  } catch {
+    /* ignore */
+  }
+
+  return () => {
+    if (channel) {
+      try {
+        getSupabase().removeChannel(channel);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+}
+
 /**
  * Badge counts for the Friends button / tabs.
  * Chat unread uses local last-read timestamps (no DB read column).
@@ -301,40 +455,51 @@ export async function getFriendsActivityCounts() {
   }
 }
 
-/** Realtime + poll hook for badge updates. Returns unsubscribe. */
-export function subscribeFriendsActivity(onChange) {
+/**
+ * Live postgres_changes for friendships, messages, and watch parties.
+ * @param {(payload: object) => void} onChange
+ * @param {{ pollMs?: number, listenBadgeEvent?: boolean }} [opts]
+ * @returns {() => void} unsubscribe
+ */
+export function subscribeFriendsRealtime(onChange, opts = {}) {
+  const { pollMs = 0, listenBadgeEvent = false } = opts;
   let channel = null;
+
   try {
     const sb = getSupabase();
     channel = sb
-      .channel(`friends-activity-${Date.now()}`)
+      .channel(`friends-live-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "friendships" },
-        () => onChange()
+        (payload) => onChange(payload)
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "friend_messages" },
-        () => onChange()
+        { event: "*", schema: "public", table: "friend_messages" },
+        (payload) => onChange(payload)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "watch_parties" },
-        () => onChange()
+        (payload) => onChange(payload)
       )
       .subscribe();
   } catch {
     /* ignore */
   }
 
-  const onBadgeEvent = () => onChange();
-  window.addEventListener(FRIENDS_BADGE_EVENT, onBadgeEvent);
-  const poll = setInterval(onChange, 45000);
+  const onBadgeEvent = () => onChange({ source: "badge-event" });
+  if (listenBadgeEvent) {
+    window.addEventListener(FRIENDS_BADGE_EVENT, onBadgeEvent);
+  }
+  const poll = pollMs > 0 ? setInterval(() => onChange({ source: "poll" }), pollMs) : null;
 
   return () => {
-    window.removeEventListener(FRIENDS_BADGE_EVENT, onBadgeEvent);
-    clearInterval(poll);
+    if (listenBadgeEvent) {
+      window.removeEventListener(FRIENDS_BADGE_EVENT, onBadgeEvent);
+    }
+    if (poll) clearInterval(poll);
     if (channel) {
       try {
         getSupabase().removeChannel(channel);
@@ -343,4 +508,12 @@ export function subscribeFriendsActivity(onChange) {
       }
     }
   };
+}
+
+/** Realtime + poll hook for the Friends header badge. */
+export function subscribeFriendsActivity(onChange) {
+  return subscribeFriendsRealtime(() => onChange(), {
+    pollMs: 45000,
+    listenBadgeEvent: true,
+  });
 }

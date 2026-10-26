@@ -53,11 +53,19 @@ Supabase → **Logs** → **Auth** — look for `invalid_client` / `Unauthorized
 
 ## Friends / Chat / Watch together
 
-Run this SQL in Supabase ? SQL Editor:
+Run these in Supabase → SQL Editor:
 
 - `supabase/migrations/202603260003_friends_chat_watch.sql`
+- `supabase/migrations/202603260005_friends_realtime.sql` (live requests / chat / invites)
+- `supabase/migrations/202603260006_watch_party_chat.sql` (TikTok-style comments while watching)
 
-Optional: enable Realtime for `friend_messages` (Database ? Replication) so chat updates live.
+Or enable Realtime in **Database → Publications → supabase_realtime** for:
+`friendships`, `friend_messages`, `watch_parties`, `watch_party_messages`.
+
+### Watch together flow
+1. Friends → Watch → pick friend + title → Send invite (host opens room and sees “Waiting for …”)
+2. Guest taps **Accept & watch** → both auto-play the stream
+3. Live comments float over the video like TikTok
 
 ## Login IP monitor
 

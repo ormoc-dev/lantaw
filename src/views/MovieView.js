@@ -6,6 +6,10 @@ import {
   isInWatchlist,
   removeByTmdbId,
 } from "../services/watchlistService.js";
+import {
+  getPartyIdFromHash,
+  mountWatchTogether,
+} from "../components/WatchTogether.js";
 
 export async function MovieView(root, params = {}) {
   return renderMediaDetail(root, params, "movie");
@@ -18,6 +22,7 @@ export async function TvView(root, params = {}) {
 async function renderMediaDetail(root, params, mediaType) {
   const id = params.id;
   let cleanupPlayerHistory = () => {};
+  let watchTogether = null;
 
   root.innerHTML = `
     <a class="back" href="${linkTo("/")}">← Back</a>
@@ -36,10 +41,11 @@ async function renderMediaDetail(root, params, mediaType) {
     const genres = (movie.genres || []).map((g) => g.name).join(" · ");
     let saved = await isInWatchlist(Number(id));
     const trailerKey = movie.trailer?.key;
+    const partyId = getPartyIdFromHash();
 
     root.innerHTML = `
       <a class="back" href="${linkTo("/")}">← Back</a>
-      <article class="detail">
+      <article class="detail ${partyId ? "detail--together" : ""}">
         ${
           movie.backdrop
             ? `<div class="detail__hero" style="background-image:url('${movie.backdrop}')"></div>`
@@ -81,6 +87,7 @@ async function renderMediaDetail(root, params, mediaType) {
                 : ""
             }
             <div class="detail__actions" id="actions"></div>
+            <div class="detail__together" id="together-root"></div>
             <div class="detail__player" id="player" hidden></div>
           </div>
         </div>
@@ -89,6 +96,7 @@ async function renderMediaDetail(root, params, mediaType) {
 
     const actions = root.querySelector("#actions");
     const player = root.querySelector("#player");
+    const togetherRoot = root.querySelector("#together-root");
     const omdbBox = root.querySelector("#omdb-ratings");
 
     if (movie.omdb?.ratings?.length) {
@@ -169,16 +177,41 @@ async function renderMediaDetail(root, params, mediaType) {
       player.scrollIntoView({ behavior: "smooth", block: "nearest" });
     };
 
+    const dockWatchChat = () => {
+      // Keep live chat under the player — never inside the embed overlay
+      const stage =
+        togetherRoot?.querySelector(".wt__stage") ||
+        document.querySelector(".wt__stage");
+      if (!stage || !player) return;
+      player.after(stage);
+    };
+
+    const openStream = () => {
+      showPlayer(renderStreamPlayer(movie, mediaType), () => {
+        bindStreamControls(player, movie, mediaType);
+        dockWatchChat();
+      });
+    };
+
     const streamBtn = document.createElement("button");
     streamBtn.type = "button";
     streamBtn.className = "btn btn--primary";
-    streamBtn.textContent = "Watch now";
-    streamBtn.addEventListener("click", () => {
-      showPlayer(renderStreamPlayer(movie, mediaType), () => {
-        bindStreamControls(player, movie, mediaType);
-      });
-    });
+    streamBtn.textContent = partyId ? "Watch together" : "Watch now";
+    streamBtn.addEventListener("click", () => openStream());
     actions.appendChild(streamBtn);
+
+    if (partyId && togetherRoot) {
+      watchTogether = await mountWatchTogether({
+        partyId,
+        root: togetherRoot,
+        onStartPlayback: () => {
+          if (!playerOpen) openStream();
+          else dockWatchChat();
+        },
+      });
+      // Party rooms jump straight into the video
+      openStream();
+    }
 
     if (trailerKey) {
       const trailerBtn = document.createElement("button");
@@ -249,6 +282,7 @@ async function renderMediaDetail(root, params, mediaType) {
   return {
     unmount() {
       cleanupPlayerHistory();
+      watchTogether?.unmount?.();
     },
   };
 }
