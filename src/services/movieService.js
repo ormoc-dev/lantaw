@@ -137,8 +137,14 @@ export async function getHomeCatalog() {
     getPopularMovies(),
   ]);
 
+  const hero = recommend.results[0] || movies.results[0] || null;
+  const recommendList = (recommend.results || []).filter(
+    (item) => !hero || item.id !== hero.id || item.mediaType !== hero.mediaType
+  );
+
   return {
-    hero: recommend.results[0] || movies.results[0] || null,
+    hero,
+    recommend: recommendList,
   };
 }
 

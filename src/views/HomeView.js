@@ -75,10 +75,21 @@ export async function HomeView(root) {
       body.appendChild(FeaturedHero({ item: catalog.hero }));
     }
 
-    const intro = document.createElement("p");
-    intro.className = "muted home-category-hint";
-    intro.textContent = "Pick a category above to browse full lists.";
-    body.appendChild(intro);
+    const recommendSection = document.createElement("section");
+    recommendSection.className = "category-page__body";
+    recommendSection.innerHTML = `
+      <header class="category-page__head">
+        <h1>Recommend</h1>
+        <p class="muted">Trending picks for you right now.</p>
+      </header>
+    `;
+    recommendSection.appendChild(
+      MediaGrid({
+        items: catalog.recommend || [],
+        emptyText: "No recommended titles yet.",
+      })
+    );
+    body.appendChild(recommendSection);
   } catch (err) {
     body.innerHTML = `
       <div class="home-empty">

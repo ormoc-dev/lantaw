@@ -17,6 +17,7 @@ export async function TvView(root, params = {}) {
 
 async function renderMediaDetail(root, params, mediaType) {
   const id = params.id;
+  let cleanupPlayerHistory = () => {};
 
   root.innerHTML = `
     <a class="back" href="${linkTo("/")}">← Back</a>
@@ -115,15 +116,67 @@ async function renderMediaDetail(root, params, mediaType) {
       `;
     }
 
+    let playerOpen = false;
+    let pushedPlayerState = false;
+    let ignoreNextPop = false;
+    const onPopState = () => {
+      if (ignoreNextPop) {
+        ignoreNextPop = false;
+        pushedPlayerState = false;
+        return;
+      }
+      if (!playerOpen) return;
+      hidePlayer();
+      pushedPlayerState = false;
+    };
+    window.addEventListener("popstate", onPopState);
+    cleanupPlayerHistory = () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+
+    const hidePlayer = () => {
+      if (!playerOpen) return;
+      player.hidden = true;
+      player.innerHTML = "";
+      playerOpen = false;
+    };
+
+    const showPlayer = (html, afterMount) => {
+      player.hidden = false;
+      playerOpen = true;
+      player.innerHTML = `
+        <div class="detail__player-head">
+          <button class="btn btn--ghost" id="player-close" type="button">Close player</button>
+        </div>
+        ${html}
+      `;
+
+      const closeBtn = player.querySelector("#player-close");
+      closeBtn?.addEventListener("click", () => {
+        hidePlayer();
+        if (pushedPlayerState) {
+          ignoreNextPop = true;
+          history.back();
+        }
+      });
+
+      if (!pushedPlayerState) {
+        history.pushState({ detailPlayer: true }, "");
+        pushedPlayerState = true;
+      }
+
+      afterMount?.();
+      player.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    };
+
     const streamBtn = document.createElement("button");
     streamBtn.type = "button";
     streamBtn.className = "btn btn--primary";
     streamBtn.textContent = "Watch now";
     streamBtn.addEventListener("click", () => {
-      player.hidden = false;
-      player.innerHTML = renderStreamPlayer(movie, mediaType);
-      bindStreamControls(player, movie, mediaType);
-      player.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      showPlayer(renderStreamPlayer(movie, mediaType), () => {
+        bindStreamControls(player, movie, mediaType);
+      });
     });
     actions.appendChild(streamBtn);
 
@@ -133,8 +186,7 @@ async function renderMediaDetail(root, params, mediaType) {
       trailerBtn.className = "btn btn--ghost";
       trailerBtn.textContent = "Watch trailer";
       trailerBtn.addEventListener("click", () => {
-        player.hidden = false;
-        player.innerHTML = `
+        showPlayer(`
           <div class="detail__player-frame">
             <iframe
               src="https://www.youtube.com/embed/${escapeHtml(
@@ -153,8 +205,7 @@ async function renderMediaDetail(root, params, mediaType) {
             target="_blank"
             rel="noopener noreferrer"
           >Open on YouTube</a>
-        `;
-        player.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        `);
       });
       actions.appendChild(trailerBtn);
     }
@@ -195,7 +246,11 @@ async function renderMediaDetail(root, params, mediaType) {
     `;
   }
 
-  return { unmount() {} };
+  return {
+    unmount() {
+      cleanupPlayerHistory();
+    },
+  };
 }
 
 function escapeHtml(str = "") {
@@ -267,7 +322,7 @@ function renderStreamPlayer(movie, mediaType) {
           frameborder="0"
           style="border: 0; border-radius: 12px;"
           allow="autoplay; fullscreen; picture-in-picture"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+          sandbox="allow-scripts allow-presentation"
           referrerpolicy="no-referrer"
           allowfullscreen
         ></iframe>
@@ -285,7 +340,7 @@ function renderStreamPlayer(movie, mediaType) {
         frameborder="0"
         style="border: 0; border-radius: 12px;"
         allow="autoplay; fullscreen; picture-in-picture"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+        sandbox="allow-scripts allow-presentation"
         referrerpolicy="no-referrer"
         allowfullscreen
       ></iframe>
