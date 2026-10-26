@@ -30,8 +30,19 @@ export function backdropUrl(path, size = "w780") {
 
 export const tmdb = {
   configuration: () => tmdbFetch("/configuration"),
+  genres: () => tmdbFetch("/genre/movie/list"),
   popular: (page = 1) => tmdbFetch("/movie/popular", { page }),
-  trending: (timeWindow = "day") => tmdbFetch(`/trending/movie/${timeWindow}`),
+  topRated: (page = 1) => tmdbFetch("/movie/top_rated", { page }),
+  nowPlaying: (page = 1) => tmdbFetch("/movie/now_playing", { page }),
+  upcoming: (page = 1) => tmdbFetch("/movie/upcoming", { page }),
+  trending: (timeWindow = "week") => tmdbFetch(`/trending/movie/${timeWindow}`),
+  byGenre: (genreId, page = 1) =>
+    tmdbFetch("/discover/movie", {
+      with_genres: genreId,
+      page,
+      sort_by: "popularity.desc",
+      include_adult: false,
+    }),
   search: (query, page = 1) =>
     tmdbFetch("/search/movie", { query, page, include_adult: false }),
   movie: (id) => tmdbFetch(`/movie/${id}`),

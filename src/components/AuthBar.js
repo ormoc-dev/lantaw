@@ -3,7 +3,7 @@ import { displayNameFromUser, getSession, onAuthChange, signOut } from "../servi
 export async function AuthBar(host) {
   const bar = document.createElement("div");
   bar.className = "auth-bar";
-  host.prepend(bar);
+  host.append(bar);
 
   async function render(session) {
     if (!session?.user) {

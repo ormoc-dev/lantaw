@@ -1,50 +1,41 @@
 import { assertEnv } from "../config/env.js";
-import { checkSupabaseConnection } from "../lib/supabase.js";
 import { checkTmdbConnection } from "../lib/tmdb.js";
-import { getPopularMovies } from "../services/movieService.js";
-import { MovieCard } from "../components/MovieCard.js";
+import { getHomeCatalog } from "../services/movieService.js";
+import { CategoryRow } from "../components/CategoryRow.js";
 import { AuthBar } from "../components/AuthBar.js";
 import { linkTo } from "../router/index.js";
 
 export async function HomeView(root) {
   root.innerHTML = `
-    <header class="topbar topbar--row" id="top">
-      <div>
-        <h1 class="brand">Movie</h1>
-        <p class="tagline">Personal library · TMDB + Supabase</p>
+    <div class="home">
+      <header class="home-top">
+        <div class="home-top__brand">
+          <a class="brand brand--link" href="${linkTo("/")}">Movie</a>
+        </div>
+        <div class="home-top__actions" id="top">
+          <nav class="home-top__nav">
+            <a href="${linkTo("/watchlist")}">Watchlist</a>
+          </nav>
+        </div>
+      </header>
+
+      <div id="home-body">
+        <p class="muted home-loading">Loading categories…</p>
       </div>
-    </header>
-
-    <nav class="nav-links">
-      <a href="${linkTo("/watchlist")}">My watchlist</a>
-    </nav>
-
-    <section class="status" id="status">
-      <p>Checking connections…</p>
-    </section>
-
-    <section class="grid-section">
-      <h2>Popular</h2>
-      <div class="grid" id="grid">
-        <p class="muted">Loading…</p>
-      </div>
-    </section>
+    </div>
   `;
 
   const auth = await AuthBar(root.querySelector("#top"));
-
-  const statusEl = root.querySelector("#status");
-  const gridEl = root.querySelector("#grid");
+  const body = root.querySelector("#home-body");
   const missing = assertEnv();
 
-  if (missing.length) {
-    statusEl.innerHTML = `
-      <div class="status-card status-card--warn">
-        <strong>Fill in your keys</strong>
-        <p>Edit <code>src/config/env.js</code> — missing: ${missing.join(", ")}</p>
+  if (missing.includes("tmdbApiKey")) {
+    body.innerHTML = `
+      <div class="home-empty">
+        <h2>Add your TMDB key</h2>
+        <p class="muted">Edit <code>src/config/env.js</code> and set <code>tmdbApiKey</code>.</p>
       </div>
     `;
-    gridEl.innerHTML = `<p class="muted">Add API keys to load movies.</p>`;
     return {
       unmount() {
         auth.unmount();
@@ -52,28 +43,14 @@ export async function HomeView(root) {
     };
   }
 
-  const [supabase, tmdb] = await Promise.all([
-    checkSupabaseConnection(),
-    checkTmdbConnection(),
-  ]);
-
-  statusEl.innerHTML = `
-    <div class="status-row">
-      <div class="status-card ${supabase.ok ? "status-card--ok" : "status-card--err"}">
-        <span>Supabase</span>
-        <strong>${supabase.ok ? "OK" : "Fail"}</strong>
-        <small>${escapeHtml(supabase.message)}</small>
-      </div>
-      <div class="status-card ${tmdb.ok ? "status-card--ok" : "status-card--err"}">
-        <span>TMDB</span>
-        <strong>${tmdb.ok ? "OK" : "Fail"}</strong>
-        <small>${escapeHtml(tmdb.message)}</small>
-      </div>
-    </div>
-  `;
-
+  const tmdb = await checkTmdbConnection();
   if (!tmdb.ok) {
-    gridEl.innerHTML = `<p class="muted">Fix TMDB key to load popular movies.</p>`;
+    body.innerHTML = `
+      <div class="home-empty">
+        <h2>TMDB unavailable</h2>
+        <p class="muted">${escapeHtml(tmdb.message)}</p>
+      </div>
+    `;
     return {
       unmount() {
         auth.unmount();
@@ -82,15 +59,65 @@ export async function HomeView(root) {
   }
 
   try {
-    const { results } = await getPopularMovies();
-    gridEl.innerHTML = "";
-    if (!results.length) {
-      gridEl.innerHTML = `<p class="muted">No movies returned.</p>`;
-    } else {
-      results.forEach((m) => gridEl.appendChild(MovieCard(m)));
+    const catalog = await getHomeCatalog();
+    body.innerHTML = "";
+
+    if (catalog.hero) {
+      const hero = document.createElement("section");
+      hero.className = "home-hero";
+      const bg = catalog.hero.backdrop || catalog.hero.poster || "";
+      hero.innerHTML = `
+        <div class="home-hero__bg" style="${
+          bg ? `background-image:url('${bg}')` : ""
+        }"></div>
+        <div class="home-hero__content">
+          <p class="home-hero__eyebrow">Featured</p>
+          <h2>${escapeHtml(catalog.hero.title)}</h2>
+          <p class="home-hero__overview">${escapeHtml(
+            truncate(catalog.hero.overview, 160)
+          )}</p>
+          <a class="btn btn--primary home-hero__cta" href="${linkTo(
+            `/movie/${catalog.hero.id}`
+          )}">View details</a>
+        </div>
+      `;
+      body.appendChild(hero);
     }
+
+    const chips = document.createElement("nav");
+    chips.className = "category-chips";
+    chips.setAttribute("aria-label", "Categories");
+    catalog.rows.forEach((row) => {
+      const a = document.createElement("a");
+      a.className = "category-chip";
+      a.href = `#cat-${row.id}`;
+      a.textContent = row.title;
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        document.getElementById(`cat-${row.id}`)?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+      chips.appendChild(a);
+    });
+    body.appendChild(chips);
+
+    const catalogEl = document.createElement("div");
+    catalogEl.className = "home-catalog";
+    catalog.rows.forEach((row) => {
+      catalogEl.appendChild(
+        CategoryRow({ id: row.id, title: row.title, movies: row.movies })
+      );
+    });
+    body.appendChild(catalogEl);
   } catch (err) {
-    gridEl.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+    body.innerHTML = `
+      <div class="home-empty">
+        <h2>Couldn’t load movies</h2>
+        <p class="muted">${escapeHtml(err.message)}</p>
+      </div>
+    `;
   }
 
   return {
@@ -98,6 +125,11 @@ export async function HomeView(root) {
       auth.unmount();
     },
   };
+}
+
+function truncate(str = "", n = 140) {
+  if (str.length <= n) return str;
+  return `${str.slice(0, n).trim()}…`;
 }
 
 function escapeHtml(str = "") {
