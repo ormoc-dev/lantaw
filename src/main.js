@@ -1,13 +1,18 @@
 import { createApp } from "./App.js";
-import { getSession } from "./services/authService.js";
+import { recoverSession } from "./services/authService.js";
 import { assetUrl } from "./config/base.js";
 
 async function boot() {
-  // Let Supabase finish Google OAuth (?code=...) before routing
+  let session = null;
   try {
-    await getSession();
-  } catch (_) {
-    /* still show login gate */
+    session = await recoverSession();
+  } catch (err) {
+    console.warn("Session recovery failed:", err?.message || err);
+  }
+
+  // If Google login succeeded, never stay on #/login
+  if (session && (location.hash === "#/login" || !location.hash)) {
+    location.hash = "#/";
   }
 
   const root = document.getElementById("app");

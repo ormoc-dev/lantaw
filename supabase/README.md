@@ -31,7 +31,9 @@ You reach Netlify again, but login fails. That means **Supabase cannot talk to G
 [URL Configuration](https://supabase.com/dashboard/project/xzsynwcpzljzgaghetem/auth/url-configuration)
 
 - Site URL: `https://lantaw.netlify.app`
-- Redirect URLs: `https://lantaw.netlify.app/**`
+- Redirect URLs (add both):
+  - `https://lantaw.netlify.app/**`
+  - `https://lantaw.netlify.app/#/**`
 
 ### 4. Test
 

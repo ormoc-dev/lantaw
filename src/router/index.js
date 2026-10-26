@@ -1,8 +1,9 @@
-import { getSession } from "../services/authService.js";
+import { getSession, onAuthChange } from "../services/authService.js";
 
 const routes = [];
 let current = null;
 let outlet = null;
+let rendering = false;
 
 const PUBLIC_PATHS = new Set(["/login"]);
 
@@ -15,6 +16,20 @@ export function createRouter(rootEl) {
   outlet = rootEl;
 
   window.addEventListener("hashchange", () => render());
+
+  // When Google finishes later, leave login and open home
+  onAuthChange((session) => {
+    const pathname = (location.hash.replace(/^#/, "") || "/").split("?")[0];
+    if (session && pathname === "/login") {
+      location.hash = "#/";
+      return;
+    }
+    if (!session && !PUBLIC_PATHS.has(pathname)) {
+      location.hash = "#/login";
+      return;
+    }
+    render();
+  });
 
   return {
     add(path, viewFn) {
@@ -55,47 +70,60 @@ function matchRoute(pathname) {
 }
 
 async function render() {
-  const pathname = (location.hash.replace(/^#/, "") || "/").split("?")[0];
-  let session = null;
+  if (rendering) return;
+  rendering = true;
 
   try {
-    session = await getSession();
-  } catch (_) {
-    session = null;
-  }
+    const pathname = (location.hash.replace(/^#/, "") || "/").split("?")[0];
+    let session = null;
 
-  // Login required for the whole app
-  if (!session && !PUBLIC_PATHS.has(pathname)) {
-    if (location.hash !== "#/login") {
-      location.hash = "#/login";
-    } else {
-      const login = matchRoute("/login");
-      if (login) {
-        outlet.innerHTML = "";
-        current = await login.route.viewFn(outlet, {});
+    try {
+      session = await getSession();
+    } catch (_) {
+      session = null;
+    }
+
+    if (!session && !PUBLIC_PATHS.has(pathname)) {
+      if (location.hash !== "#/login") {
+        location.hash = "#/login";
+      } else {
+        const login = matchRoute("/login");
+        if (login && outlet) {
+          if (current?.unmount) {
+            try {
+              current.unmount();
+            } catch (_) {
+              /* ignore */
+            }
+          }
+          outlet.innerHTML = "";
+          current = await login.route.viewFn(outlet, {});
+        }
+      }
+      return;
+    }
+
+    if (session && pathname === "/login") {
+      location.hash = "#/";
+      return;
+    }
+
+    const matched = matchRoute(pathname) || matchRoute("/");
+    if (!outlet || !matched) return;
+
+    if (current?.unmount) {
+      try {
+        current.unmount();
+      } catch (_) {
+        /* ignore */
       }
     }
-    return;
+
+    outlet.innerHTML = "";
+    current = await matched.route.viewFn(outlet, matched.params);
+  } finally {
+    rendering = false;
   }
-
-  if (session && pathname === "/login") {
-    location.hash = "#/";
-    return;
-  }
-
-  const matched = matchRoute(pathname) || matchRoute("/");
-  if (!outlet || !matched) return;
-
-  if (current?.unmount) {
-    try {
-      current.unmount();
-    } catch (_) {
-      /* ignore */
-    }
-  }
-
-  outlet.innerHTML = "";
-  current = await matched.route.viewFn(outlet, matched.params);
 }
 
 export function linkTo(path) {

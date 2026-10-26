@@ -3,16 +3,62 @@ import { env } from "../config/env.js";
 import { getBasePath } from "../config/base.js";
 
 function appRedirectUrl() {
+  // Land on home hash after Google — hash router needs #/
   const host = window.location.hostname;
   if (host !== "localhost" && host !== "127.0.0.1") {
-    return `${env.siteUrl.replace(/\/$/, "")}/`;
+    return `${env.siteUrl.replace(/\/$/, "")}/#/`;
   }
   const base = getBasePath();
-  return `${window.location.origin}${base || ""}/`;
+  return `${window.location.origin}${base || ""}/#/`;
+}
+
+function cleanAuthParamsFromUrl(hash = "#/") {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = hash.startsWith("#") ? hash : `#${hash}`;
+  window.history.replaceState({}, "", `${url.pathname}${url.hash}`);
 }
 
 export async function getSession() {
   const { data, error } = await getSupabase().auth.getSession();
+  if (error) throw error;
+  return data.session;
+}
+
+/**
+ * Finish Google/email OAuth before the router decides login vs home.
+ * PKCE returns ?code=... — getSession() alone is not enough.
+ */
+export async function recoverSession() {
+  const supabase = getSupabase();
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get("error")) {
+    // Leave query for LoginView to read, then it cleans up
+    return null;
+  }
+
+  const code = params.get("code");
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      console.error("OAuth code exchange failed:", error.message);
+      return null;
+    }
+    cleanAuthParamsFromUrl("#/");
+    return data.session;
+  }
+
+  // Implicit leftover tokens in hash (rare with PKCE)
+  if (window.location.hash.includes("access_token=")) {
+    const { data, error } = await supabase.auth.getSession();
+    if (!error && data.session) {
+      cleanAuthParamsFromUrl("#/");
+      return data.session;
+    }
+  }
+
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
   return data.session;
 }
@@ -27,7 +73,6 @@ export async function signInWithGoogle() {
     provider: "google",
     options: {
       redirectTo: appRedirectUrl(),
-      // Keep scopes minimal — extra params can complicate Google exchange
       scopes: "openid email profile",
     },
   });
