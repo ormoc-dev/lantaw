@@ -1,4 +1,9 @@
-import { displayNameFromUser, getSession, onAuthChange, signOut } from "../services/authService.js";
+import {
+  getSession,
+  onAuthChange,
+  resolveUserProfile,
+  signOut,
+} from "../services/authService.js";
 
 export async function AuthBar(host) {
   const bar = document.createElement("div");
@@ -11,8 +16,7 @@ export async function AuthBar(host) {
       return;
     }
 
-    const label = displayNameFromUser(session.user);
-    const avatar = session.user.user_metadata?.avatar_url;
+    const { name: label, avatar } = await resolveUserProfile(session.user);
 
     bar.innerHTML = `
       ${

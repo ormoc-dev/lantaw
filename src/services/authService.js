@@ -145,3 +145,56 @@ export function displayNameFromUser(user) {
     "Signed in"
   );
 }
+
+/** Google often uses `picture`; email apps may use `avatar_url`. */
+export function avatarFromUser(user) {
+  if (!user) return null;
+  const meta = user.user_metadata || {};
+  return (
+    meta.avatar_url ||
+    meta.picture ||
+    meta.avatar ||
+    meta.profile_image ||
+    null
+  );
+}
+
+/**
+ * Resolve display name + avatar from auth metadata and profiles table.
+ * Also backfills profiles.avatar_url / display_name when missing.
+ */
+export async function resolveUserProfile(user) {
+  if (!user) return { name: "", avatar: null, email: "" };
+
+  let profile = null;
+  try {
+    profile = await getProfile();
+  } catch (_) {
+    profile = null;
+  }
+
+  const name =
+    profile?.display_name ||
+    displayNameFromUser(user) ||
+    user.email ||
+    "Me";
+  const avatar = profile?.avatar_url || avatarFromUser(user) || null;
+  const email = profile?.email || user.email || "";
+
+  // Keep profiles in sync with Google/email identity when empty or stale.
+  const patch = {};
+  if (avatar && profile && profile.avatar_url !== avatar) patch.avatar_url = avatar;
+  if (!profile?.avatar_url && avatar) patch.avatar_url = avatar;
+  if (!profile?.display_name && name) patch.display_name = name;
+  if (!profile?.email && user.email) patch.email = user.email;
+
+  if (profile && Object.keys(patch).length) {
+    try {
+      await getSupabase().from("profiles").update(patch).eq("id", user.id);
+    } catch (_) {
+      /* non-blocking */
+    }
+  }
+
+  return { name, avatar, email, profile };
+}

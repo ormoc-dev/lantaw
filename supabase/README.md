@@ -58,3 +58,11 @@ Run this SQL in Supabase ? SQL Editor:
 - `supabase/migrations/202603260003_friends_chat_watch.sql`
 
 Optional: enable Realtime for `friend_messages` (Database ? Replication) so chat updates live.
+
+## Login IP monitor
+
+Run this SQL in Supabase ? SQL Editor:
+
+- `supabase/migrations/202603260004_login_ip_monitor.sql`
+
+Table: `public.login_events` (`user_id`, `email`, `ip_address`, `user_agent`, `logged_in_at`, `login_date`).
