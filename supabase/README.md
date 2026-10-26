@@ -10,13 +10,13 @@ You reach the deployed app again, but login fails. That means **Supabase cannot 
 2. Open the **Web application** OAuth client (ID should start with `833921049517-...`)
 3. Confirm:
    - **Authorized JavaScript origins**
-     - `https://lantaw-mocha.vercel.app`
+     - `https://lantaw.netlify.app`
      - `http://localhost` (optional for local)
    - **Authorized redirect URIs** — must be exactly:
      ```
      https://xzsynwcpzljzgaghetem.supabase.co/auth/v1/callback
      ```
-     (Do **not** put the Vercel site URL here — that belongs in origins only.)
+     (Do **not** put `lantaw.netlify.app` here — that belongs in origins only.)
 4. Click **Reset secret** / **Add secret** → copy the **new** Client Secret (`GOCSPX-...`)
 
 ### 2. Paste into Supabase
@@ -26,7 +26,7 @@ You reach the deployed app again, but login fails. That means **Supabase cannot 
 3. Paste the **same** Client ID + the **new** Client Secret
 4. Save
 
-### 3. Confirm Site URL (local + Vercel)
+### 3. Confirm Site URL (local + Netlify)
 
 You develop on **XAMPP localhost**, not `:3000`.
 
@@ -39,13 +39,13 @@ For local work, set:
 - **Redirect URLs:**
   - `http://localhost/movie/**`
   - `http://localhost/movie/#/**`
-  - `https://lantaw-mocha.vercel.app/**` (keep for production)
+  - `https://lantaw.netlify.app/**` (keep for production)
 
-For production on Vercel, set Site URL to `https://lantaw-mocha.vercel.app` (Redirect URLs can list both local and production).
+When you switch back to Netlify testing, set Site URL to `https://lantaw.netlify.app` (Redirect URLs can list both local and production).
 
 ### 4. Test
 
-Incognito → `https://lantaw-mocha.vercel.app/` → Continue with Google
+Incognito → `https://lantaw.netlify.app/` → Continue with Google
 
 ## Check logs if it still fails
 

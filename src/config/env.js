@@ -12,7 +12,7 @@ export const env = {
   siteUrl:
     typeof window !== "undefined"
       ? window.location.origin
-      : "https://lantaw-mocha.vercel.app",
+      : "https://lantaw.netlify.app",
   localSiteUrl: "http://localhost/movie",
 
   tmdbApiKey: "0da320d23d1a48a9bfc19aa7f2316470",

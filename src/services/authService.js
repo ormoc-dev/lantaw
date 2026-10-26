@@ -4,7 +4,7 @@ import { getBasePath } from "../config/base.js";
 
 function appRedirectUrl() {
   // Local XAMPP: http://localhost/movie/
-  // Production:  env.siteUrl (current deploy origin)
+  // Production:  env.siteUrl (Netlify domain)
   // recoverSession() sends the user to #/ after the code exchange.
   const host = window.location.hostname;
   if (host === "localhost" || host === "127.0.0.1") {
