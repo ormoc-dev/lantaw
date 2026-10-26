@@ -610,6 +610,12 @@ body:has(.detail) .app-header-bg {
   display: grid;
   gap: 0.4rem;
   position: relative;
+  z-index: 1;
+}
+
+/* Active search sits above the other field so its menu doesn't steal taps */
+.fp-search:focus-within {
+  z-index: 40;
 }
 
 .fp-search__label {
@@ -631,6 +637,10 @@ body:has(.detail) .app-header-bg {
   border-radius: 12px;
   padding: 0.85rem 2.4rem 0.85rem 0.95rem;
   font: inherit;
+  position: relative;
+  z-index: 2;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .fp-search__clear {
@@ -656,13 +666,16 @@ body:has(.detail) .app-header-bg {
   right: 0;
   top: calc(100% + 0.3rem);
   z-index: 20;
-  max-height: 220px;
+  max-height: min(220px, 40vh);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: #14090d;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   padding: 0.3rem;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .fp-search__menu[hidden],

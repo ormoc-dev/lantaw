@@ -34,6 +34,7 @@ export async function FriendsView(root) {
   let activeChatId = null;
   let unsubChat = null;
   let unsubPage = null;
+  let unsubWatchDoc = null;
   let liveTimer = null;
   let liveBusy = false;
   let liveQueued = false;
@@ -797,21 +798,52 @@ export async function FriendsView(root) {
       });
     };
 
-    friendInput?.addEventListener("focus", () => renderFriendMenu(friendInput.value));
+    const closeFriendMenu = () => {
+      if (friendMenu) friendMenu.hidden = true;
+    };
+    const closeMediaMenu = () => {
+      if (mediaMenu) mediaMenu.hidden = true;
+    };
+
+    // Friend dropdown sits absolutely over the title field — close it before title can receive taps
+    friendInput?.addEventListener("pointerdown", () => closeMediaMenu());
+    mediaInput?.addEventListener("pointerdown", () => closeFriendMenu());
+
+    friendInput?.addEventListener("focus", () => {
+      closeMediaMenu();
+      renderFriendMenu(friendInput.value);
+    });
     friendInput?.addEventListener("input", () => renderFriendMenu(friendInput.value));
     friendInput?.addEventListener("blur", () => {
-      setTimeout(() => {
-        friendMenu.hidden = true;
-      }, 120);
+      setTimeout(closeFriendMenu, 150);
     });
 
-    mediaInput?.addEventListener("focus", () => renderMediaMenu(mediaInput.value));
+    mediaInput?.addEventListener("focus", () => {
+      closeFriendMenu();
+      renderMediaMenu(mediaInput.value);
+    });
     mediaInput?.addEventListener("input", () => renderMediaMenu(mediaInput.value));
     mediaInput?.addEventListener("blur", () => {
-      setTimeout(() => {
-        mediaMenu.hidden = true;
-      }, 120);
+      setTimeout(closeMediaMenu, 150);
     });
+
+    // Tap outside either menu closes it (mobile-friendly)
+    unsubWatchDoc?.();
+    const onDocPointer = (e) => {
+      const t = e.target;
+      if (!(t instanceof Node)) return;
+      if (friendMenu && !friendMenu.hidden && !friendMenu.contains(t) && t !== friendInput) {
+        closeFriendMenu();
+      }
+      if (mediaMenu && !mediaMenu.hidden && !mediaMenu.contains(t) && t !== mediaInput) {
+        closeMediaMenu();
+      }
+    };
+    document.addEventListener("pointerdown", onDocPointer, true);
+    unsubWatchDoc = () => {
+      document.removeEventListener("pointerdown", onDocPointer, true);
+      unsubWatchDoc = null;
+    };
 
     friendClear?.addEventListener("click", () => setFriend(null));
     mediaClear?.addEventListener("click", () => setMedia(null));
@@ -946,6 +978,7 @@ export async function FriendsView(root) {
         clearTimeout(liveTimer);
         unsubChat?.();
         unsubPage?.();
+        unsubWatchDoc?.();
       },
     };
   }
@@ -960,6 +993,7 @@ export async function FriendsView(root) {
       clearTimeout(liveTimer);
       unsubChat?.();
       unsubPage?.();
+      unsubWatchDoc?.();
     },
   };
 }
