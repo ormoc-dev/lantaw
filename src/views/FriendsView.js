@@ -47,6 +47,13 @@ export async function FriendsView(root) {
   root.innerHTML = "";
   root.appendChild(page);
 
+  const syncChatLock = () => {
+    const locked = tab === "chat";
+    page.classList.toggle("friends-page--chat", locked);
+    root.classList.toggle("view--friends-chat", locked);
+    document.body.classList.toggle("is-friends-chat", locked);
+  };
+
   const avatarHtml = (p, sizeClass = "") => {
     const name = p?.display_name || p?.email || "?";
     const initial = name.slice(0, 1).toUpperCase();
@@ -121,6 +128,74 @@ export async function FriendsView(root) {
     partyList.innerHTML = partyListHtml();
   };
 
+  /** Update People lists in place — no full panel remount (avoids blink). */
+  const paintPeopleLists = () => {
+    const panel = page.querySelector("#friends-panel");
+    if (!panel || tab !== "friends") return;
+
+    const accepted = friendships.filter((f) => f.status === "accepted");
+    const incoming = friendships.filter((f) => f.isIncoming);
+    const outgoing = friendships.filter((f) => f.isOutgoing);
+
+    let reqSection = panel.querySelector("#requests-section");
+    if (incoming.length || outgoing.length) {
+      if (!reqSection) {
+        const find = panel.querySelector(".fp-find");
+        reqSection = document.createElement("section");
+        reqSection.className = "fp-block";
+        reqSection.id = "requests-section";
+        reqSection.innerHTML = `<h2>Requests</h2><div class="fp-list" id="requests-list"></div>`;
+        find?.after(reqSection);
+      }
+      const reqBox = reqSection.querySelector("#requests-list");
+      if (reqBox) {
+        reqBox.innerHTML = [
+          ...incoming.map((f) =>
+            personRow(
+              f.other,
+              `<button class="fp-btn fp-btn--solid" data-accept="${f.id}" type="button">Accept</button>
+               <button class="fp-btn" data-decline="${f.id}" type="button">Decline</button>`
+            )
+          ),
+          ...outgoing.map((f) =>
+            personRow(
+              f.other,
+              `<span class="fp-pill">Pending</span>
+               <button class="fp-btn" data-remove="${f.id}" type="button">Cancel</button>`
+            )
+          ),
+        ].join("");
+      }
+    } else {
+      reqSection?.remove();
+    }
+
+    let friendsBox = panel.querySelector("#friends-list");
+    if (!friendsBox) {
+      const block = document.createElement("section");
+      block.className = "fp-block";
+      block.innerHTML = `<h2>Your friends</h2><div class="fp-list" id="friends-list"></div>`;
+      panel.appendChild(block);
+      friendsBox = block.querySelector("#friends-list");
+    }
+    if (!accepted.length) {
+      friendsBox.innerHTML = emptyState(
+        "No friends yet",
+        "Add someone from suggestions above."
+      );
+    } else {
+      friendsBox.innerHTML = accepted
+        .map((f) =>
+          personRow(
+            f.other,
+            `<button class="fp-btn fp-btn--solid" data-chat="${f.id}" type="button">Chat</button>
+             <button class="fp-btn" data-remove="${f.id}" type="button">Remove</button>`
+          )
+        )
+        .join("");
+    }
+  };
+
   const personRow = (p, actions = "") => `
     <div class="fp-row">
       ${avatarHtml(p)}
@@ -173,6 +248,7 @@ export async function FriendsView(root) {
         renderPanel();
       });
     });
+    syncChatLock();
   };
 
   async function refreshData() {
@@ -220,7 +296,7 @@ export async function FriendsView(root) {
 
         ${
           incoming.length || outgoing.length
-            ? `<section class="fp-block">
+            ? `<section class="fp-block" id="requests-section">
                 <h2>Requests</h2>
                 <div class="fp-list" id="requests-list"></div>
               </section>`
@@ -298,26 +374,7 @@ export async function FriendsView(root) {
           )
           .join("")}</div>`;
 
-        suggestBox.querySelectorAll("[data-add]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const id = btn.dataset.add;
-            btn.disabled = true;
-            btn.textContent = "…";
-            peopleMsg.hidden = false;
-            peopleMsg.textContent = "Sending request…";
-            try {
-              await sendFriendRequest(id);
-              peopleMsg.textContent = "Request sent.";
-              await refreshData();
-              renderShell();
-              renderPanel();
-            } catch (err) {
-              peopleMsg.textContent = err.message || "Could not send request";
-              btn.disabled = false;
-              btn.textContent = "Add";
-            }
-          });
-        });
+        // Add handled via page delegation
       };
 
       const loadSuggestions = async () => {
@@ -374,39 +431,6 @@ export async function FriendsView(root) {
       });
 
       loadSuggestions();
-
-      panel.querySelectorAll("[data-accept]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          await respondToFriendRequest(btn.dataset.accept, true);
-          await refreshData();
-          renderShell();
-          renderPanel();
-        });
-      });
-      panel.querySelectorAll("[data-decline]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          await respondToFriendRequest(btn.dataset.decline, false);
-          await refreshData();
-          renderShell();
-          renderPanel();
-        });
-      });
-      panel.querySelectorAll("[data-remove]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          await removeFriendship(btn.dataset.remove);
-          await refreshData();
-          renderShell();
-          renderPanel();
-        });
-      });
-      panel.querySelectorAll("[data-chat]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          activeChatId = btn.dataset.chat;
-          tab = "chat";
-          renderShell();
-          renderPanel();
-        });
-      });
       return;
     }
 
@@ -867,18 +891,104 @@ export async function FriendsView(root) {
 
   }
 
-  // Stable delegation — survives soft list refreshes so Delete stays tappable
+  // Stable delegation — survives soft refreshes (no blink / lost taps)
   page.addEventListener("click", async (e) => {
     const t = e.target;
     if (!(t instanceof Element)) return;
+
+    const addBtn = t.closest("[data-add]");
+    const acceptFriend = t.closest("[data-accept]");
+    const declineFriend = t.closest("[data-decline]");
+    const removeFriend = t.closest("[data-remove]");
+    const chatBtn = t.closest("[data-chat]");
     const accept = t.closest("[data-party-accept]");
     const decline = t.closest("[data-party-decline]");
     const end = t.closest("[data-party-end]");
     const del = t.closest("[data-party-delete]");
-    if (!accept && !decline && !end && !del) return;
+
+    if (
+      !addBtn &&
+      !acceptFriend &&
+      !declineFriend &&
+      !removeFriend &&
+      !chatBtn &&
+      !accept &&
+      !decline &&
+      !end &&
+      !del
+    ) {
+      return;
+    }
 
     e.preventDefault();
     e.stopPropagation();
+
+    const afterPeopleChange = async () => {
+      await refreshData();
+      syncTabBadgesOnly();
+      paintPeopleLists();
+      notifyFriendsBadge();
+    };
+
+    if (addBtn) {
+      const id = addBtn.dataset.add;
+      addBtn.disabled = true;
+      addBtn.textContent = "…";
+      const peopleMsg = page.querySelector("#people-msg");
+      if (peopleMsg) {
+        peopleMsg.hidden = false;
+        peopleMsg.textContent = "Sending request…";
+      }
+      try {
+        await sendFriendRequest(id);
+        if (peopleMsg) peopleMsg.textContent = "Request sent.";
+        addBtn.closest(".fp-row")?.remove();
+        await afterPeopleChange();
+      } catch (err) {
+        if (peopleMsg) peopleMsg.textContent = err.message || "Could not send request";
+        addBtn.disabled = false;
+        addBtn.textContent = "Add";
+      }
+      return;
+    }
+
+    if (acceptFriend) {
+      try {
+        await respondToFriendRequest(acceptFriend.dataset.accept, true);
+        await afterPeopleChange();
+      } catch (err) {
+        alert(err.message || "Could not accept");
+      }
+      return;
+    }
+
+    if (declineFriend) {
+      try {
+        await respondToFriendRequest(declineFriend.dataset.decline, false);
+        await afterPeopleChange();
+      } catch (err) {
+        alert(err.message || "Could not decline");
+      }
+      return;
+    }
+
+    if (removeFriend) {
+      try {
+        await removeFriendship(removeFriend.dataset.remove);
+        await afterPeopleChange();
+      } catch (err) {
+        alert(err.message || "Could not remove");
+      }
+      return;
+    }
+
+    if (chatBtn) {
+      activeChatId = chatBtn.dataset.chat;
+      tab = "chat";
+      renderShell();
+      renderPanel();
+      return;
+    }
 
     if (accept) {
       const id = accept.dataset.partyAccept;
@@ -960,31 +1070,20 @@ export async function FriendsView(root) {
     liveBusy = true;
     try {
       const table = payload?.table;
-      const soft =
-        payload?.source === "poll" ||
-        payload?.source === "visible" ||
-        payload?.source === "badge-event" ||
-        payload?.source === "queued";
+      const fromBadge = payload?.source === "badge-event";
 
       await refreshData();
-      notifyFriendsBadge();
+      // Avoid badge-event → refresh → notify → badge-event loops
+      if (!fromBadge) notifyFriendsBadge();
 
-      // Soft refresh (poll): badges only — never remount People (causes blink)
-      if (soft) {
-        syncTabBadgesOnly();
-        if (tab === "watch") paintPartyList();
-        return;
-      }
+      syncTabBadgesOnly();
 
-      // Watch invites — refresh list only while on Watch
-      if (table === "watch_parties") {
-        syncTabBadgesOnly();
-        if (tab === "watch") paintPartyList();
-        return;
-      }
-
-      // Keep chat composer intact; only refresh bubbles for this thread
-      if (tab === "chat" && table === "friend_messages") {
+      // Always patch lists in place — never remount shell (blinks)
+      if (tab === "watch") {
+        paintPartyList();
+      } else if (tab === "friends") {
+        paintPeopleLists();
+      } else if (tab === "chat" && table === "friend_messages") {
         const row = payload?.new;
         if (row?.friendship_id && row.friendship_id === activeChatId && chatPaint) {
           try {
@@ -993,13 +1092,7 @@ export async function FriendsView(root) {
             /* ignore */
           }
         }
-        syncTabBadgesOnly();
-        return;
       }
-
-      // People / other changes — full refresh
-      renderShell();
-      await renderPanel();
     } finally {
       liveBusy = false;
       if (liveQueued) {
@@ -1050,6 +1143,9 @@ export async function FriendsView(root) {
       unsubChat?.();
       unsubPage?.();
       unsubWatchDoc?.();
+      page.classList.remove("friends-page--chat");
+      root.classList.remove("view--friends-chat");
+      document.body.classList.remove("is-friends-chat");
     },
   };
 }
