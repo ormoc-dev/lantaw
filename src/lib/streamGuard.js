@@ -7,23 +7,50 @@
  * Sandbox (no allow-popups / no top-navigation) does the heavy lifting.
  */
 
-export function attachStreamAdGuard(frame, { onSafeExit } = {}) {
+export function attachStreamAdGuard(
+  frame,
+  { onSafeExit, skipShield = false } = {}
+) {
   if (!frame) return () => {};
 
   const iframe = frame.querySelector("iframe");
-  let unlocked = false;
+  let unlocked = Boolean(skipShield);
   let lastInteract = 0;
+  let shield = null;
 
-  const shield = document.createElement("button");
-  shield.type = "button";
-  shield.className = "stream-shield";
-  shield.setAttribute("aria-label", "Tap to unlock player");
-  shield.innerHTML = `
-    <span class="stream-shield__pulse" aria-hidden="true"></span>
-    <span class="stream-shield__label">Tap to play</span>
-    <span class="stream-shield__hint">Blocks pop-up ads on the first click</span>
-  `;
-  frame.appendChild(shield);
+  // Solo watch only — watch-together host Play already starts the stream.
+  if (!skipShield) {
+    shield = document.createElement("button");
+    shield.type = "button";
+    shield.className = "stream-shield";
+    shield.setAttribute("aria-label", "Tap to unlock player");
+    shield.innerHTML = `
+      <span class="stream-shield__pulse" aria-hidden="true"></span>
+      <span class="stream-shield__label">Tap to play</span>
+      <span class="stream-shield__hint">Blocks pop-up ads on the first click</span>
+    `;
+    frame.appendChild(shield);
+
+    if (iframe) {
+      iframe.classList.add("is-guarded");
+      iframe.setAttribute("tabindex", "-1");
+    }
+
+    const unlock = () => {
+      if (unlocked) return;
+      unlocked = true;
+      lastInteract = Date.now();
+      shield.classList.add("is-leaving");
+      window.setTimeout(() => shield.remove(), 280);
+      iframe?.classList.remove("is-guarded");
+    };
+
+    shield.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      unlock();
+    });
+  }
 
   // Sit on top of the embed's own ← so that click exits our app cleanly.
   const exitBtn = document.createElement("button");
@@ -32,26 +59,6 @@ export function attachStreamAdGuard(frame, { onSafeExit } = {}) {
   exitBtn.setAttribute("aria-label", "Close player");
   exitBtn.innerHTML = `<span aria-hidden="true">←</span>`;
   frame.appendChild(exitBtn);
-
-  if (iframe) {
-    iframe.classList.add("is-guarded");
-    iframe.setAttribute("tabindex", "-1");
-  }
-
-  const unlock = () => {
-    if (unlocked) return;
-    unlocked = true;
-    lastInteract = Date.now();
-    shield.classList.add("is-leaving");
-    window.setTimeout(() => shield.remove(), 280);
-    iframe?.classList.remove("is-guarded");
-  };
-
-  shield.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    unlock();
-  });
 
   const safeExit = (e) => {
     e.preventDefault();
@@ -99,7 +106,7 @@ export function attachStreamAdGuard(frame, { onSafeExit } = {}) {
     window.open = nativeOpen;
     window.removeEventListener("blur", reclaimFocus);
     frame.removeEventListener("pointerdown", onFramePointer);
-    shield.remove();
+    shield?.remove();
     exitBtn.remove();
     iframe?.classList.remove("is-guarded");
   };

@@ -3515,94 +3515,122 @@ body:has(#view.view--auth) {
   }
 }
 
-/* —— Watch party page (dedicated room) —— */
-.wparty {
-  display: grid;
-  gap: 0.85rem;
-  max-width: 860px;
+/* —— Watch party page (full-screen dedicated room) —— */
+#view.view--watch-party {
+  max-width: none;
   width: 100%;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  overflow: hidden;
 }
 
-.wparty__head h1 {
-  margin: 0.15rem 0 0.25rem;
+body.is-watch-party {
+  overflow: hidden;
+  max-height: 100dvh;
+}
+
+.wparty {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 920px;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 auto;
+  padding: max(0.5rem, env(safe-area-inset-top)) 0.85rem
+    max(0.55rem, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.wparty__loading {
+  margin: 2rem 0.5rem;
+}
+
+.wparty__bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.wparty__back {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0.25rem 0.15rem;
+}
+
+.wparty__titles h1 {
+  margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.35rem, 4.5vw, 1.85rem);
+  font-size: clamp(1.1rem, 4vw, 1.4rem);
   letter-spacing: -0.03em;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wparty__meta {
-  margin: 0;
-  font-size: 0.88rem;
+  margin: 0.1rem 0 0;
+  font-size: 0.78rem;
 }
 
-.wparty__banner {
+.wparty__controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.85rem 1rem;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: color-mix(in srgb, var(--bg) 55%, rgba(255, 10, 67, 0.12));
+  gap: 0.4rem;
 }
 
-.wparty__banner--wait {
-  background:
-    linear-gradient(120deg, rgba(255, 10, 67, 0.16), transparent 55%),
-    color-mix(in srgb, var(--bg) 60%, #1a0a0e);
-}
-
-.wparty__banner--live {
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-}
-
-.wparty__banner--ended {
-  opacity: 0.92;
+.wparty__controls .btn--primary {
+  min-width: 5.5rem;
 }
 
 .wparty__player {
   display: grid;
-  gap: 0.55rem;
-  min-height: 12rem;
-}
-
-.wparty__waiting,
-.wparty__paused {
-  display: grid;
   gap: 0.35rem;
-  place-items: center;
-  text-align: center;
-  min-height: 12rem;
-  padding: 1.5rem 1rem;
-  border-radius: 14px;
-  border: 1px dashed rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.35);
+  min-height: 0;
 }
 
-.wparty__waiting strong,
-.wparty__paused strong {
-  font-size: 1.05rem;
+.wparty__player .detail__player-frame--embed {
+  aspect-ratio: 16 / 9;
+  max-height: min(40vh, 340px);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
 }
 
-.wparty__waiting .muted,
-.wparty__paused .muted {
+.wparty__waiting {
+  margin: 0.35rem 0;
   font-size: 0.85rem;
-  max-width: 24rem;
+  line-height: 1.35;
 }
 
-.wparty__calls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.45rem;
+.wparty__waiting[hidden] {
+  display: none !important;
 }
 
 .wparty__chat {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.7rem 0.75rem 0.8rem;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wparty__chat .wt__comments {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+}
+
+.wparty__chat .wt__compose {
+  padding-bottom: 0.05rem;
 }
 
 /* —— Watch together shared bits (chat / call chips) —— */

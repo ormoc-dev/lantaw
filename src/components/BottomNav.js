@@ -122,7 +122,8 @@ export function createBottomNav() {
     const hide =
       pathname === "/login" ||
       pathname === "/privacy" ||
-      pathname === "/reset-password";
+      pathname === "/reset-password" ||
+      pathname.startsWith("/watch-party/");
     wrap.hidden = hide;
     document.body.classList.toggle("has-mobile-nav", !hide);
     document.body.classList.remove("has-mobile-nav-open");

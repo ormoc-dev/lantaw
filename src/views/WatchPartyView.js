@@ -28,32 +28,57 @@ export async function WatchPartyView(root, params = {}) {
   let lastAppliedKey = "";
   const knownMsgIds = new Set();
 
+  root.classList.add("view--watch-party");
+  document.body.classList.add("is-watch-party");
+
+  const teardownChrome = () => {
+    root.classList.remove("view--watch-party");
+    document.body.classList.remove("is-watch-party");
+  };
+
   root.innerHTML = `
-    <a class="back" href="${linkTo("/friends")}">← Friends</a>
-    <p class="muted">Loading room…</p>
+    <section class="wparty">
+      <p class="muted wparty__loading">Loading room…</p>
+    </section>
   `;
 
   if (!partyId) {
     root.innerHTML = `<p class="muted">Missing watch party.</p>`;
-    return { unmount() {} };
+    return {
+      unmount() {
+        teardownChrome();
+      },
+    };
   }
 
   const me = await getUser();
   if (!me) {
     root.innerHTML = `<p class="muted">Sign in to join this room.</p>`;
-    return { unmount() {} };
+    return {
+      unmount() {
+        teardownChrome();
+      },
+    };
   }
 
   try {
     party = await getWatchParty(partyId);
   } catch (err) {
     root.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
-    return { unmount() {} };
+    return {
+      unmount() {
+        teardownChrome();
+      },
+    };
   }
 
   if (!party) {
     root.innerHTML = `<p class="muted">Watch party not found.</p>`;
-    return { unmount() {} };
+    return {
+      unmount() {
+        teardownChrome();
+      },
+    };
   }
 
   const mediaType = party.media_type === "tv" ? "tv" : "movie";
@@ -66,7 +91,11 @@ export async function WatchPartyView(root, params = {}) {
     root.innerHTML = `<p class="muted">Couldn’t load title. ${escapeHtml(
       err.message
     )}</p>`;
-    return { unmount() {} };
+    return {
+      unmount() {
+        teardownChrome();
+      },
+    };
   }
 
   const other = party.isHost ? party.guest : party.host;
@@ -75,51 +104,31 @@ export async function WatchPartyView(root, params = {}) {
 
   root.innerHTML = `
     <section class="wparty">
-      <a class="back" href="${linkTo("/friends")}">← Friends</a>
-      <header class="wparty__head">
-        <p class="fp-kicker">Watch together</p>
-        <h1>${escapeHtml(party.title || movie.title || "Room")}</h1>
-        <p class="muted wparty__meta">
-          ${
-            party.isHost
-              ? `You’re the host · with ${escapeHtml(otherName)}`
-              : `Hosted by ${escapeHtml(otherName)} · you just watch`
-          }
-        </p>
+      <header class="wparty__bar">
+        <a class="wparty__back" href="${linkTo("/friends")}" aria-label="Back to Friends">←</a>
+        <div class="wparty__titles">
+          <h1>${escapeHtml(party.title || movie.title || "Room")}</h1>
+          <p class="muted wparty__meta" id="wp-meta"></p>
+        </div>
       </header>
 
-      <div class="wparty__banner" id="wp-banner"></div>
+      <div class="wparty__controls" id="wp-banner"></div>
 
       <div class="wparty__player" id="wp-player">
-        <div class="wparty__waiting" id="wp-waiting">
-          <strong id="wp-waiting-title">Waiting…</strong>
-          <span class="muted" id="wp-waiting-copy"></span>
-        </div>
-      </div>
-
-      <div class="wparty__calls" aria-label="Call controls">
-        <button type="button" class="wt__call-btn" disabled>
-          <span class="wt__call-label">Mic</span>
-          <span class="wt__call-soon">Coming soon</span>
-        </button>
-        <button type="button" class="wt__call-btn" disabled>
-          <span class="wt__call-label">Video</span>
-          <span class="wt__call-soon">Coming soon</span>
-        </button>
+        <p class="muted wparty__waiting" id="wp-waiting">
+          <span id="wp-waiting-title">Waiting…</span>
+          <span id="wp-waiting-copy"></span>
+        </p>
       </div>
 
       <div class="wparty__chat">
-        <div class="wt__chat-head">
-          <strong>Room chat</strong>
-          <span class="muted">Talk while you watch</span>
-        </div>
         <div class="wt__comments" id="wp-comments" aria-live="polite"></div>
         <form class="wt__compose" id="wp-compose" autocomplete="off">
           <input
             type="text"
             name="body"
             maxlength="280"
-            placeholder="Write a message…"
+            placeholder="Message…"
             aria-label="Room chat"
           />
           <button type="submit" class="btn btn--primary">Send</button>
@@ -127,6 +136,8 @@ export async function WatchPartyView(root, params = {}) {
       </div>
     </section>
   `;
+
+  const metaEl = root.querySelector("#wp-meta");
 
   const banner = root.querySelector("#wp-banner");
   const playerEl = root.querySelector("#wp-player");
@@ -136,13 +147,18 @@ export async function WatchPartyView(root, params = {}) {
   const comments = root.querySelector("#wp-comments");
   const form = root.querySelector("#wp-compose");
 
+  const stripPlayerDom = () => {
+    playerEl.querySelector(".detail__player-frame")?.remove();
+    playerEl.querySelector(".stream-controls")?.remove();
+    playerEl.querySelector(".wparty__paused")?.remove();
+  };
+
   const setWaiting = (title, copy) => {
+    clearStream();
+    stripPlayerDom();
     waiting.hidden = false;
     waitingTitle.textContent = title;
-    waitingCopy.textContent = copy || "";
-    const frame = playerEl.querySelector(".detail__player-frame");
-    if (frame) frame.hidden = true;
-    playerEl.querySelector(".stream-controls")?.remove();
+    waitingCopy.textContent = copy ? ` · ${copy}` : "";
   };
 
   const clearStream = () => {
@@ -154,22 +170,22 @@ export async function WatchPartyView(root, params = {}) {
 
   const mountPlayer = (opts = {}) => {
     clearStream();
+    stripPlayerDom();
     waiting.hidden = true;
     const html = renderStreamPlayer(movie, mediaType, {
       ...opts,
       readOnly: !party.isHost,
     });
-    // Keep waiting node, replace the rest
-    playerEl.querySelector(".detail__player-frame")?.remove();
-    playerEl.querySelector(".stream-controls")?.remove();
-    playerEl.querySelector(".wparty__paused")?.remove();
     waiting.insertAdjacentHTML("afterend", html);
 
     const frame = playerEl.querySelector(".detail__player-frame--embed");
     if (frame) {
+      // No "Tap to play" — host Play already started the room stream
       cleanupStreamGuard = attachStreamAdGuard(frame, {
+        skipShield: true,
         onSafeExit: () => {
           clearStream();
+          stripPlayerDom();
           setWaiting(
             "Player closed",
             party.isHost
@@ -198,25 +214,6 @@ export async function WatchPartyView(root, params = {}) {
     }
   };
 
-  const showPaused = () => {
-    clearStream();
-    playerEl.querySelector(".detail__player-frame")?.remove();
-    playerEl.querySelector(".stream-controls")?.remove();
-    playerEl.querySelector(".wparty__paused")?.remove();
-    waiting.hidden = true;
-    const cover = document.createElement("div");
-    cover.className = "wparty__paused";
-    cover.innerHTML = `
-      <strong>Paused by host</strong>
-      <span class="muted">${
-        party.isHost
-          ? "Press Play to resume for both of you."
-          : "Hang tight — the host will resume."
-      }</span>
-    `;
-    waiting.after(cover);
-  };
-
   const applyPlayback = (row = party, { force = false } = {}) => {
     if (!row || row.status !== "active") return;
     const state = row.playback_state || "idle";
@@ -235,14 +232,15 @@ export async function WatchPartyView(root, params = {}) {
       return;
     }
     if (state === "paused") {
-      showPaused();
+      setWaiting(
+        "Paused",
+        party.isHost ? "Press Play to resume" : "Host will resume"
+      );
       return;
     }
     setWaiting(
-      party.isHost ? "Ready when you are" : "Waiting for host",
-      party.isHost
-        ? "Press Play — your friend will start with you."
-        : `${otherName} will press Play. You don’t need to do anything.`
+      party.isHost ? "Press Play to start" : "Waiting for host",
+      party.isHost ? `${otherName} follows you` : ""
     );
   };
 
@@ -250,30 +248,22 @@ export async function WatchPartyView(root, params = {}) {
     if (!party) return;
 
     if (party.status === "ended" || party.status === "declined") {
-      banner.className = "wparty__banner wparty__banner--ended";
-      banner.innerHTML = `
-        <strong>Room closed</strong>
-        <span class="muted">${
-          party.status === "declined" ? "Invite was declined." : "Session ended."
-        }</span>
-        <a class="fp-btn" href="${linkTo("/friends")}">Back to Friends</a>
-      `;
+      if (metaEl) {
+        metaEl.textContent =
+          party.status === "declined" ? "Invite declined" : "Session ended";
+      }
+      banner.className = "wparty__controls";
+      banner.innerHTML = `<a class="fp-btn" href="${linkTo("/friends")}">Back to Friends</a>`;
       clearStream();
       setWaiting("Session ended", "");
       return;
     }
 
     if (party.status === "invited") {
-      banner.className = "wparty__banner wparty__banner--wait";
+      banner.className = "wparty__controls";
       if (party.isHost) {
-        banner.innerHTML = `
-          <div class="wt__pulse" aria-hidden="true"></div>
-          <div class="wt__banner-copy">
-            <strong>Waiting for ${escapeHtml(otherName)}</strong>
-            <span class="muted">They’ll land in this room when they accept. Then you press Play.</span>
-          </div>
-          <button type="button" class="fp-btn" id="wp-cancel">Cancel</button>
-        `;
+        if (metaEl) metaEl.textContent = `Host · waiting for ${otherName}`;
+        banner.innerHTML = `<button type="button" class="fp-btn" id="wp-cancel">Cancel</button>`;
         banner.querySelector("#wp-cancel")?.addEventListener("click", async () => {
           try {
             await updateWatchPartyStatus(partyId, "ended");
@@ -281,20 +271,12 @@ export async function WatchPartyView(root, params = {}) {
             alert(err.message);
           }
         });
-        setWaiting(
-          "Waiting for guest",
-          "Play unlocks after they accept."
-        );
+        setWaiting("Waiting for guest", "then press Play");
       } else {
+        if (metaEl) metaEl.textContent = `${otherName} invited you`;
         banner.innerHTML = `
-          <div class="wt__banner-copy">
-            <strong>${escapeHtml(otherName)} invited you</strong>
-            <span class="muted">Accept to enter the room. The host starts the movie — you just watch.</span>
-          </div>
-          <div class="wt__banner-actions">
-            <button type="button" class="fp-btn fp-btn--solid" id="wp-accept">Accept</button>
-            <button type="button" class="fp-btn" id="wp-decline">Decline</button>
-          </div>
+          <button type="button" class="btn btn--primary" id="wp-accept">Accept</button>
+          <button type="button" class="fp-btn" id="wp-decline">Decline</button>
         `;
         banner.querySelector("#wp-accept")?.addEventListener("click", async () => {
           try {
@@ -310,32 +292,24 @@ export async function WatchPartyView(root, params = {}) {
             alert(err.message);
           }
         });
-        setWaiting("Invite pending", "Accept to join the room.");
+        setWaiting("Accept to join", "");
       }
       return;
     }
 
-    // active
+    // active — host gets Play / Pause / End; guest only Leave
+    banner.className = "wparty__controls";
     if (party.isHost) {
       const state = party.playback_state || "idle";
-      banner.className = "wparty__banner wparty__banner--live";
+      if (metaEl) metaEl.textContent = `Host · ${otherName} follows`;
       banner.innerHTML = `
-        <span class="wt__live-dot" aria-hidden="true"></span>
-        <div class="wt__banner-copy">
-          <strong>You’re hosting</strong>
-          <span class="muted">Only you control Play — ${escapeHtml(
-            otherName
-          )} follows automatically.</span>
-        </div>
-        <div class="wt__banner-actions">
-          <button type="button" class="btn btn--primary" id="wp-play">${
-            state === "paused" ? "Resume" : state === "playing" ? "Sync" : "Play"
-          }</button>
-          <button type="button" class="fp-btn" id="wp-pause" ${
-            state === "playing" ? "" : "hidden"
-          }>Pause</button>
-          <button type="button" class="fp-btn" id="wp-end">End</button>
-        </div>
+        <button type="button" class="btn btn--primary" id="wp-play">${
+          state === "paused" ? "Resume" : state === "playing" ? "Sync" : "Play"
+        }</button>
+        <button type="button" class="fp-btn" id="wp-pause" ${
+          state === "playing" ? "" : "hidden"
+        }>Pause</button>
+        <button type="button" class="fp-btn" id="wp-end">End</button>
       `;
       banner.querySelector("#wp-play")?.addEventListener("click", async () => {
         try {
@@ -367,15 +341,8 @@ export async function WatchPartyView(root, params = {}) {
         }
       });
     } else {
-      banner.className = "wparty__banner wparty__banner--live";
-      banner.innerHTML = `
-        <span class="wt__live-dot" aria-hidden="true"></span>
-        <div class="wt__banner-copy">
-          <strong>Watching with ${escapeHtml(otherName)}</strong>
-          <span class="muted">Host controls the movie — you don’t need to press Play.</span>
-        </div>
-        <button type="button" class="fp-btn" id="wp-leave">Leave</button>
-      `;
+      if (metaEl) metaEl.textContent = `Watching · ${otherName} controls`;
+      banner.innerHTML = `<button type="button" class="fp-btn" id="wp-leave">Leave</button>`;
       banner.querySelector("#wp-leave")?.addEventListener("click", async () => {
         try {
           await updateWatchPartyStatus(partyId, "ended");
@@ -482,6 +449,7 @@ export async function WatchPartyView(root, params = {}) {
     unmount() {
       unsub?.();
       clearStream();
+      teardownChrome();
     },
   };
 }
