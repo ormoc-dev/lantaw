@@ -101,24 +101,6 @@ export async function LoginView(root) {
             <button type="button" class="link-btn" id="switch-mode">Create an email account</button>
           </p>
 
-          <div class="auth-install" id="auth-install" hidden>
-            <div class="auth-install__copy">
-              <strong id="install-title">Install LANTAW</strong>
-              <p class="auth-install__hint" id="install-hint">Add to your home screen for a faster, full-screen app.</p>
-            </div>
-            <ol class="auth-install__steps" id="install-steps" hidden>
-              <li>Open this site in <strong>Safari</strong></li>
-              <li>Tap the <strong>Share</strong> button <span aria-hidden="true">□↑</span></li>
-              <li>Scroll and tap <strong>Add to Home Screen</strong></li>
-              <li>Tap <strong>Add</strong> — LANTAW opens like an app</li>
-            </ol>
-            <div class="auth-install__actions">
-              <button type="button" class="btn btn--primary auth-install__btn" id="install-btn">
-                Install app
-              </button>
-              <button type="button" class="link-btn" id="install-dismiss">Not now</button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -127,6 +109,34 @@ export async function LoginView(root) {
         <span class="auth-legal__sep" aria-hidden="true">|</span>
         <a href="mailto:anthony.capuyan23@gmail.com">Support</a>
       </footer>
+
+      <div class="auth-install-modal" id="auth-install" hidden>
+        <div class="auth-install-modal__backdrop" id="install-backdrop" aria-hidden="true"></div>
+        <div
+          class="auth-install-modal__sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="install-title"
+        >
+          <p class="auth-install-modal__eyebrow">LANTAW app</p>
+          <strong id="install-title">Install LANTAW</strong>
+          <p class="auth-install__hint" id="install-hint">
+            Add to your home screen for a faster, full-screen app.
+          </p>
+          <ol class="auth-install__steps" id="install-steps" hidden>
+            <li>Open this site in <strong>Safari</strong></li>
+            <li>Tap the <strong>Share</strong> button <span aria-hidden="true">□↑</span></li>
+            <li>Scroll and tap <strong>Add to Home Screen</strong></li>
+            <li>Tap <strong>Add</strong> — LANTAW opens like an app</li>
+          </ol>
+          <div class="auth-install__actions">
+            <button type="button" class="btn btn--primary auth-install__btn" id="install-btn">
+              Install app
+            </button>
+            <button type="button" class="link-btn" id="install-dismiss">Not now</button>
+          </div>
+        </div>
+      </div>
     </section>
   `;
 
@@ -314,29 +324,27 @@ export async function LoginView(root) {
 
   const paintInstall = (state = getInstallState()) => {
     if (!installBox) return;
-    const show =
-      state.canInstall && !state.dismissed && state.mode !== "installed";
+    // Always offer install on login unless already running as installed app
+    // or the user dismissed it this session.
+    const show = state.mode !== "installed" && !state.dismissed;
     installBox.hidden = !show;
-    installBox.classList.toggle("is-ios", state.ios);
+    installBox.classList.toggle("is-ios", Boolean(state.ios));
     if (!show) return;
 
     if (state.mode === "ios" || state.mode === "ios-other") {
       installTitle.textContent = "Add LANTAW to iPhone";
-      if (state.mode === "ios-other") {
-        installHint.textContent =
-          "For the best app install on iPhone, open this page in Safari first.";
-      } else {
-        installHint.textContent =
-          "iPhone installs PWAs from Safari’s Share menu — it only takes a few taps.";
-      }
-      installSteps.hidden = !stepsOpen;
-      installBtn.textContent = stepsOpen ? "Hide steps" : "Show install steps";
+      installHint.textContent =
+        state.mode === "ios-other"
+          ? "Open this page in Safari, then follow the steps below."
+          : "iPhone installs from Safari’s Share menu — tap below for steps.";
+      stepsOpen = true;
+      installSteps.hidden = false;
+      installBtn.textContent = "Got it";
       installBtn.onclick = () => {
-        stepsOpen = !stepsOpen;
-        installSteps.hidden = !stepsOpen;
-        installBtn.textContent = stepsOpen ? "Hide steps" : "Show install steps";
+        dismissInstallBanner();
+        paintInstall(getInstallState());
       };
-    } else {
+    } else if (state.mode === "prompt") {
       installTitle.textContent = "Install LANTAW";
       installHint.textContent =
         "Install on your device for a faster full-screen experience.";
@@ -354,15 +362,39 @@ export async function LoginView(root) {
           paintInstall(getInstallState());
         }
       };
+    } else {
+      installTitle.textContent = "Install LANTAW";
+      installHint.textContent =
+        "Use your browser menu → Install app / Add to Home screen. On iPhone, open in Safari first.";
+      installSteps.hidden = false;
+      installBtn.textContent = "Got it";
+      installBtn.onclick = () => {
+        dismissInstallBanner();
+        paintInstall(getInstallState());
+      };
     }
   };
 
-  installDismiss?.addEventListener("click", () => {
+  const closeInstall = () => {
     dismissInstallBanner();
     paintInstall(getInstallState());
-  });
+  };
+
+  installDismiss?.addEventListener("click", closeInstall);
+  root.querySelector("#install-backdrop")?.addEventListener("click", closeInstall);
+
+  // Clear a previous session dismiss so updates show the modal again once
+  try {
+    if (sessionStorage.getItem("lantaw-pwa-force") !== "53") {
+      sessionStorage.removeItem("lantaw-pwa-dismiss");
+      sessionStorage.setItem("lantaw-pwa-force", "53");
+    }
+  } catch {
+    /* ignore */
+  }
 
   unsubInstall = onInstallStateChange(paintInstall);
+  paintInstall(getInstallState());
 
   return {
     unmount() {

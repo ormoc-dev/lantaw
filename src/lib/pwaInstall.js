@@ -75,7 +75,8 @@ export function getInstallState() {
       dismissed,
     };
   }
-  return { canInstall: false, mode: "unavailable", ios, safari, dismissed };
+  // Desktop/Android: still show the install UI (browser may enable prompt later)
+  return { canInstall: true, mode: "manual", ios, safari, dismissed };
 }
 
 export function onInstallStateChange(fn) {

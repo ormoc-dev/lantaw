@@ -15,14 +15,19 @@ export async function PrivacyView(root) {
         <h1 class="legal-title">Privacy</h1>
         <div class="legal-copy">
           <p>
-            LANTAW keeps your email and display name so you can sign in, save a watchlist, and use friends features.
+            LANTAW is just for fun — gawa ng Ormocanon. Solo developer, not a company.
           </p>
           <p>
-            Catalog data comes from third-party services. Playback uses external embeds that may apply their own policies.
+            We only keep your email and display name so you can sign in, save a watchlist, and use friends features.
+            We don’t sell your info.
           </p>
           <p>
-            We do not sell your personal information.
-            Questions? <a href="mailto:anthony.capuyan23@gmail.com">anthony.capuyan23@gmail.com</a>
+            Catalog data comes from third-party services. Some streams may be pirated / unofficial embeds,
+            so don’t expect perfect quality, uptime, or every title to work.
+          </p>
+          <p>
+            Questions?
+            <a href="mailto:anthony.capuyan23@gmail.com">anthony.capuyan23@gmail.com</a>
           </p>
         </div>
       </div>
