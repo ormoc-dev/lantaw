@@ -40,10 +40,7 @@ async function renderMediaDetail(root, params, mediaType) {
   let cleanupPlayerHistory = () => {};
   let cleanupStreamGuard = () => {};
 
-  root.innerHTML = `
-    <a class="back" href="${linkTo("/")}">← Back</a>
-    ${loadingHtml()}
-  `;
+  root.innerHTML = loadingHtml();
 
   if (!id) {
     root.innerHTML = `<p class="muted">Missing id.</p>`;
@@ -58,53 +55,94 @@ async function renderMediaDetail(root, params, mediaType) {
     let saved = await isInWatchlist(Number(id));
     const trailerKey = movie.trailer?.key;
 
+    const year = movie.releaseDate
+      ? String(movie.releaseDate).slice(0, 4)
+      : "";
+    const runtime = movie.runtime ? `${movie.runtime} min` : "";
+    const rating =
+      movie.rating != null && !Number.isNaN(Number(movie.rating))
+        ? Number(movie.rating).toFixed(1)
+        : "";
+    const plot = movie.omdb?.plot || movie.overview || "";
+    const safeBackdrop = escapeAttr(movie.backdrop || "");
+    const safePoster = escapeAttr(movie.poster || "");
+
     root.innerHTML = `
-      <a class="back" href="${linkTo("/")}">← Back</a>
       <article class="detail">
         ${
           movie.backdrop
-            ? `<div class="detail__hero" style="background-image:url('${movie.backdrop}')"></div>`
+            ? `<div class="detail__hero" style="background-image:url('${safeBackdrop}')" aria-hidden="true"></div>`
             : ""
         }
-        <div class="detail__body">
+
+        <header class="detail__head">
           ${
             movie.poster
-              ? `<img class="detail__poster" src="${movie.poster}" alt="" />`
-              : ""
+              ? `<img class="detail__poster" src="${safePoster}" alt="" />`
+              : `<div class="detail__poster detail__poster--empty" aria-hidden="true"></div>`
           }
-          <div>
+          <div class="detail__intro">
+            <p class="detail__eyebrow">${
+              mediaType === "tv" ? "TV Show" : "Movie"
+            }</p>
             <h1>${escapeHtml(movie.title)}</h1>
-            <p class="muted">${movie.releaseDate || "—"} · ${
-              movie.runtime ? `${movie.runtime} min` : "—"
-            } · ${movie.rating?.toFixed?.(1) ?? "—"}</p>
-            <p class="muted">${escapeHtml(genres)}</p>
-            <div class="detail__omdb" id="omdb-ratings"></div>
-            <p>${escapeHtml(
-              movie.omdb?.plot || movie.overview || ""
-            )}</p>
+            <ul class="detail__facts" aria-label="Title facts">
+              ${year ? `<li>${escapeHtml(year)}</li>` : ""}
+              ${runtime ? `<li>${escapeHtml(runtime)}</li>` : ""}
+              ${
+                rating
+                  ? `<li><span class="detail__score">${escapeHtml(
+                      rating
+                    )}</span> TMDB</li>`
+                  : ""
+              }
+            </ul>
             ${
-              movie.omdb?.director || movie.omdb?.actors
-                ? `<p class="muted detail__credits-line">${
-                    movie.omdb.director
-                      ? `<strong>Director:</strong> ${escapeHtml(
-                          movie.omdb.director
-                        )}`
-                      : ""
-                  }${
-                    movie.omdb.director && movie.omdb.actors ? " · " : ""
-                  }${
-                    movie.omdb.actors
-                      ? `<strong>Actors:</strong> ${escapeHtml(
-                          movie.omdb.actors
-                        )}`
-                      : ""
-                  }</p>`
+              genres
+                ? `<p class="detail__genres">${escapeHtml(genres)}</p>`
                 : ""
             }
-            <div class="detail__actions" id="actions"></div>
-            <div class="detail__player" id="player" hidden></div>
           </div>
-        </div>
+        </header>
+
+        <div class="detail__actions" id="actions"></div>
+
+        <div class="detail__player" id="player" hidden></div>
+
+        ${
+          plot
+            ? `<section class="detail__block">
+                <h2>Overview</h2>
+                <p class="detail__plot">${escapeHtml(plot)}</p>
+              </section>`
+            : ""
+        }
+
+        <div class="detail__omdb" id="omdb-ratings" hidden></div>
+
+        ${
+          movie.omdb?.director || movie.omdb?.actors
+            ? `<section class="detail__block">
+                <h2>Credits</h2>
+                <dl class="detail__credits">
+                  ${
+                    movie.omdb.director
+                      ? `<div><dt>Director</dt><dd>${escapeHtml(
+                          movie.omdb.director
+                        )}</dd></div>`
+                      : ""
+                  }
+                  ${
+                    movie.omdb.actors
+                      ? `<div><dt>Cast</dt><dd>${escapeHtml(
+                          movie.omdb.actors
+                        )}</dd></div>`
+                      : ""
+                  }
+                </dl>
+              </section>`
+            : ""
+        }
       </article>
     `;
 
@@ -113,27 +151,35 @@ async function renderMediaDetail(root, params, mediaType) {
     const omdbBox = root.querySelector("#omdb-ratings");
 
     if (movie.omdb?.ratings?.length) {
+      omdbBox.hidden = false;
       omdbBox.innerHTML = `
-        <div class="omdb-ratings">
-          ${movie.omdb.ratings
-            .map(
-              (r) => `
-            <div class="omdb-ratings__item">
-              <span>${escapeHtml(r.Source)}</span>
-              <strong>${escapeHtml(r.Value)}</strong>
-            </div>`
-            )
-            .join("")}
-        </div>
+        <section class="detail__block">
+          <h2>Ratings</h2>
+          <div class="omdb-ratings">
+            ${movie.omdb.ratings
+              .map(
+                (r) => `
+              <div class="omdb-ratings__item">
+                <span>${escapeHtml(shortRatingSource(r.Source))}</span>
+                <strong>${escapeHtml(r.Value)}</strong>
+              </div>`
+              )
+              .join("")}
+          </div>
+        </section>
       `;
     } else if (movie.omdb?.imdbRating) {
+      omdbBox.hidden = false;
       omdbBox.innerHTML = `
-        <div class="omdb-ratings">
-          <div class="omdb-ratings__item">
-            <span>Internet Movie Database</span>
-            <strong>${escapeHtml(movie.omdb.imdbRating)}/10</strong>
+        <section class="detail__block">
+          <h2>Ratings</h2>
+          <div class="omdb-ratings">
+            <div class="omdb-ratings__item">
+              <span>IMDb</span>
+              <strong>${escapeHtml(movie.omdb.imdbRating)}/10</strong>
+            </div>
           </div>
-        </div>
+        </section>
       `;
     }
 
@@ -303,7 +349,6 @@ async function renderMediaDetail(root, params, mediaType) {
     tools.appendChild(watchBtn);
   } catch (err) {
     root.innerHTML = `
-      <a class="back" href="${linkTo("/")}">← Back</a>
       <p class="muted">${escapeHtml(err.message)}</p>
     `;
   }
@@ -316,9 +361,26 @@ async function renderMediaDetail(root, params, mediaType) {
   };
 }
 
+function shortRatingSource(source = "") {
+  const s = String(source);
+  if (/internet movie database/i.test(s)) return "IMDb";
+  if (/rotten tomatoes/i.test(s)) return "Rotten Tomatoes";
+  if (/metacritic/i.test(s)) return "Metacritic";
+  return s;
+}
+
 function escapeHtml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function escapeAttr(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("'", "&#39;")
+    .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 }
