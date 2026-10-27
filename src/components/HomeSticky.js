@@ -1,11 +1,31 @@
+import { linkTo } from "../router/index.js";
+
 /**
  * Search + category chips that stay fixed on mobile while content scrolls.
- * @param {HTMLElement[]} children
+ * Desktop: brand + search rail, then a full-width category tab strip.
+ * @param {HTMLElement[]} children — typically [HomeSearchBar, CategoryChips]
  */
 export function HomeSticky(children = []) {
   const sticky = document.createElement("div");
   sticky.className = "home-sticky";
-  sticky.append(...children);
+
+  const [search, chips, ...rest] = children;
+
+  const rail = document.createElement("div");
+  rail.className = "home-sticky__rail";
+
+  const brand = document.createElement("a");
+  brand.className = "home-sticky__brand";
+  brand.href = linkTo("/");
+  brand.setAttribute("aria-label", "LANTAW home");
+  brand.innerHTML = `<span class="home-sticky__mark">LANTAW</span>`;
+
+  if (search) rail.append(brand, search);
+  else rail.append(brand);
+
+  sticky.append(rail);
+  if (chips) sticky.append(chips);
+  if (rest.length) sticky.append(...rest);
 
   const spacer = document.createElement("div");
   spacer.className = "home-sticky-spacer";

@@ -14,6 +14,7 @@ import {
   bindStreamControls,
   renderStreamPlayer,
 } from "../lib/streamEmbed.js";
+import { loadingHtml } from "../components/Loading.js";
 
 /**
  * Dedicated watch-together room.
@@ -38,7 +39,7 @@ export async function WatchPartyView(root, params = {}) {
 
   root.innerHTML = `
     <section class="wparty">
-      <p class="muted wparty__loading">Loading room…</p>
+      ${loadingHtml({ className: "wparty__loading" })}
     </section>
   `;
 

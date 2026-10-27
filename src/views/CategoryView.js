@@ -8,6 +8,7 @@ import { HomeSearchBar } from "../components/HomeSearchBar.js";
 import { HomeSticky } from "../components/HomeSticky.js";
 import { MediaGrid } from "../components/MediaGrid.js";
 import { FeaturedHero } from "../components/FeaturedHero.js";
+import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
 
 /**
@@ -28,9 +29,7 @@ export async function CategoryView(root, { categoryId } = {}) {
   const body = document.createElement("div");
   body.className = "category-page__body";
   body.id = "home-body";
-  body.innerHTML = `<p class="muted home-loading">Loading ${escapeHtml(
-    category.title
-  )}…</p>`;
+  body.innerHTML = loadingHtml({ className: "home-loading" });
 
   const searchBar = HomeSearchBar({
     onSearch: async (q) => {
@@ -38,7 +37,7 @@ export async function CategoryView(root, { categoryId } = {}) {
         location.hash = linkTo(category.path);
         return;
       }
-      body.innerHTML = `<p class="muted home-loading">Searching…</p>`;
+      body.innerHTML = loadingHtml({ className: "home-loading" });
       try {
         const { results } = await searchMovies(q);
         body.innerHTML = "";
@@ -70,6 +69,14 @@ export async function CategoryView(root, { categoryId } = {}) {
     const { results } = await getCategoryItems(category.id);
     body.innerHTML = "";
 
+    if (results.length) {
+      body.appendChild(
+        FeaturedHero({
+          items: results.filter((r) => r.backdrop || r.poster).slice(0, 5),
+        })
+      );
+    }
+
     const head = document.createElement("header");
     head.className = "category-page__head";
     head.innerHTML = `
@@ -77,10 +84,6 @@ export async function CategoryView(root, { categoryId } = {}) {
       <p class="muted">${escapeHtml(category.description)}</p>
     `;
     body.appendChild(head);
-
-    if (results[0]) {
-      body.appendChild(FeaturedHero({ item: results[0] }));
-    }
 
     body.appendChild(
       MediaGrid({

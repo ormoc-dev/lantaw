@@ -1,5 +1,6 @@
 import { getTopRatedMovies } from "../services/movieService.js";
 import { MovieCard } from "../components/MovieCard.js";
+import { loadingHtml } from "../components/Loading.js";
 
 export async function RankingsView(root) {
   root.innerHTML = `
@@ -9,7 +10,7 @@ export async function RankingsView(root) {
         <p class="muted">Highest rated titles on TMDB.</p>
       </header>
       <ol class="rank-list" id="list">
-        <li class="muted">Loading…</li>
+        <li>${loadingHtml()}</li>
       </ol>
     </div>
   `;

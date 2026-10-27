@@ -4,6 +4,7 @@ import {
   searchMovies,
 } from "../services/movieService.js";
 import { MovieCard } from "../components/MovieCard.js";
+import { loadingHtml } from "../components/Loading.js";
 
 export async function DiscoverView(root) {
   root.innerHTML = `
@@ -50,7 +51,7 @@ export async function DiscoverView(root) {
           el.classList.remove("is-active");
         });
         btn.classList.add("is-active");
-        grid.innerHTML = `<p class="muted">Loading…</p>`;
+        grid.innerHTML = loadingHtml();
         const { results } = await getMoviesByGenre(g.id);
         renderMovies(results);
       });
@@ -68,7 +69,7 @@ export async function DiscoverView(root) {
     genresEl.querySelectorAll(".category-chip").forEach((el) => {
       el.classList.remove("is-active");
     });
-    grid.innerHTML = `<p class="muted">Searching…</p>`;
+    grid.innerHTML = loadingHtml();
     try {
       const { results } = await searchMovies(q);
       renderMovies(results);

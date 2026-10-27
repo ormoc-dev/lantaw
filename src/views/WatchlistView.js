@@ -1,5 +1,6 @@
 import { linkTo } from "../router/index.js";
 import { listWatchlist, removeFromWatchlist } from "../services/watchlistService.js";
+import { loadingHtml } from "../components/Loading.js";
 
 export async function WatchlistView(root) {
   root.innerHTML = `
@@ -11,12 +12,15 @@ export async function WatchlistView(root) {
         <div class="wl-head__copy">
           <p class="wl-kicker">Saved</p>
           <h1>Watchlist</h1>
-          <p class="muted wl-count" id="wl-count">Loading…</p>
+          <p class="muted wl-count" id="wl-count">${loadingHtml({
+            className: "ui-loading--inline",
+            size: "sm",
+          })}</p>
         </div>
       </header>
 
       <div class="wl-body" id="wl-body">
-        <p class="muted">Loading…</p>
+        ${loadingHtml()}
       </div>
     </div>
   `;

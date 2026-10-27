@@ -1,4 +1,5 @@
 import { getTrendingMovies } from "../services/movieService.js";
+import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
 
 export async function ShortsView(root) {
@@ -9,7 +10,7 @@ export async function ShortsView(root) {
         <p class="muted">Quick hits from what’s trending now.</p>
       </header>
       <div class="shorts-feed" id="feed">
-        <p class="muted">Loading…</p>
+        ${loadingHtml()}
       </div>
     </div>
   `;

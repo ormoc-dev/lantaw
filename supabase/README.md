@@ -79,8 +79,16 @@ Or enable Realtime in **Database → Publications → supabase_realtime** for:
 
 ## Login IP monitor
 
-Run this SQL in Supabase ? SQL Editor:
+Run this SQL in Supabase → SQL Editor:
 
 - `supabase/migrations/202603260004_login_ip_monitor.sql`
 
 Table: `public.login_events` (`user_id`, `email`, `ip_address`, `user_agent`, `logged_in_at`, `login_date`).
+
+## Delete own account
+
+Run this SQL so Me → Delete account works:
+
+- `supabase/migrations/202603260010_delete_own_account.sql`
+
+Creates `public.delete_own_account()` (security definer) so a signed-in user can remove their `auth.users` row; related profile/watchlist rows cascade.

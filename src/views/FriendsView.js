@@ -19,6 +19,7 @@ import {
   updateWatchPartyStatus,
   deleteWatchParty,
 } from "../services/friendsService.js";
+import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
 
 export async function FriendsView(root) {
@@ -475,7 +476,10 @@ export async function FriendsView(root) {
                 <span class="muted">${escapeHtml(current.other?.email || "")}</span>
               </div>
             </header>
-            <div class="fp-chat__messages" id="chat-messages"><p class="muted">Loading…</p></div>
+            <div class="fp-chat__messages" id="chat-messages">${loadingHtml({
+              className: "ui-loading--inline",
+              size: "sm",
+            })}</div>
             <form class="fp-chat__compose" id="chat-form">
               <input
                 type="text"

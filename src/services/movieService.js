@@ -63,7 +63,7 @@ export async function getMoviesByGenre(genreId, page = 1) {
 }
 
 function itemKey(item) {
-  return `${item.mediaType}:${item.id}`;
+  return `${item?.mediaType || "movie"}:${item?.id}`;
 }
 
 /** Merge lists, drop duplicates, sort highest rating first. */
@@ -192,16 +192,36 @@ export async function getCategoryItems(categoryId) {
 
 const HOME_PREVIEW = 12;
 
-function previewList(results = [], hero = null, limit = HOME_PREVIEW) {
+function previewList(results = [], heroes = [], limit = HOME_PREVIEW) {
+  const blocked = new Set(
+    (Array.isArray(heroes) ? heroes : heroes ? [heroes] : [])
+      .filter(Boolean)
+      .map(itemKey)
+  );
   return results
-    .filter(
-      (item) =>
-        !hero || item.id !== hero.id || item.mediaType !== hero.mediaType
-    )
+    .filter((item) => item?.id && !blocked.has(itemKey(item)))
     .slice(0, limit);
 }
 
-/** Home: hero + separate sections per category */
+function pickHeroes(...lists) {
+  const seen = new Set();
+  const out = [];
+  for (const list of lists) {
+    for (const item of list || []) {
+      if (!item?.id) continue;
+      // Prefer titles with a backdrop for the banner
+      if (!item.backdrop && !item.poster) continue;
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+      if (out.length >= 6) return out;
+    }
+  }
+  return out;
+}
+
+/** Home: hero carousel + separate sections per category */
 export async function getHomeCatalog() {
   const [recommend, filipino, vivamax, movies, tv, anime] = await Promise.all([
     getRecommended(),
@@ -212,52 +232,60 @@ export async function getHomeCatalog() {
     getAnime(),
   ]);
 
-  const hero = recommend.results[0] || movies.results[0] || null;
+  const heroes = pickHeroes(
+    recommend.results,
+    movies.results,
+    tv.results,
+    anime.results,
+    filipino.results
+  );
+  const hero = heroes[0] || null;
 
   return {
     hero,
+    heroes,
     sections: [
       {
         id: "recommend",
         title: "Recommend",
         description: "Highest-rated movies and TV.",
         path: "/recommend",
-        items: previewList(recommend.results, hero),
+        items: previewList(recommend.results, heroes),
       },
       {
         id: "filipino",
         title: "Filipino",
         description: "Movies and shows from the Philippines.",
         path: "/filipino",
-        items: previewList(filipino.results, hero),
+        items: previewList(filipino.results, heroes),
       },
       {
         id: "vivamax",
         title: "Vivamax",
         description: "Bold Filipino originals from Vivamax.",
         path: "/vivamax",
-        items: previewList(vivamax.results, hero),
+        items: previewList(vivamax.results, heroes),
       },
       {
         id: "movies",
         title: "Movies",
         description: "Popular movies worldwide.",
         path: "/movies",
-        items: previewList(movies.results, hero),
+        items: previewList(movies.results, heroes),
       },
       {
         id: "tv-show",
         title: "TV Show",
         description: "Popular TV series to binge.",
         path: "/tv-show",
-        items: previewList(tv.results, hero),
+        items: previewList(tv.results, heroes),
       },
       {
         id: "anime",
         title: "Anime",
         description: "Japanese animation movies and series.",
         path: "/anime",
-        items: previewList(anime.results, hero),
+        items: previewList(anime.results, heroes),
       },
     ],
   };

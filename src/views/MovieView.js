@@ -11,6 +11,7 @@ import {
   bindStreamControls,
   renderStreamPlayer,
 } from "../lib/streamEmbed.js";
+import { loadingHtml } from "../components/Loading.js";
 
 export async function MovieView(root, params = {}) {
   return renderMediaDetail(root, params, "movie");
@@ -41,7 +42,7 @@ async function renderMediaDetail(root, params, mediaType) {
 
   root.innerHTML = `
     <a class="back" href="${linkTo("/")}">← Back</a>
-    <p class="muted">Loading…</p>
+    ${loadingHtml()}
   `;
 
   if (!id) {

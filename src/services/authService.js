@@ -161,6 +161,31 @@ export async function signOut() {
   if (error) throw error;
 }
 
+/**
+ * Permanently delete the signed-in auth user (and cascaded profile data).
+ * Requires migration 202603260010_delete_own_account.sql
+ */
+export async function deleteOwnAccount() {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in to delete your account");
+
+  const { error } = await getSupabase().rpc("delete_own_account");
+  if (error) {
+    if (/function|schema cache|does not exist/i.test(error.message || "")) {
+      throw new Error(
+        "Delete account needs setup — run supabase/migrations/202603260010_delete_own_account.sql"
+      );
+    }
+    throw error;
+  }
+
+  try {
+    await getSupabase().auth.signOut();
+  } catch {
+    /* session may already be invalid */
+  }
+}
+
 export function onAuthChange(callback) {
   const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
     callback(session, event);

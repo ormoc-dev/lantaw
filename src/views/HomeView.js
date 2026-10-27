@@ -5,6 +5,7 @@ import { CategoryChips } from "../components/CategoryChips.js";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
 import { HomeSticky } from "../components/HomeSticky.js";
 import { FeaturedHero } from "../components/FeaturedHero.js";
+import { loadingHtml } from "../components/Loading.js";
 import { MediaGrid } from "../components/MediaGrid.js";
 import { linkTo } from "../router/index.js";
 
@@ -14,7 +15,7 @@ export async function HomeView(root) {
 
   const body = document.createElement("div");
   body.id = "home-body";
-  body.innerHTML = `<p class="muted home-loading">Loading…</p>`;
+  body.innerHTML = loadingHtml({ className: "home-loading" });
 
   const searchBar = HomeSearchBar({
     onSearch: async (q) => {
@@ -22,7 +23,7 @@ export async function HomeView(root) {
         location.hash = "#/";
         return;
       }
-      body.innerHTML = `<p class="muted home-loading">Searching…</p>`;
+      body.innerHTML = loadingHtml({ className: "home-loading" });
       try {
         const { results } = await searchMovies(q);
         body.innerHTML = "";
@@ -73,7 +74,9 @@ export async function HomeView(root) {
     const catalog = await getHomeCatalog();
     body.innerHTML = "";
 
-    if (catalog.hero) {
+    if (catalog.heroes?.length) {
+      body.appendChild(FeaturedHero({ items: catalog.heroes }));
+    } else if (catalog.hero) {
       body.appendChild(FeaturedHero({ item: catalog.hero }));
     }
 
@@ -106,7 +109,12 @@ export async function HomeView(root) {
     `;
   }
 
-  return { unmount: () => top.unmount() };
+  return {
+    unmount() {
+      body.querySelector(".home-hero")?._unmountFeatured?.();
+      top.unmount();
+    },
+  };
 }
 
 function escapeHtml(str = "") {
