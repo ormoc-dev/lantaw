@@ -103,9 +103,15 @@ export async function LoginView(root) {
 
           <div class="auth-install" id="auth-install" hidden>
             <div class="auth-install__copy">
-              <strong>Install LANTAW</strong>
+              <strong id="install-title">Install LANTAW</strong>
               <p class="auth-install__hint" id="install-hint">Add to your home screen for a faster, full-screen app.</p>
             </div>
+            <ol class="auth-install__steps" id="install-steps" hidden>
+              <li>Open this site in <strong>Safari</strong></li>
+              <li>Tap the <strong>Share</strong> button <span aria-hidden="true">□↑</span></li>
+              <li>Scroll and tap <strong>Add to Home Screen</strong></li>
+              <li>Tap <strong>Add</strong> — LANTAW opens like an app</li>
+            </ol>
             <div class="auth-install__actions">
               <button type="button" class="btn btn--primary auth-install__btn" id="install-btn">
                 Install app
@@ -300,27 +306,41 @@ export async function LoginView(root) {
   const installBox = root.querySelector("#auth-install");
   const installBtn = root.querySelector("#install-btn");
   const installHint = root.querySelector("#install-hint");
+  const installTitle = root.querySelector("#install-title");
+  const installSteps = root.querySelector("#install-steps");
   const installDismiss = root.querySelector("#install-dismiss");
   let unsubInstall = () => {};
+  let stepsOpen = false;
 
   const paintInstall = (state = getInstallState()) => {
     if (!installBox) return;
     const show =
       state.canInstall && !state.dismissed && state.mode !== "installed";
     installBox.hidden = !show;
+    installBox.classList.toggle("is-ios", state.ios);
     if (!show) return;
 
-    if (state.mode === "ios") {
-      installHint.textContent =
-        "On iPhone: tap Share, then “Add to Home Screen”.";
-      installBtn.textContent = "How to install";
-      installBtn.onclick = () => {
+    if (state.mode === "ios" || state.mode === "ios-other") {
+      installTitle.textContent = "Add LANTAW to iPhone";
+      if (state.mode === "ios-other") {
         installHint.textContent =
-          "Safari → Share (□↑) → Add to Home Screen → Add.";
+          "For the best app install on iPhone, open this page in Safari first.";
+      } else {
+        installHint.textContent =
+          "iPhone installs PWAs from Safari’s Share menu — it only takes a few taps.";
+      }
+      installSteps.hidden = !stepsOpen;
+      installBtn.textContent = stepsOpen ? "Hide steps" : "Show install steps";
+      installBtn.onclick = () => {
+        stepsOpen = !stepsOpen;
+        installSteps.hidden = !stepsOpen;
+        installBtn.textContent = stepsOpen ? "Hide steps" : "Show install steps";
       };
     } else {
+      installTitle.textContent = "Install LANTAW";
       installHint.textContent =
-        "Install LANTAW on your device for a faster full-screen experience.";
+        "Install on your device for a faster full-screen experience.";
+      installSteps.hidden = true;
       installBtn.textContent = "Install app";
       installBtn.onclick = async () => {
         installBtn.disabled = true;

@@ -6,16 +6,28 @@ const listeners = new Set();
 let deferredPrompt = null;
 let ready = false;
 
-function isStandalone() {
+export function isStandalone() {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
+    window.matchMedia("(display-mode: fullscreen)").matches ||
     window.navigator.standalone === true
   );
 }
 
-function isIos() {
+export function isIosDevice() {
   const ua = window.navigator.userAgent || "";
-  return /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
+  const iOS = /iPad|iPhone|iPod/.test(ua);
+  const iPadOs = ua.includes("Mac") && "ontouchend" in document;
+  return iOS || iPadOs;
+}
+
+export function isSafariBrowser() {
+  const ua = window.navigator.userAgent || "";
+  // Chrome/Firefox/Edge on iOS include CriOS/FxiOS/EdgiOS
+  const isVendorSafari =
+    /Safari/i.test(ua) &&
+    !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Android/i.test(ua);
+  return isVendorSafari || (isIosDevice() && !/CriOS|FxiOS|EdgiOS/i.test(ua) && /Safari/i.test(ua));
 }
 
 function notify() {
@@ -38,16 +50,32 @@ export function getInstallState() {
     }
   })();
 
+  const ios = isIosDevice();
+  const safari = isSafariBrowser();
+
   if (isStandalone()) {
-    return { canInstall: false, mode: "installed", ios: isIos(), dismissed };
+    return {
+      canInstall: false,
+      mode: "installed",
+      ios,
+      safari,
+      dismissed,
+    };
   }
   if (deferredPrompt) {
-    return { canInstall: true, mode: "prompt", ios: isIos(), dismissed };
+    return { canInstall: true, mode: "prompt", ios, safari, dismissed };
   }
-  if (isIos()) {
-    return { canInstall: true, mode: "ios", ios: true, dismissed };
+  if (ios) {
+    // iPhone/iPad never get beforeinstallprompt — guide Add to Home Screen
+    return {
+      canInstall: true,
+      mode: safari ? "ios" : "ios-other",
+      ios: true,
+      safari,
+      dismissed,
+    };
   }
-  return { canInstall: false, mode: "unavailable", ios: false, dismissed };
+  return { canInstall: false, mode: "unavailable", ios, safari, dismissed };
 }
 
 export function onInstallStateChange(fn) {
@@ -81,7 +109,7 @@ export async function registerServiceWorker() {
   const swUrl = `${base}/sw.js`;
   try {
     const reg = await navigator.serviceWorker.register(swUrl, {
-      scope: `${base}/` || "/",
+      scope: base ? `${base}/` : "/",
     });
     ready = true;
     notify();
@@ -106,7 +134,6 @@ export function initPwaInstall() {
     notify();
   });
 
-  // Register after load so first paint stays light
   if (document.readyState === "complete") {
     registerServiceWorker();
   } else {
@@ -114,7 +141,6 @@ export function initPwaInstall() {
   }
 
   notify();
-  return () => {};
 }
 
 export function isPwaReady() {

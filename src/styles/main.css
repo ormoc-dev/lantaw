@@ -2521,6 +2521,29 @@ body:has(#view.view--auth) {
   line-height: 1.4;
 }
 
+.auth-install__steps {
+  margin: 0;
+  padding: 0.65rem 0.85rem 0.65rem 1.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.auth-install__steps[hidden] {
+  display: none !important;
+}
+
+.auth-install__steps li strong {
+  font-family: var(--font);
+  font-size: inherit;
+  letter-spacing: 0;
+}
+
 .auth-install__actions {
   display: flex;
   flex-wrap: wrap;
@@ -2534,6 +2557,10 @@ body:has(#view.view--auth) {
   min-height: 2.4rem;
   padding-inline: 1rem;
   font-size: 0.9rem;
+}
+
+.auth-install.is-ios .auth-install__btn {
+  width: 100%;
 }
 
 .auth-legal {

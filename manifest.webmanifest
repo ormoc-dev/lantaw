@@ -5,11 +5,14 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
   "orientation": "any",
   "background_color": "#0c0708",
   "theme_color": "#ff0a43",
   "categories": ["entertainment", "video"],
   "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "public/icons/LOGO.png",
