@@ -187,7 +187,11 @@ async function renderMediaDetail(root, params, mediaType) {
       playerOpen = true;
       player.innerHTML = `
         <div class="detail__player-head">
-          <button class="btn btn--ghost" id="player-close" type="button">Close player</button>
+          <p class="detail__player-label">Now playing</p>
+          <button class="detail__icon-btn" id="player-close" type="button" aria-label="Close player">
+            <span aria-hidden="true">✕</span>
+            <span>Close</span>
+          </button>
         </div>
         ${html}
       `;
@@ -223,12 +227,16 @@ async function renderMediaDetail(root, params, mediaType) {
       });
     };
 
-    const streamBtn = document.createElement("button");
-    streamBtn.type = "button";
-    streamBtn.className = "btn btn--primary";
-    streamBtn.textContent = partyId ? "Watch together" : "Watch now";
-    streamBtn.addEventListener("click", () => openStream());
-    actions.appendChild(streamBtn);
+    actions.classList.add("detail__actions");
+    actions.innerHTML = `
+      <button type="button" class="btn btn--primary detail__watch-btn" id="watch-now">
+        ${partyId ? "Watch together" : "Watch now"}
+      </button>
+      <div class="detail__tools" id="detail-tools"></div>
+    `;
+
+    const tools = actions.querySelector("#detail-tools");
+    actions.querySelector("#watch-now")?.addEventListener("click", () => openStream());
 
     if (partyId && togetherRoot) {
       watchTogether = await mountWatchTogether({
@@ -246,8 +254,8 @@ async function renderMediaDetail(root, params, mediaType) {
     if (trailerKey) {
       const trailerBtn = document.createElement("button");
       trailerBtn.type = "button";
-      trailerBtn.className = "btn btn--ghost";
-      trailerBtn.textContent = "Watch trailer";
+      trailerBtn.className = "detail__chip";
+      trailerBtn.innerHTML = `<span aria-hidden="true">▶</span><span>Trailer</span>`;
       trailerBtn.addEventListener("click", () => {
         showPlayer(`
           <div class="detail__player-frame">
@@ -270,14 +278,17 @@ async function renderMediaDetail(root, params, mediaType) {
           >Open on YouTube</a>
         `);
       });
-      actions.appendChild(trailerBtn);
+      tools.appendChild(trailerBtn);
     }
 
     const watchBtn = document.createElement("button");
     watchBtn.type = "button";
-    watchBtn.className = "btn btn--ghost";
+    watchBtn.className = "detail__chip";
     const syncLabel = () => {
-      watchBtn.textContent = saved ? "Remove from watchlist" : "Add to watchlist";
+      watchBtn.classList.toggle("is-active", saved);
+      watchBtn.innerHTML = saved
+        ? `<span aria-hidden="true">★</span><span>In watchlist</span>`
+        : `<span aria-hidden="true">☆</span><span>Watchlist</span>`;
     };
     syncLabel();
     watchBtn.addEventListener("click", async () => {
@@ -301,7 +312,7 @@ async function renderMediaDetail(root, params, mediaType) {
         watchBtn.disabled = false;
       }
     });
-    actions.appendChild(watchBtn);
+    tools.appendChild(watchBtn);
   } catch (err) {
     root.innerHTML = `
       <a class="back" href="${linkTo("/")}">← Back</a>

@@ -12,6 +12,7 @@ import {
   removeFriendship,
   respondToFriendRequest,
   searchProfiles,
+  listSuggestedProfiles,
   notifyFriendsBadge,
   sendFriendRequest,
   sendMessage,
@@ -133,28 +134,34 @@ export async function FriendsView(root) {
       const accepted = friendships.filter((f) => f.status === "accepted");
       const incoming = friendships.filter((f) => f.isIncoming);
       const outgoing = friendships.filter((f) => f.isOutgoing);
+      const relatedIds = friendships
+        .map((f) => f.other?.id)
+        .filter(Boolean);
 
       panel.innerHTML = `
-        <form class="fp-add" id="add-friend">
-          <div class="fp-search fp-add__search">
+        <section class="fp-find">
+          <div class="fp-find__head">
+            <div>
+              <h2>Find people</h2>
+              <p class="muted fp-lead">Browse suggestions or search by name / email.</p>
+            </div>
+          </div>
+          <div class="fp-search fp-find__search">
             <div class="fp-search__box">
               <input
                 type="search"
-                id="add-search"
-                placeholder="Search by name or email"
+                id="people-search"
+                placeholder="Filter by name or email"
                 autocomplete="off"
-                aria-autocomplete="list"
-                aria-controls="add-menu"
               />
-              <button type="button" class="fp-search__clear" id="add-clear" hidden>✕</button>
+              <button type="button" class="fp-search__clear" id="people-clear" hidden>✕</button>
             </div>
-            <div class="fp-search__menu" id="add-menu" hidden></div>
-            <input type="hidden" name="userId" id="add-user-id" />
-            <div class="fp-search__picked" id="add-picked" hidden></div>
           </div>
-          <button class="btn btn--primary" type="submit" id="add-submit" disabled>Add</button>
-        </form>
-        <p class="fp-status muted" id="add-msg">Type a name or email to see suggestions.</p>
+          <p class="fp-status muted" id="people-msg" hidden></p>
+          <div class="fp-suggest" id="suggest-list">
+            <p class="muted fp-suggest__loading">Loading people…</p>
+          </div>
+        </section>
 
         ${
           incoming.length || outgoing.length
@@ -195,7 +202,7 @@ export async function FriendsView(root) {
       if (!accepted.length) {
         friendsBox.innerHTML = emptyState(
           "No friends yet",
-          "Search by name or email to send a request."
+          "Add someone from suggestions above."
         );
       } else {
         friendsBox.innerHTML = accepted
@@ -209,138 +216,109 @@ export async function FriendsView(root) {
           .join("");
       }
 
-      const addForm = panel.querySelector("#add-friend");
-      const addInput = panel.querySelector("#add-search");
-      const addMenu = panel.querySelector("#add-menu");
-      const addUserId = panel.querySelector("#add-user-id");
-      const addPicked = panel.querySelector("#add-picked");
-      const addClear = panel.querySelector("#add-clear");
-      const addSubmit = panel.querySelector("#add-submit");
-      const addMsg = panel.querySelector("#add-msg");
-      let selectedAdd = null;
-      let addSearchToken = 0;
-      let addSearchTimer = null;
+      const suggestBox = panel.querySelector("#suggest-list");
+      const peopleSearch = panel.querySelector("#people-search");
+      const peopleClear = panel.querySelector("#people-clear");
+      const peopleMsg = panel.querySelector("#people-msg");
+      let suggestAll = [];
+      let suggestToken = 0;
+      let searchTimer = null;
 
-      const setAddPick = (profile) => {
-        selectedAdd = profile;
-        if (!profile) {
-          addUserId.value = "";
-          addPicked.hidden = true;
-          addPicked.innerHTML = "";
-          addClear.hidden = true;
-          addInput.hidden = false;
-          addInput.value = "";
-          addSubmit.disabled = true;
-          addMenu.hidden = true;
-          return;
-        }
-        addUserId.value = profile.id;
-        addInput.hidden = true;
-        addClear.hidden = false;
-        addPicked.hidden = false;
-        addPicked.innerHTML = `
-          ${avatarHtml(profile, "fp-avatar--sm")}
-          <div>
-            <strong>${escapeHtml(profile.display_name || "User")}</strong>
-            <span>${escapeHtml(profile.email || "")}</span>
-          </div>
-        `;
-        addMenu.hidden = true;
-        addSubmit.disabled = false;
-        addMsg.textContent = "Ready to send request.";
-      };
-
-      const paintAddMenu = (rows) => {
+      const paintSuggestions = (rows, { filtered = false } = {}) => {
         if (!rows.length) {
-          addMenu.innerHTML = `<p class="fp-search__empty">No people found</p>`;
-          addMenu.hidden = false;
+          suggestBox.innerHTML = emptyState(
+            filtered ? "No matches" : "No suggestions yet",
+            filtered
+              ? "Try another name or email."
+              : "When more people join LANTAW, they’ll show up here."
+          );
           return;
         }
-        addMenu.innerHTML = rows
-          .map(
-            (p) => `
-          <button type="button" class="fp-search__option" data-add-id="${p.id}">
-            ${avatarHtml(p, "fp-avatar--sm")}
-            <div>
-              <strong>${escapeHtml(p.display_name || "User")}</strong>
-              <span>${escapeHtml(p.email || "")}</span>
-            </div>
-          </button>`
+        suggestBox.innerHTML = `<div class="fp-list">${rows
+          .map((p) =>
+            personRow(
+              p,
+              `<button class="fp-btn fp-btn--solid" type="button" data-add="${p.id}">Add</button>`
+            )
           )
-          .join("");
-        addMenu.hidden = false;
-        addMenu.querySelectorAll("[data-add-id]").forEach((btn) => {
-          btn.addEventListener("mousedown", (ev) => ev.preventDefault());
-          btn.addEventListener("click", () => {
-            const profile = rows.find((r) => r.id === btn.dataset.addId);
-            setAddPick(profile || null);
+          .join("")}</div>`;
+
+        suggestBox.querySelectorAll("[data-add]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = btn.dataset.add;
+            btn.disabled = true;
+            btn.textContent = "…";
+            peopleMsg.hidden = false;
+            peopleMsg.textContent = "Sending request…";
+            try {
+              await sendFriendRequest(id);
+              peopleMsg.textContent = "Request sent.";
+              await refreshData();
+              renderShell();
+              renderPanel();
+            } catch (err) {
+              peopleMsg.textContent = err.message || "Could not send request";
+              btn.disabled = false;
+              btn.textContent = "Add";
+            }
           });
         });
       };
 
-      const runAddSearch = async (query) => {
-        const token = ++addSearchToken;
-        const q = query.trim();
-        if (q.length < 1) {
-          addMenu.hidden = true;
-          addMenu.innerHTML = "";
-          return;
-        }
-        addMsg.textContent = "Searching…";
+      const loadSuggestions = async () => {
+        const token = ++suggestToken;
         try {
-          const rows = await searchProfiles(q, { limit: 8 });
-          if (token !== addSearchToken) return;
-          paintAddMenu(rows);
-          addMsg.textContent = rows.length
-            ? "Pick someone from the list."
-            : "No match — try another name or email.";
+          suggestAll = await listSuggestedProfiles({
+            limit: 32,
+            excludeIds: relatedIds,
+          });
+          if (token !== suggestToken) return;
+          paintSuggestions(suggestAll);
         } catch (err) {
-          if (token !== addSearchToken) return;
-          addMenu.hidden = true;
-          addMsg.textContent = err.message || "Search failed";
+          if (token !== suggestToken) return;
+          suggestBox.innerHTML = emptyState(
+            "Couldn’t load people",
+            err.message || "Try again in a moment."
+          );
         }
       };
 
-      addInput.addEventListener("input", () => {
-        if (selectedAdd) setAddPick(null);
-        addSubmit.disabled = true;
-        clearTimeout(addSearchTimer);
-        addSearchTimer = setTimeout(() => runAddSearch(addInput.value), 220);
-      });
-
-      addInput.addEventListener("focus", () => {
-        if (addInput.value.trim() && !selectedAdd) runAddSearch(addInput.value);
-      });
-
-      addClear.addEventListener("click", () => {
-        setAddPick(null);
-        addMsg.textContent = "Type a name or email to see suggestions.";
-        addInput.focus();
-      });
-
-      addForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const form = e.currentTarget;
-        const userId = addUserId.value || selectedAdd?.id;
-        if (!userId) {
-          addMsg.textContent = "Pick a person from the suggestions first.";
+      const runFilter = async (query) => {
+        const token = ++suggestToken;
+        const q = query.trim();
+        peopleClear.hidden = !q;
+        if (!q) {
+          peopleMsg.hidden = true;
+          paintSuggestions(suggestAll);
           return;
         }
-        addMsg.textContent = "Sending…";
-        addSubmit.disabled = true;
+        peopleMsg.hidden = false;
+        peopleMsg.textContent = "Searching…";
         try {
-          await sendFriendRequest(userId);
-          addMsg.textContent = "Request sent.";
-          if (form && typeof form.reset === "function") form.reset();
-          setAddPick(null);
-          await refreshData();
-          renderShell();
-          renderPanel();
+          const rows = await searchProfiles(q, { limit: 16 });
+          if (token !== suggestToken) return;
+          const filtered = rows.filter((r) => !relatedIds.includes(r.id));
+          paintSuggestions(filtered, { filtered: true });
+          peopleMsg.hidden = true;
         } catch (err) {
-          addMsg.textContent = err.message || "Could not send request";
-          addSubmit.disabled = false;
+          if (token !== suggestToken) return;
+          peopleMsg.textContent = err.message || "Search failed";
         }
+      };
+
+      peopleSearch.addEventListener("input", () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => runFilter(peopleSearch.value), 200);
       });
+      peopleClear.addEventListener("click", () => {
+        peopleSearch.value = "";
+        peopleClear.hidden = true;
+        peopleMsg.hidden = true;
+        paintSuggestions(suggestAll);
+        peopleSearch.focus();
+      });
+
+      loadSuggestions();
 
       panel.querySelectorAll("[data-accept]").forEach((btn) => {
         btn.addEventListener("click", async () => {

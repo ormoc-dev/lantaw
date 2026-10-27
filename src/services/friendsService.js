@@ -109,6 +109,29 @@ export async function searchProfiles(query, { limit = 8 } = {}) {
   return [...map.values()].slice(0, limit);
 }
 
+/**
+ * Browse people to add — excludes self and anyone already in a friendship row.
+ */
+export async function listSuggestedProfiles({ limit = 24, excludeIds = [] } = {}) {
+  const user = await requireUser();
+  const blocked = new Set(
+    [user.id, ...excludeIds].filter(Boolean).map(String)
+  );
+
+  const { data, error } = await getSupabase()
+    .from("profiles")
+    .select("id, email, display_name, avatar_url")
+    .neq("id", user.id)
+    .order("display_name", { ascending: true })
+    .limit(Math.min(80, Math.max(limit * 3, limit)));
+
+  if (error) throw error;
+
+  return (data || [])
+    .filter((row) => row?.id && !blocked.has(String(row.id)))
+    .slice(0, limit);
+}
+
 /** @deprecated Prefer searchProfiles — kept for exact single lookup. */
 export async function searchProfileByEmail(email) {
   const q = String(email || "").trim().toLowerCase();

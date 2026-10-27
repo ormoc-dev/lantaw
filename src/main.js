@@ -1,5 +1,8 @@
 import { createApp } from "./App.js";
 import { recoverSession } from "./services/authService.js";
+import { initPwaInstall } from "./lib/pwaInstall.js";
+
+initPwaInstall();
 
 async function boot() {
   let session = null;
@@ -34,10 +37,3 @@ boot().catch((err) => {
     )}</small></p>`;
   }
 });
-
-// Clear stale service workers so localhost always shows latest files
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.getRegistrations().then((regs) => {
-    regs.forEach((r) => r.unregister());
-  });
-}

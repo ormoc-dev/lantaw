@@ -7,6 +7,12 @@ import {
   signUp,
 } from "../services/authService.js";
 import { getTrendingMovies } from "../services/movieService.js";
+import {
+  dismissInstallBanner,
+  getInstallState,
+  onInstallStateChange,
+  promptInstall,
+} from "../lib/pwaInstall.js";
 
 export async function LoginView(root) {
   const session = await getSession();
@@ -94,6 +100,19 @@ export async function LoginView(root) {
             New here?
             <button type="button" class="link-btn" id="switch-mode">Create an email account</button>
           </p>
+
+          <div class="auth-install" id="auth-install" hidden>
+            <div class="auth-install__copy">
+              <strong>Install LANTAW</strong>
+              <p class="auth-install__hint" id="install-hint">Add to your home screen for a faster, full-screen app.</p>
+            </div>
+            <div class="auth-install__actions">
+              <button type="button" class="btn btn--primary auth-install__btn" id="install-btn">
+                Install app
+              </button>
+              <button type="button" class="link-btn" id="install-dismiss">Not now</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -278,8 +297,56 @@ export async function LoginView(root) {
 
   loadAuthShowcase(root.querySelector("#auth-showcase-track"));
 
+  const installBox = root.querySelector("#auth-install");
+  const installBtn = root.querySelector("#install-btn");
+  const installHint = root.querySelector("#install-hint");
+  const installDismiss = root.querySelector("#install-dismiss");
+  let unsubInstall = () => {};
+
+  const paintInstall = (state = getInstallState()) => {
+    if (!installBox) return;
+    const show =
+      state.canInstall && !state.dismissed && state.mode !== "installed";
+    installBox.hidden = !show;
+    if (!show) return;
+
+    if (state.mode === "ios") {
+      installHint.textContent =
+        "On iPhone: tap Share, then “Add to Home Screen”.";
+      installBtn.textContent = "How to install";
+      installBtn.onclick = () => {
+        installHint.textContent =
+          "Safari → Share (□↑) → Add to Home Screen → Add.";
+      };
+    } else {
+      installHint.textContent =
+        "Install LANTAW on your device for a faster full-screen experience.";
+      installBtn.textContent = "Install app";
+      installBtn.onclick = async () => {
+        installBtn.disabled = true;
+        try {
+          const result = await promptInstall();
+          if (result?.outcome === "accepted") {
+            installBox.hidden = true;
+          }
+        } finally {
+          installBtn.disabled = false;
+          paintInstall(getInstallState());
+        }
+      };
+    }
+  };
+
+  installDismiss?.addEventListener("click", () => {
+    dismissInstallBanner();
+    paintInstall(getInstallState());
+  });
+
+  unsubInstall = onInstallStateChange(paintInstall);
+
   return {
     unmount() {
+      unsubInstall();
       root.classList.remove("view--auth");
     },
   };
