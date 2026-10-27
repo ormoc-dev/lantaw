@@ -1,7 +1,7 @@
 /**
  * App base path:
- * - Root deploys (Vercel/Netlify) → ""
- * - XAMPP /movie/ → "/movie"
+ * - Root deploys (Vercel) → ""
+ * - XAMPP localhost → "/movie"
  */
 export function getBasePath() {
   const path = window.location.pathname.replace(/\/index\.html$/, "");

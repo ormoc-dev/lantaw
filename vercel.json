@@ -1,3 +1,10 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/((?!src/|public/|sw\\.js|manifest\\.webmanifest).*)",
+      "destination": "/index.html"
+    }
+  ]
 }

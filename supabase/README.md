@@ -38,7 +38,7 @@ Add **all** of these under **Redirect URLs** (keep them listed even when Site UR
 - `https://lantaw-us.vercel.app/**`
 - `https://lantaw-us.vercel.app/`
 
-**Site URL:** `https://lantaw-us.vercel.app` (or `http://localhost/movie/` while developing locally).
+**Site URL:** `https://lantaw-us.vercel.app` (or `http://localhost/movie/` for XAMPP).
 
 Open the app at the **same** host you allowlisted (don’t start on `127.0.0.1` if only `localhost` is listed).
 

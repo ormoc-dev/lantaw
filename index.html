@@ -11,10 +11,11 @@
     <link rel="icon" type="image/png" href="public/icons/LOGO.png" />
     <link rel="apple-touch-icon" href="public/icons/LOGO.png" />
     <script>
-      // Fix asset paths for root deploys (Vercel/Netlify) and XAMPP (/movie/)
+      // Root on Vercel; /movie/ on XAMPP localhost
       (function () {
         var path = location.pathname.replace(/\/index\.html$/, "");
-        var base = path === "/movie" || path.indexOf("/movie/") === 0 ? "/movie/" : "/";
+        var base =
+          path === "/movie" || path.indexOf("/movie/") === 0 ? "/movie/" : "/";
         var b = document.createElement("base");
         b.href = base;
         document.head.prepend(b);
@@ -26,12 +27,12 @@
       href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="manifest" href="manifest.webmanifest?v=34" />
-    <link rel="stylesheet" href="src/styles/main.css?v=34" />
+    <link rel="manifest" href="manifest.webmanifest?v=36" />
+    <link rel="stylesheet" href="src/styles/main.css?v=36" />
     <title>Lantaw</title>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="src/main.js?v=34"></script>
+    <script type="module" src="src/main.js?v=36"></script>
   </body>
 </html>
