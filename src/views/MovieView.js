@@ -10,6 +10,7 @@ import {
   getPartyIdFromHash,
   mountWatchTogether,
 } from "../components/WatchTogether.js";
+import { attachStreamAdGuard } from "../lib/streamGuard.js";
 
 export async function MovieView(root, params = {}) {
   return renderMediaDetail(root, params, "movie");
@@ -22,6 +23,7 @@ export async function TvView(root, params = {}) {
 async function renderMediaDetail(root, params, mediaType) {
   const id = params.id;
   let cleanupPlayerHistory = () => {};
+  let cleanupStreamGuard = () => {};
   let watchTogether = null;
 
   root.innerHTML = `
@@ -142,14 +144,45 @@ async function renderMediaDetail(root, params, mediaType) {
       window.removeEventListener("popstate", onPopState);
     };
 
+    const closePlayerSafely = () => {
+      if (!playerOpen) return;
+      // Blank the embed first so its ← / unload hooks can't open ads.
+      const iframe = player.querySelector("#stream-iframe");
+      if (iframe) iframe.src = "about:blank";
+      cleanupStreamGuard();
+      cleanupStreamGuard = () => {};
+      player.hidden = true;
+      player.innerHTML = "";
+      playerOpen = false;
+      if (pushedPlayerState) {
+        ignoreNextPop = true;
+        pushedPlayerState = false;
+        history.back();
+      }
+    };
+
     const hidePlayer = () => {
       if (!playerOpen) return;
+      const iframe = player.querySelector("#stream-iframe");
+      if (iframe) iframe.src = "about:blank";
+      cleanupStreamGuard();
+      cleanupStreamGuard = () => {};
       player.hidden = true;
       player.innerHTML = "";
       playerOpen = false;
     };
 
+    const mountStreamGuard = () => {
+      cleanupStreamGuard();
+      cleanupStreamGuard = attachStreamAdGuard(
+        player.querySelector(".detail__player-frame--embed"),
+        { onSafeExit: closePlayerSafely }
+      );
+    };
+
     const showPlayer = (html, afterMount) => {
+      cleanupStreamGuard();
+      cleanupStreamGuard = () => {};
       player.hidden = false;
       playerOpen = true;
       player.innerHTML = `
@@ -160,13 +193,7 @@ async function renderMediaDetail(root, params, mediaType) {
       `;
 
       const closeBtn = player.querySelector("#player-close");
-      closeBtn?.addEventListener("click", () => {
-        hidePlayer();
-        if (pushedPlayerState) {
-          ignoreNextPop = true;
-          history.back();
-        }
-      });
+      closeBtn?.addEventListener("click", () => closePlayerSafely());
 
       if (!pushedPlayerState) {
         history.pushState({ detailPlayer: true }, "");
@@ -188,7 +215,10 @@ async function renderMediaDetail(root, params, mediaType) {
 
     const openStream = () => {
       showPlayer(renderStreamPlayer(movie, mediaType), () => {
-        bindStreamControls(player, movie, mediaType);
+        mountStreamGuard();
+        bindStreamControls(player, movie, mediaType, () => {
+          mountStreamGuard();
+        });
         dockWatchChat();
       });
     };
@@ -281,6 +311,7 @@ async function renderMediaDetail(root, params, mediaType) {
 
   return {
     unmount() {
+      cleanupStreamGuard();
       cleanupPlayerHistory();
       watchTogether?.unmount?.();
     },
@@ -382,7 +413,7 @@ function renderStreamPlayer(movie, mediaType) {
   `;
 }
 
-function bindStreamControls(player, movie, mediaType) {
+function bindStreamControls(player, movie, mediaType, onReload) {
   if (mediaType !== "tv") return;
 
   const seasonEl = player.querySelector("#stream-season");
@@ -414,5 +445,6 @@ function bindStreamControls(player, movie, mediaType) {
       season,
       episode,
     });
+    onReload?.();
   });
 }

@@ -62,8 +62,36 @@ export async function getMoviesByGenre(genreId, page = 1) {
   return mapList(await tmdb.byGenre(genreId, page), "movie");
 }
 
+function itemKey(item) {
+  return `${item.mediaType}:${item.id}`;
+}
+
+/** Merge lists, drop duplicates, sort highest rating first. */
+function mergeByRating(...lists) {
+  const byKey = new Map();
+  for (const list of lists) {
+    for (const item of list || []) {
+      if (!item?.id) continue;
+      const key = itemKey(item);
+      const prev = byKey.get(key);
+      if (!prev || (item.rating || 0) > (prev.rating || 0)) {
+        byKey.set(key, item);
+      }
+    }
+  }
+  return [...byKey.values()].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+}
+
+/** Recommend = highest-rated movies + TV */
 export async function getRecommended() {
-  return mapList(await tmdb.trendingAll("week"));
+  const [movies, tv] = await Promise.all([
+    getTopRatedMovies(),
+    mapList(await tmdb.topRatedTv(1), "tv"),
+  ]);
+
+  return {
+    results: mergeByRating(movies.results, tv.results),
+  };
 }
 
 export async function getFilipino() {
@@ -112,6 +140,36 @@ export async function getAnime() {
   return { results: merged };
 }
 
+/** Vivamax originals (TMDB company 149142) */
+export async function getVivamax() {
+  const [movies, tv] = await Promise.all([
+    tmdb.discoverMovies({
+      with_companies: 149142,
+      include_adult: true,
+      sort_by: "primary_release_date.desc",
+      page: 1,
+    }),
+    tmdb.discoverTv({
+      with_companies: 149142,
+      include_adult: true,
+      sort_by: "first_air_date.desc",
+      page: 1,
+    }),
+  ]);
+
+  const merged = [
+    ...mapList(movies, "movie").results,
+    ...mapList(tv, "tv").results,
+  ].sort((a, b) => {
+    const da = a.releaseDate || "";
+    const db = b.releaseDate || "";
+    if (da !== db) return db.localeCompare(da);
+    return (b.rating || 0) - (a.rating || 0);
+  });
+
+  return { results: merged };
+}
+
 /** Load titles for one category page */
 export async function getCategoryItems(categoryId) {
   switch (categoryId) {
@@ -119,6 +177,8 @@ export async function getCategoryItems(categoryId) {
       return getRecommended();
     case "filipino":
       return getFilipino();
+    case "vivamax":
+      return getVivamax();
     case "movies":
       return getPopularMovies();
     case "tv-show":
@@ -130,21 +190,76 @@ export async function getCategoryItems(categoryId) {
   }
 }
 
-/** Home preview: featured + light samples per category */
+const HOME_PREVIEW = 12;
+
+function previewList(results = [], hero = null, limit = HOME_PREVIEW) {
+  return results
+    .filter(
+      (item) =>
+        !hero || item.id !== hero.id || item.mediaType !== hero.mediaType
+    )
+    .slice(0, limit);
+}
+
+/** Home: hero + separate sections per category */
 export async function getHomeCatalog() {
-  const [recommend, movies] = await Promise.all([
+  const [recommend, filipino, vivamax, movies, tv, anime] = await Promise.all([
     getRecommended(),
+    getFilipino(),
+    getVivamax(),
     getPopularMovies(),
+    getTvShows(),
+    getAnime(),
   ]);
 
   const hero = recommend.results[0] || movies.results[0] || null;
-  const recommendList = (recommend.results || []).filter(
-    (item) => !hero || item.id !== hero.id || item.mediaType !== hero.mediaType
-  );
 
   return {
     hero,
-    recommend: recommendList,
+    sections: [
+      {
+        id: "recommend",
+        title: "Recommend",
+        description: "Highest-rated movies and TV.",
+        path: "/recommend",
+        items: previewList(recommend.results, hero),
+      },
+      {
+        id: "filipino",
+        title: "Filipino",
+        description: "Movies and shows from the Philippines.",
+        path: "/filipino",
+        items: previewList(filipino.results, hero),
+      },
+      {
+        id: "vivamax",
+        title: "Vivamax",
+        description: "Bold Filipino originals from Vivamax.",
+        path: "/vivamax",
+        items: previewList(vivamax.results, hero),
+      },
+      {
+        id: "movies",
+        title: "Movies",
+        description: "Popular movies worldwide.",
+        path: "/movies",
+        items: previewList(movies.results, hero),
+      },
+      {
+        id: "tv-show",
+        title: "TV Show",
+        description: "Popular TV series to binge.",
+        path: "/tv-show",
+        items: previewList(tv.results, hero),
+      },
+      {
+        id: "anime",
+        title: "Anime",
+        description: "Japanese animation movies and series.",
+        path: "/anime",
+        items: previewList(anime.results, hero),
+      },
+    ],
   };
 }
 

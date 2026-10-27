@@ -1,4 +1,10 @@
 import { linkTo } from "../router/index.js";
+import {
+  FRIENDS_BADGE_EVENT,
+  getFriendsActivityCounts,
+  subscribeFriendsActivity,
+} from "../services/friendsService.js";
+import { getSession, onAuthChange } from "../services/authService.js";
 
 const ITEMS = [
   {
@@ -9,7 +15,7 @@ const ITEMS = [
       p.startsWith("/movie/") ||
       p.startsWith("/tv/") ||
       p.startsWith("/recent") ||
-      ["/recommend", "/filipino", "/movies", "/tv-show", "/anime"].includes(p),
+      ["/recommend", "/filipino", "/vivamax", "/movies", "/tv-show", "/anime"].includes(p),
     icon: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
@@ -36,13 +42,15 @@ const ITEMS = [
       </svg>`,
   },
   {
-    path: "/discover",
-    label: "Discover",
-    match: (p) => p.startsWith("/discover"),
+    path: "/friends",
+    label: "Friends",
+    match: (p) => p.startsWith("/friends"),
     icon: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
-        <path d="m16.2 16.2 3.3 3.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="9" cy="9" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <circle cx="16.5" cy="10.2" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M3.8 18.8c1.4-2.7 3.5-4.1 5.2-4.1s3.8 1.4 5.2 4.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M13.4 18.5c1-1.8 2.4-2.8 3.5-2.8 1.2 0 2.4.8 3.3 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
       </svg>`,
   },
   {
@@ -58,114 +66,98 @@ const ITEMS = [
 ];
 
 export function createBottomNav() {
-  const wrap = document.createElement("div");
-  wrap.className = "mobile-nav";
-  wrap.innerHTML = `
-    <button
-      type="button"
-      class="mobile-nav__toggle"
-      aria-label="Open menu"
-      aria-expanded="false"
-      aria-controls="mobile-nav-drawer"
-    >
-      <span class="mobile-nav__burger" aria-hidden="true"></span>
-    </button>
-    <div class="mobile-nav__overlay" hidden></div>
-    <nav id="mobile-nav-drawer" class="mobile-nav__drawer" aria-label="Main" hidden>
-      <div class="mobile-nav__drawer-head">
-        <strong>Menu</strong>
-        <button type="button" class="mobile-nav__close" aria-label="Close menu">✕</button>
-      </div>
-      <div class="mobile-nav__items">
-        ${ITEMS.map(
-          (item) => `
-            <a class="mobile-nav__item" href="${linkTo(item.path)}" data-path="${item.path}">
-              <span class="mobile-nav__icon">${item.icon}</span>
-              <span class="mobile-nav__label">${item.label}</span>
-            </a>
-          `
-        ).join("")}
-      </div>
-    </nav>
-  `;
+  const wrap = document.createElement("nav");
+  wrap.className = "bottom-nav";
+  wrap.setAttribute("aria-label", "Main");
+  wrap.innerHTML = ITEMS.map(
+    (item) => `
+      <a class="bottom-nav__item" href="${linkTo(item.path)}" data-path="${item.path}">
+        <span class="bottom-nav__icon">${item.icon}</span>
+        <span class="bottom-nav__label">${item.label}</span>
+        ${
+          item.path === "/friends"
+            ? `<span class="bottom-nav__badge" hidden aria-hidden="true"></span>`
+            : ""
+        }
+      </a>
+    `
+  ).join("");
 
-  const toggleBtn = wrap.querySelector(".mobile-nav__toggle");
-  const closeBtn = wrap.querySelector(".mobile-nav__close");
-  const overlay = wrap.querySelector(".mobile-nav__overlay");
-  const drawer = wrap.querySelector(".mobile-nav__drawer");
-  let open = false;
-  let ignoreToggleUntil = 0;
+  let badgeUnsub = null;
 
-  const setOpen = (next) => {
-    open = next;
-    drawer.hidden = !next;
-    overlay.hidden = !next;
-    wrap.classList.toggle("is-open", next);
-    toggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
-    toggleBtn.setAttribute("aria-label", next ? "Close menu" : "Open menu");
-    document.body.classList.toggle("has-mobile-nav-open", next);
-  };
+  async function paintFriendsBadge() {
+    const badge = wrap.querySelector(".bottom-nav__badge");
+    const link = wrap.querySelector('[data-path="/friends"]');
+    if (!badge || !link || wrap.hidden) return;
+    try {
+      const { total } = await getFriendsActivityCounts();
+      if (!total) {
+        badge.hidden = true;
+        badge.textContent = "";
+        link.setAttribute("aria-label", "Friends");
+        return;
+      }
+      badge.hidden = false;
+      badge.textContent = total > 9 ? "9+" : String(total);
+      link.setAttribute(
+        "aria-label",
+        `Friends, ${total} notification${total === 1 ? "" : "s"}`
+      );
+    } catch {
+      /* ignore */
+    }
+  }
 
-  const closeMenu = () => {
-    if (!open) return;
-    setOpen(false);
-    // Prevent the same tap/click from reopening via the hamburger underneath.
-    ignoreToggleUntil = Date.now() + 350;
-  };
-
-  const openMenu = () => {
-    if (open) return;
-    setOpen(true);
-  };
-
-  const onToggle = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (Date.now() < ignoreToggleUntil) return;
-    if (open) closeMenu();
-    else openMenu();
-  };
-
-  const onClose = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    closeMenu();
-  };
-
-  const onEscape = (event) => {
-    if (event.key === "Escape") closeMenu();
-  };
-
-  toggleBtn.addEventListener("click", onToggle);
-  closeBtn.addEventListener("click", onClose);
-  overlay.addEventListener("click", onClose);
-  wrap.querySelectorAll(".mobile-nav__item").forEach((item) => {
-    item.addEventListener("click", () => closeMenu());
-  });
-  window.addEventListener("keydown", onEscape);
+  function bindBadgeLive(session) {
+    badgeUnsub?.();
+    badgeUnsub = null;
+    if (!session?.user) return;
+    badgeUnsub = subscribeFriendsActivity(() => {
+      paintFriendsBadge();
+    });
+  }
 
   function sync() {
-    closeMenu();
     const pathname = (location.hash.replace(/^#/, "") || "/").split("?")[0];
-    const hide = pathname === "/login";
+    const hide =
+      pathname === "/login" ||
+      pathname === "/privacy" ||
+      pathname === "/reset-password";
     wrap.hidden = hide;
     document.body.classList.toggle("has-mobile-nav", !hide);
+    document.body.classList.remove("has-mobile-nav-open");
 
-    wrap.querySelectorAll(".mobile-nav__item").forEach((el) => {
+    wrap.querySelectorAll(".bottom-nav__item").forEach((el) => {
       const item = ITEMS.find((i) => i.path === el.dataset.path);
       el.classList.toggle("is-active", Boolean(item?.match(pathname)));
     });
+
+    if (!hide) {
+      getSession()
+        .then((session) => {
+          bindBadgeLive(session);
+          if (session?.user) paintFriendsBadge();
+        })
+        .catch(() => {});
+    } else {
+      badgeUnsub?.();
+      badgeUnsub = null;
+    }
   }
 
   sync();
   window.addEventListener("hashchange", sync);
+  window.addEventListener(FRIENDS_BADGE_EVENT, paintFriendsBadge);
+  const unsubAuth = onAuthChange(() => sync());
 
   return {
     el: wrap,
     sync,
     destroy() {
       window.removeEventListener("hashchange", sync);
-      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener(FRIENDS_BADGE_EVENT, paintFriendsBadge);
+      badgeUnsub?.();
+      unsubAuth();
       wrap.remove();
     },
   };

@@ -1,0 +1,43 @@
+import { linkTo } from "../router/index.js";
+
+export async function PrivacyView(root) {
+  root.classList.add("view--auth");
+
+  root.innerHTML = `
+    <section class="auth-page legal-page">
+      <div class="auth-page__glow auth-page__glow--a" aria-hidden="true"></div>
+      <div class="auth-page__glow auth-page__glow--b" aria-hidden="true"></div>
+      <div class="auth-page__grain" aria-hidden="true"></div>
+
+      <div class="auth-shell legal-shell">
+        <a class="back" href="${linkTo("/login")}">← Back</a>
+        <p class="auth-brand">LANTAW</p>
+        <h1 class="legal-title">Privacy</h1>
+        <div class="legal-copy">
+          <p>
+            LANTAW keeps your email and display name so you can sign in, save a watchlist, and use friends features.
+          </p>
+          <p>
+            Catalog data comes from third-party services. Playback uses external embeds that may apply their own policies.
+          </p>
+          <p>
+            We do not sell your personal information.
+            Questions? <a href="mailto:anthony.capuyan23@gmail.com">anthony.capuyan23@gmail.com</a>
+          </p>
+        </div>
+      </div>
+
+      <footer class="auth-legal">
+        <a href="#/privacy" aria-current="page">Privacy</a>
+        <span class="auth-legal__sep" aria-hidden="true">|</span>
+        <a href="mailto:anthony.capuyan23@gmail.com">Support</a>
+      </footer>
+    </section>
+  `;
+
+  return {
+    unmount() {
+      root.classList.remove("view--auth");
+    },
+  };
+}

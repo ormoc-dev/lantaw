@@ -77,21 +77,26 @@ export async function HomeView(root) {
       body.appendChild(FeaturedHero({ item: catalog.hero }));
     }
 
-    const recommendSection = document.createElement("section");
-    recommendSection.className = "category-page__body";
-    recommendSection.innerHTML = `
-      <header class="category-page__head">
-        <h1>Recommend</h1>
-        <p class="muted">Trending picks for you right now.</p>
-      </header>
-    `;
-    recommendSection.appendChild(
-      MediaGrid({
-        items: catalog.recommend || [],
-        emptyText: "No recommended titles yet.",
-      })
-    );
-    body.appendChild(recommendSection);
+    for (const section of catalog.sections || []) {
+      const el = document.createElement("section");
+      el.className = "category-page__body home-section";
+      el.innerHTML = `
+        <header class="category-page__head home-section__head">
+          <div>
+            <h1>${escapeHtml(section.title)}</h1>
+            <p class="muted">${escapeHtml(section.description || "")}</p>
+          </div>
+          <a class="link-btn" href="${linkTo(section.path)}">See all</a>
+        </header>
+      `;
+      el.appendChild(
+        MediaGrid({
+          items: section.items || [],
+          emptyText: `No ${section.title.toLowerCase()} titles yet.`,
+        })
+      );
+      body.appendChild(el);
+    }
   } catch (err) {
     body.innerHTML = `
       <div class="home-empty">

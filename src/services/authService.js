@@ -58,6 +58,9 @@ export async function recoverSession() {
     return null;
   }
 
+  const isRecovery =
+    params.get("recovery") === "1" || params.get("type") === "recovery";
+
   const code = params.get("code");
   if (code) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
@@ -66,7 +69,7 @@ export async function recoverSession() {
       // Session may already exist if a prior attempt stored it
       const { data: fallback } = await supabase.auth.getSession();
       if (fallback?.session) {
-        cleanAuthParamsFromUrl("#/");
+        cleanAuthParamsFromUrl(isRecovery ? "#/reset-password" : "#/");
         return fallback.session;
       }
       stashAuthError(
@@ -76,7 +79,7 @@ export async function recoverSession() {
       cleanAuthParamsFromUrl("#/login");
       return null;
     }
-    cleanAuthParamsFromUrl("#/");
+    cleanAuthParamsFromUrl(isRecovery ? "#/reset-password" : "#/");
     return data.session;
   }
 
@@ -131,6 +134,24 @@ export async function signUp({ email, password, displayName }) {
       emailRedirectTo: appRedirectUrl(),
     },
   });
+  if (error) throw error;
+  return data;
+}
+
+/** Sends Supabase's reset-password email. Redirect must be allowlisted. */
+export async function requestPasswordReset(email) {
+  const base = getBasePath();
+  const redirectTo = `${window.location.origin}${base}/?recovery=1`;
+  const { data, error } = await getSupabase().auth.resetPasswordForEmail(
+    email.trim(),
+    { redirectTo }
+  );
+  if (error) throw error;
+  return data;
+}
+
+export async function updatePassword(password) {
+  const { data, error } = await getSupabase().auth.updateUser({ password });
   if (error) throw error;
   return data;
 }

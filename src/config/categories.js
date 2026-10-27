@@ -4,13 +4,19 @@ export const CATEGORIES = [
     id: "recommend",
     path: "/recommend",
     title: "Recommend",
-    description: "Trending picks for you right now.",
+    description: "Highest-rated movies and TV.",
   },
   {
     id: "filipino",
     path: "/filipino",
     title: "Filipino",
     description: "Movies and shows from the Philippines.",
+  },
+  {
+    id: "vivamax",
+    path: "/vivamax",
+    title: "Vivamax",
+    description: "Bold Filipino originals from Vivamax.",
   },
   {
     id: "movies",

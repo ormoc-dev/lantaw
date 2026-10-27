@@ -10,8 +10,12 @@ async function boot() {
   }
 
   // After Google OAuth, land in the app — not back on /login
+  // Password recovery keeps the user on #/reset-password
   if (session) {
-    if (!location.hash || location.hash === "#/login") {
+    const hashPath = (location.hash.replace(/^#/, "") || "/").split("?")[0];
+    if (hashPath === "/reset-password") {
+      /* stay */
+    } else if (!location.hash || location.hash === "#/login") {
       location.hash = "#/";
     }
   }

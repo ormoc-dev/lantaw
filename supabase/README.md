@@ -35,8 +35,12 @@ Google can create the user in Supabase while the **app** still lands on `/login`
 Add **all** of these under **Redirect URLs** (keep them listed even when Site URL is one of them):
 - `http://localhost/movie/**`
 - `http://localhost/movie/`
+- `http://localhost/movie/?recovery=1`
 - `https://lantaw-us.vercel.app/**`
 - `https://lantaw-us.vercel.app/`
+- `https://lantaw-us.vercel.app/?recovery=1`
+
+Password reset emails use `?recovery=1` then land on `#/reset-password`. Enable **Email** provider templates → **Reset password** if you customize copy.
 
 **Site URL:** `https://lantaw-us.vercel.app` (or `http://localhost/movie/` for XAMPP).
 

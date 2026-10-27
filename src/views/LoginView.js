@@ -1,10 +1,12 @@
 import {
   consumeAuthError,
   getSession,
+  requestPasswordReset,
   signIn,
   signInWithGoogle,
   signUp,
 } from "../services/authService.js";
+import { getTrendingMovies } from "../services/movieService.js";
 
 export async function LoginView(root) {
   const session = await getSession();
@@ -23,34 +25,42 @@ export async function LoginView(root) {
       <div class="auth-page__glow auth-page__glow--b" aria-hidden="true"></div>
       <div class="auth-page__grain" aria-hidden="true"></div>
 
-      <div class="auth-shell">
-        <aside class="auth-brand-pane">
-          <p class="auth-brand">Movie</p>
-          <p class="auth-brand-pane__tag">Your personal cinema shelf — save titles, pick up later.</p>
-        </aside>
+      <div class="auth-showcase" id="auth-showcase" aria-hidden="true">
+        <div class="auth-showcase__fade auth-showcase__fade--left"></div>
+        <div class="auth-showcase__track" id="auth-showcase-track"></div>
+        <div class="auth-showcase__fade auth-showcase__fade--right"></div>
+        <div class="auth-showcase__veil" aria-hidden="true"></div>
+        <div class="auth-showcase__brand">
+          <p class="auth-brand">LANTAW</p>
+          <p class="auth-showcase__tag">Now showing — sign in to watch</p>
+        </div>
+      </div>
 
-        <div class="auth-flow">
+      <div class="auth-shell">
+        <div class="auth-flow" id="auth-flow">
           <header class="auth-flow__head">
-            <h1>Welcome</h1>
-            <p class="auth-lead">One Google button for new and existing accounts. Or use email below.</p>
+            <h1 id="auth-title">Welcome</h1>
+            <p class="auth-lead" id="auth-lead">One Google button for new and existing accounts. Or use email below.</p>
           </header>
 
-          <button type="button" class="btn btn--google" id="google-btn">
-            <svg class="btn--google__svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-            </svg>
-            Continue with Google
-          </button>
+          <div id="auth-oauth">
+            <button type="button" class="btn btn--google" id="google-btn">
+              <svg class="btn--google__svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Continue with Google
+            </button>
+          </div>
 
           <p class="auth-error auth-error--google" id="auth-error" hidden></p>
           <p class="auth-success" id="auth-success" hidden></p>
 
-          <div class="auth-divider"><span>or continue with email</span></div>
+          <div class="auth-divider" id="auth-divider"><span>or continue with email</span></div>
 
-          <div class="auth-tabs" role="tablist" aria-label="Email account">
+          <div class="auth-tabs" role="tablist" aria-label="Email account" id="auth-tabs">
             <button type="button" class="auth-tab is-active" role="tab" aria-selected="true" data-mode="signin" id="tab-signin">
               Sign in
             </button>
@@ -69,8 +79,11 @@ export async function LoginView(root) {
               <span>Email</span>
               <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@gmail.com" />
             </label>
-            <label class="auth-field">
-              <span>Password</span>
+            <label class="auth-field" id="password-field">
+              <span class="auth-field__row">
+                <span>Password</span>
+                <button type="button" class="link-btn auth-forgot" id="forgot-btn">Forgot password?</button>
+              </span>
               <input id="password" name="password" type="password" required minlength="6" autocomplete="current-password" placeholder="At least 6 characters" />
             </label>
 
@@ -83,57 +96,111 @@ export async function LoginView(root) {
           </p>
         </div>
       </div>
+
+      <footer class="auth-legal">
+        <a href="#/privacy">Privacy</a>
+        <span class="auth-legal__sep" aria-hidden="true">|</span>
+        <a href="mailto:anthony.capuyan23@gmail.com">Support</a>
+      </footer>
     </section>
   `;
 
+  const flow = root.querySelector("#auth-flow");
   const form = root.querySelector("#auth-form");
   const nameField = root.querySelector("#name-field");
   const nameInput = root.querySelector("#display-name");
+  const passwordField = root.querySelector("#password-field");
   const passwordInput = root.querySelector("#password");
   const submit = root.querySelector("#auth-submit");
   const errorEl = root.querySelector("#auth-error");
   const successEl = root.querySelector("#auth-success");
   const googleBtn = root.querySelector("#google-btn");
-  const switchBtn = root.querySelector("#switch-mode");
+  const oauthBlock = root.querySelector("#auth-oauth");
+  const divider = root.querySelector("#auth-divider");
+  const tabs = root.querySelector("#auth-tabs");
   const foot = root.querySelector("#auth-foot");
+  const titleEl = root.querySelector("#auth-title");
+  const leadEl = root.querySelector("#auth-lead");
+  const forgotBtn = root.querySelector("#forgot-btn");
   const tabSignin = root.querySelector("#tab-signin");
   const tabSignup = root.querySelector("#tab-signup");
   const tabInk = root.querySelector("#tab-ink");
 
   function moveInk(activeBtn) {
+    if (!activeBtn || tabs.hasAttribute("hidden")) return;
     tabInk.style.width = `${activeBtn.offsetWidth}px`;
     tabInk.style.transform = `translateX(${activeBtn.offsetLeft}px)`;
+  }
+
+  function bindFootSwitch() {
+    foot.querySelector("#switch-mode")?.addEventListener("click", () => {
+      if (mode === "forgot") setMode("signin");
+      else if (mode === "signup") setMode("signin");
+      else setMode("signup");
+    });
+  }
+
+  function setHidden(el, hide) {
+    if (!el) return;
+    if (hide) el.setAttribute("hidden", "");
+    else el.removeAttribute("hidden");
   }
 
   function setMode(next) {
     mode = next;
     const signup = mode === "signup";
+    const forgot = mode === "forgot";
 
-    submit.textContent = signup ? "Create account" : "Sign in";
+    flow.classList.toggle("auth-flow--forgot", forgot);
 
-    nameField.hidden = !signup;
+    // Email-only reset screen — hide Google, tabs, name, password
+    setHidden(oauthBlock, forgot);
+    setHidden(divider, forgot);
+    setHidden(tabs, forgot);
+    setHidden(nameField, !signup);
+    setHidden(passwordField, forgot);
     nameInput.required = signup;
+    passwordInput.required = !forgot;
+    passwordInput.disabled = forgot;
     passwordInput.autocomplete = signup ? "new-password" : "current-password";
 
-    tabSignin.classList.toggle("is-active", !signup);
+    if (forgot) {
+      titleEl.textContent = "Forgot password";
+      leadEl.textContent =
+        "Enter the email for your account. We’ll send a reset link.";
+      submit.textContent = "Send reset link";
+      foot.innerHTML = `Remember it? <button type="button" class="link-btn" id="switch-mode">Back to sign in</button>`;
+    } else if (signup) {
+      titleEl.textContent = "Welcome";
+      leadEl.textContent =
+        "One Google button for new and existing accounts. Or use email below.";
+      submit.textContent = "Create account";
+      foot.innerHTML = `Already have an email account? <button type="button" class="link-btn" id="switch-mode">Sign in</button>`;
+    } else {
+      titleEl.textContent = "Welcome";
+      leadEl.textContent =
+        "One Google button for new and existing accounts. Or use email below.";
+      submit.textContent = "Sign in";
+      foot.innerHTML = `New here? <button type="button" class="link-btn" id="switch-mode">Create an email account</button>`;
+    }
+
+    tabSignin.classList.toggle("is-active", !signup && !forgot);
     tabSignup.classList.toggle("is-active", signup);
-    tabSignin.setAttribute("aria-selected", String(!signup));
+    tabSignin.setAttribute("aria-selected", String(!signup && !forgot));
     tabSignup.setAttribute("aria-selected", String(signup));
-    moveInk(signup ? tabSignup : tabSignin);
+    if (!forgot) {
+      requestAnimationFrame(() => moveInk(signup ? tabSignup : tabSignin));
+    }
 
-    foot.innerHTML = signup
-      ? `Already have an email account? <button type="button" class="link-btn" id="switch-mode">Sign in</button>`
-      : `New here? <button type="button" class="link-btn" id="switch-mode">Create an email account</button>`;
-    foot.querySelector("#switch-mode").addEventListener("click", () => {
-      setMode(signup ? "signin" : "signup");
-    });
-
-    successEl.hidden = true;
+    bindFootSwitch();
+    errorEl.hidden = true;
+    if (!forgot) successEl.hidden = true;
   }
 
   tabSignin.addEventListener("click", () => setMode("signin"));
   tabSignup.addEventListener("click", () => setMode("signup"));
-  switchBtn.addEventListener("click", () => setMode("signup"));
+  forgotBtn.addEventListener("click", () => setMode("forgot"));
+  bindFootSwitch();
 
   const oauthError =
     new URLSearchParams(window.location.search).get("error_description") ||
@@ -150,6 +217,7 @@ export async function LoginView(root) {
 
   requestAnimationFrame(() => moveInk(tabSignin));
   window.addEventListener("resize", () => {
+    if (mode === "forgot") return;
     moveInk(mode === "signup" ? tabSignup : tabSignin);
   });
 
@@ -177,7 +245,12 @@ export async function LoginView(root) {
     const displayName = form.displayName.value;
 
     try {
-      if (mode === "signup") {
+      if (mode === "forgot") {
+        await requestPasswordReset(email);
+        successEl.textContent =
+          "If that email has an account, a reset link is on its way. Check your inbox.";
+        successEl.hidden = false;
+      } else if (mode === "signup") {
         const { session: created, user } = await signUp({
           email,
           password,
@@ -203,9 +276,45 @@ export async function LoginView(root) {
     }
   });
 
+  loadAuthShowcase(root.querySelector("#auth-showcase-track"));
+
   return {
     unmount() {
       root.classList.remove("view--auth");
     },
   };
+}
+
+async function loadAuthShowcase(track) {
+  if (!track) return;
+  const showcase = track.closest(".auth-showcase");
+
+  try {
+    const { results } = await getTrendingMovies();
+    const posters = (results || []).filter((m) => m.poster).slice(0, 14);
+
+    if (!posters.length) {
+      showcase?.remove();
+      return;
+    }
+
+    const strip = posters
+      .map(
+        (m) =>
+          `<img class="auth-showcase__poster" src="${escapeAttr(
+            m.poster
+          )}" alt="" loading="lazy" draggable="false" />`
+      )
+      .join("");
+
+    // Duplicate for a seamless marquee loop
+    track.innerHTML = strip + strip;
+    showcase?.classList.add("is-ready");
+  } catch {
+    showcase?.remove();
+  }
+}
+
+function escapeAttr(str = "") {
+  return String(str).replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 }

@@ -5,7 +5,7 @@ let current = null;
 let outlet = null;
 let renderToken = 0;
 
-const PUBLIC_PATHS = new Set(["/login"]);
+const PUBLIC_PATHS = new Set(["/login", "/privacy"]);
 
 export function createRouter(rootEl) {
   outlet = rootEl;
@@ -16,6 +16,10 @@ export function createRouter(rootEl) {
 
   onAuthChange((session) => {
     const pathname = (location.hash.replace(/^#/, "") || "/").split("?")[0];
+    if (session && pathname === "/reset-password") {
+      render();
+      return;
+    }
     if (session && (pathname === "/login" || !location.hash)) {
       if (location.hash !== "#/") location.hash = "#/";
       else render();
@@ -112,6 +116,12 @@ async function render() {
 
   if (session && pathname === "/login") {
     location.hash = "#/";
+    return;
+  }
+
+  // Recovery link expired / opened without a session
+  if (!session && pathname === "/reset-password") {
+    location.hash = "#/login";
     return;
   }
 

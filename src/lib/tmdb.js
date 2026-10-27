@@ -66,6 +66,7 @@ export const tmdb = {
       ...params,
     }),
   popularTv: (page = 1) => tmdbFetch("/tv/popular", { page }),
+  topRatedTv: (page = 1) => tmdbFetch("/tv/top_rated", { page }),
   search: (query, page = 1) =>
     tmdbFetch("/search/movie", { query, page, include_adult: false }),
   movie: (id) => tmdbFetch(`/movie/${id}`),

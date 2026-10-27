@@ -1,8 +1,4 @@
-import {
-  getSession,
-  onAuthChange,
-  resolveUserProfile,
-} from "../services/authService.js";
+import { getSession, onAuthChange } from "../services/authService.js";
 import {
   FRIENDS_BADGE_EVENT,
   getFriendsActivityCounts,
@@ -71,16 +67,10 @@ export function createProfileTop() {
       return;
     }
 
-    const user = session.user;
-    const [{ name, avatar }, counts] = await Promise.all([
-      resolveUserProfile(user),
-      getFriendsActivityCounts().catch(() => ({ total: 0 })),
-    ]);
+    const counts = await getFriendsActivityCounts().catch(() => ({ total: 0 }));
     if (token !== renderToken) return;
 
-    const initial = (name || user.email || "?").slice(0, 1).toUpperCase();
     const onFriends = pathname.startsWith("/friends");
-    const onMe = pathname.startsWith("/me") || pathname.startsWith("/watchlist");
     const total = counts.total || 0;
 
     el.innerHTML = `
@@ -101,22 +91,6 @@ export function createProfileTop() {
           <path d="M13.4 18.5c1-1.8 2.4-2.8 3.5-2.8 1.2 0 2.4.8 3.3 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
         </svg>
         ${badgeHtml(total)}
-      </a>
-      <a
-        class="profile-top ${onMe ? "is-active" : ""}"
-        href="${linkTo("/me")}"
-        aria-label="Open profile"
-        title="${escapeHtml(name)}"
-      >
-        ${
-          avatar
-            ? `<img class="profile-top__avatar" src="${escapeHtml(
-                avatar
-              )}" alt="${escapeHtml(name)}" width="36" height="36" referrerpolicy="no-referrer" />`
-            : `<span class="profile-top__avatar profile-top__avatar--fallback">${escapeHtml(
-                initial
-              )}</span>`
-        }
       </a>
     `;
 
@@ -146,12 +120,4 @@ export function createProfileTop() {
       el.remove();
     },
   };
-}
-
-function escapeHtml(str = "") {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
