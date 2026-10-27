@@ -10,13 +10,13 @@ You reach the deployed app again, but login fails. That means **Supabase cannot 
 2. Open the **Web application** OAuth client (ID should start with `833921049517-...`)
 3. Confirm:
    - **Authorized JavaScript origins**
-     - `https://lantaw.netlify.app`
+     - `https://lantaw-us.vercel.app`
      - `http://localhost` (optional for local)
    - **Authorized redirect URIs** — must be exactly:
      ```
      https://xzsynwcpzljzgaghetem.supabase.co/auth/v1/callback
      ```
-     (Do **not** put `lantaw.netlify.app` here — that belongs in origins only.)
+     (Do **not** put `lantaw-us.vercel.app` here — that belongs in origins only.)
 4. Click **Reset secret** / **Add secret** → copy the **new** Client Secret (`GOCSPX-...`)
 
 ### 2. Paste into Supabase
@@ -35,10 +35,10 @@ Google can create the user in Supabase while the **app** still lands on `/login`
 Add **all** of these under **Redirect URLs** (keep them listed even when Site URL is one of them):
 - `http://localhost/movie/**`
 - `http://localhost/movie/`
-- `https://lantaw.netlify.app/**`
-- `https://lantaw.netlify.app/`
+- `https://lantaw-us.vercel.app/**`
+- `https://lantaw-us.vercel.app/`
 
-**Site URL** can be the one you use most (`http://localhost/movie/` or `https://lantaw.netlify.app`).
+**Site URL:** `https://lantaw-us.vercel.app` (or `http://localhost/movie/` while developing locally).
 
 Open the app at the **same** host you allowlisted (don’t start on `127.0.0.1` if only `localhost` is listed).
 
