@@ -106,8 +106,10 @@ body:has(#view.view--auth) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  height: 100dvh;
-  max-height: 100dvh;
+  /* --friends-chat-vh tracks visualViewport (keyboard-safe on mobile) */
+  height: var(--friends-chat-vh, 100dvh);
+  max-height: var(--friends-chat-vh, 100dvh);
+  min-height: 0;
   box-sizing: border-box;
 }
 
@@ -119,9 +121,10 @@ body.is-friends-chat {
 .friends-page--chat {
   flex: 1 1 auto;
   width: 100%;
+  /* Override .friends-page min-height: 70vh — that clipped the composer */
   min-height: 0;
-  height: auto;
-  max-height: none;
+  height: 100%;
+  max-height: 100%;
   grid-template-rows: auto auto minmax(0, 1fr);
   align-content: stretch;
   gap: 0.65rem;
@@ -132,9 +135,12 @@ body.is-friends-chat {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .friends-page--chat .fp-chat {
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
@@ -160,12 +166,19 @@ body.is-friends-chat {
 }
 
 .friends-page--chat .fp-chat__compose {
-  position: static;
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
   margin-inline: 0;
-  padding: 0.35rem 0 0.15rem;
-  background: transparent;
+  padding: 0.45rem 0 0.35rem;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  touch-action: manipulation;
+}
+
+.friends-page--chat .fp-chat__compose input {
+  font-size: 16px; /* avoid iOS focus zoom pushing layout */
 }
 
 .detail {
@@ -984,6 +997,11 @@ body.is-friends-chat {
     padding-bottom: var(--bottom-nav-clearance);
   }
 
+  body.has-mobile-nav #view.view--friends-chat {
+    /* Keep composer clear of the floating bottom nav */
+    padding-bottom: var(--bottom-nav-clearance);
+  }
+
   .fp-chat__compose {
     bottom: var(--bottom-nav-clearance);
     margin-inline: 0;
@@ -991,6 +1009,12 @@ body.is-friends-chat {
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+
+  .friends-page--chat .fp-chat__compose {
+    position: relative;
+    bottom: auto;
+    z-index: 5;
   }
 }
 

@@ -37,6 +37,7 @@ export async function FriendsView(root) {
   let unsubChat = null;
   let unsubPage = null;
   let unsubWatchDoc = null;
+  let unsubChatVv = null;
   let liveTimer = null;
   let liveBusy = false;
   let liveQueued = false;
@@ -47,11 +48,17 @@ export async function FriendsView(root) {
   root.innerHTML = "";
   root.appendChild(page);
 
+  const clearChatViewport = () => {
+    unsubChatVv?.();
+    root.style.removeProperty("--friends-chat-vh");
+  };
+
   const syncChatLock = () => {
     const locked = tab === "chat";
     page.classList.toggle("friends-page--chat", locked);
     root.classList.toggle("view--friends-chat", locked);
     document.body.classList.toggle("is-friends-chat", locked);
+    if (!locked) clearChatViewport();
   };
 
   const avatarHtml = (p, sizeClass = "") => {
@@ -258,6 +265,7 @@ export async function FriendsView(root) {
   }
 
   async function renderPanel() {
+    if (tab !== "chat") clearChatViewport();
     const panel = page.querySelector("#friends-panel");
     if (!panel) return;
 
@@ -435,6 +443,9 @@ export async function FriendsView(root) {
     }
 
     if (tab === "chat") {
+      // Drop Watch-tab capture listeners so they don't steal taps from chat
+      unsubWatchDoc?.();
+
       const accepted = friendships.filter((f) => f.status === "accepted");
       if (!accepted.length) {
         panel.innerHTML = emptyState(
@@ -477,8 +488,16 @@ export async function FriendsView(root) {
             </header>
             <div class="fp-chat__messages" id="chat-messages"><p class="muted">Loading…</p></div>
             <form class="fp-chat__compose" id="chat-form">
-              <input type="text" name="body" placeholder="Write a message" autocomplete="off" required />
-              <button class="btn btn--primary" type="submit">Send</button>
+              <input
+                type="text"
+                name="body"
+                id="chat-input"
+                placeholder="Write a message"
+                autocomplete="off"
+                enterkeyhint="send"
+                inputmode="text"
+              />
+              <button class="btn btn--primary" type="button" id="chat-send">Send</button>
             </form>
           </section>
         </div>
@@ -571,20 +590,79 @@ export async function FriendsView(root) {
         chatPaint = null;
       };
 
-      panel.querySelector("#chat-form").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const form = e.currentTarget;
-        const input = form?.body;
-        const text = input?.value?.trim();
-        if (!text) return;
-        input.value = "";
+      const form = panel.querySelector("#chat-form");
+      const input = panel.querySelector("#chat-input");
+      const sendBtn = panel.querySelector("#chat-send");
+
+      // Keep chat chrome inside the visible viewport (mobile keyboard)
+      clearChatViewport();
+      const syncChatViewport = () => {
+        const vv = window.visualViewport;
+        const h = vv ? Math.round(vv.height) : window.innerHeight;
+        if (h > 0) root.style.setProperty("--friends-chat-vh", `${h}px`);
+      };
+      syncChatViewport();
+      window.visualViewport?.addEventListener("resize", syncChatViewport);
+      window.visualViewport?.addEventListener("scroll", syncChatViewport);
+      window.addEventListener("resize", syncChatViewport);
+      unsubChatVv = () => {
+        window.visualViewport?.removeEventListener("resize", syncChatViewport);
+        window.visualViewport?.removeEventListener("scroll", syncChatViewport);
+        window.removeEventListener("resize", syncChatViewport);
+        unsubChatVv = null;
+      };
+
+      let sending = false;
+      const sendChat = async () => {
+        if (sending) return;
+        const text = String(input?.value || "").trim();
+        if (!text) {
+          input?.focus();
+          return;
+        }
+        sending = true;
+        if (input) input.value = "";
+        if (sendBtn) sendBtn.disabled = true;
         try {
           await sendMessage(chatId, text);
           paint(await listMessages(chatId));
         } catch (err) {
+          if (input) input.value = text;
           alert(err.message);
+        } finally {
+          sending = false;
+          if (sendBtn) sendBtn.disabled = false;
+          input?.focus();
+        }
+      };
+
+      form?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sendChat();
+      });
+
+      sendBtn?.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sendChat();
+      });
+
+      input?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sendChat();
         }
       });
+
+      input?.addEventListener("focus", () => {
+        setTimeout(() => {
+          syncChatViewport();
+          form?.scrollIntoView({ block: "end", behavior: "smooth" });
+          box.scrollTop = box.scrollHeight;
+        }, 120);
+      });
+
       return;
     }
 
@@ -1124,6 +1202,7 @@ export async function FriendsView(root) {
         unsubChat?.();
         unsubPage?.();
         unsubWatchDoc?.();
+        clearChatViewport();
       },
     };
   }
@@ -1143,6 +1222,7 @@ export async function FriendsView(root) {
       unsubChat?.();
       unsubPage?.();
       unsubWatchDoc?.();
+      clearChatViewport();
       page.classList.remove("friends-page--chat");
       root.classList.remove("view--friends-chat");
       document.body.classList.remove("is-friends-chat");
