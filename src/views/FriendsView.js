@@ -923,7 +923,6 @@ export async function FriendsView(root) {
     }
 
     if (del) {
-      if (!window.confirm("Remove this invite from the list?")) return;
       del.setAttribute("disabled", "true");
       try {
         await deleteWatchParty(del.dataset.partyDelete);
@@ -970,33 +969,17 @@ export async function FriendsView(root) {
       await refreshData();
       notifyFriendsBadge();
 
-      // Soft refresh: never remount Watch form (kills mid-tap on Delete)
+      // Soft refresh (poll): badges only — never remount People (causes blink)
       if (soft) {
         syncTabBadgesOnly();
-        if (tab === "watch") {
-          paintPartyList();
-        } else if (tab === "friends") {
-          renderShell();
-          await renderPanel();
-        } else if (tab === "chat" && activeChatId && chatPaint) {
-          try {
-            chatPaint(await listMessages(activeChatId));
-          } catch (_) {
-            /* ignore */
-          }
-        }
+        if (tab === "watch") paintPartyList();
         return;
       }
 
       // Watch invites — refresh list only while on Watch
       if (table === "watch_parties") {
         syncTabBadgesOnly();
-        if (tab === "watch") {
-          paintPartyList();
-        } else if (tab === "friends") {
-          renderShell();
-          await renderPanel();
-        }
+        if (tab === "watch") paintPartyList();
         return;
       }
 
@@ -1053,12 +1036,12 @@ export async function FriendsView(root) {
   }
   await renderPanel();
 
-  // Realtime + short poll so Watch invites appear without a full page reload
+  // Realtime + light poll (Watch invites). Poll must not remount People.
   unsubPage = subscribeFriendsRealtime(
     (payload) => {
       scheduleLiveRefresh(payload);
     },
-    { pollMs: 7000, listenBadgeEvent: true }
+    { pollMs: 12000, listenBadgeEvent: true }
   );
 
   return {

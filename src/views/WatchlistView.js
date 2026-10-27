@@ -1,70 +1,102 @@
 import { linkTo } from "../router/index.js";
 import { listWatchlist, removeFromWatchlist } from "../services/watchlistService.js";
-import { AuthBar } from "../components/AuthBar.js";
 
 export async function WatchlistView(root) {
   root.innerHTML = `
-    <header class="topbar topbar--row" id="top">
-      <div>
-        <a class="back" href="${linkTo("/")}">← Home</a>
-        <h1 class="brand">Watchlist</h1>
+    <div class="wl-page">
+      <div class="wl-glow" aria-hidden="true"></div>
+
+      <header class="wl-head">
+        <a class="wl-back" href="${linkTo("/me")}" aria-label="Back to Me">←</a>
+        <div class="wl-head__copy">
+          <p class="wl-kicker">Saved</p>
+          <h1>Watchlist</h1>
+          <p class="muted wl-count" id="wl-count">Loading…</p>
+        </div>
+      </header>
+
+      <div class="wl-body" id="wl-body">
+        <p class="muted">Loading…</p>
       </div>
-    </header>
-    <div class="grid" id="grid">
-      <p class="muted">Loading…</p>
     </div>
   `;
 
-  const auth = await AuthBar(root.querySelector("#top"));
-  const grid = root.querySelector("#grid");
+  const body = root.querySelector("#wl-body");
+  const countEl = root.querySelector("#wl-count");
+
+  const paintEmpty = () => {
+    countEl.textContent = "Nothing saved yet";
+    body.innerHTML = `
+      <div class="wl-empty">
+        <strong>Your shelf is empty</strong>
+        <p class="muted">Open a movie or show and tap Watchlist to save it here.</p>
+        <a class="btn btn--primary" href="${linkTo("/")}">Browse home</a>
+      </div>
+    `;
+  };
+
+  const paintGrid = (items) => {
+    countEl.textContent = `${items.length} title${items.length === 1 ? "" : "s"}`;
+    body.innerHTML = `
+      <div class="wl-grid" id="wl-grid" role="list"></div>
+    `;
+    const grid = body.querySelector("#wl-grid");
+
+    items.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "wl-item";
+      card.setAttribute("role", "listitem");
+      card.innerHTML = `
+        <a class="wl-item__link" href="${linkTo(`/movie/${item.tmdb_id}`)}">
+          ${
+            item.poster
+              ? `<img src="${escapeHtml(item.poster)}" alt="" loading="lazy" />`
+              : `<div class="wl-item__ph" aria-hidden="true"></div>`
+          }
+          <span class="wl-item__title">${escapeHtml(item.title)}</span>
+        </a>
+        <button type="button" class="wl-item__remove" data-id="${escapeHtml(
+          item.id
+        )}" aria-label="Remove ${escapeHtml(item.title)}">Remove</button>
+      `;
+
+      card.querySelector(".wl-item__remove")?.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await removeFromWatchlist(item.id);
+          card.remove();
+          const left = grid.querySelectorAll(".wl-item").length;
+          if (!left) paintEmpty();
+          else countEl.textContent = `${left} title${left === 1 ? "" : "s"}`;
+        } catch (err) {
+          alert(err.message || "Could not remove");
+          btn.disabled = false;
+        }
+      });
+
+      grid.appendChild(card);
+    });
+  };
 
   try {
     const items = await listWatchlist();
-    grid.innerHTML = "";
-
-    if (!items.length) {
-      grid.innerHTML = `<p class="muted">No saved movies yet. Open a title and add it.</p>`;
-    } else {
-      items.forEach((item) => {
-        const card = document.createElement("div");
-        card.className = "watch-card";
-        card.innerHTML = `
-          <a href="${linkTo(`/movie/${item.tmdb_id}`)}" class="movie-card">
-            ${
-              item.poster
-                ? `<img src="${item.poster}" alt="" loading="lazy" />`
-                : `<div class="movie-card__placeholder">No poster</div>`
-            }
-            <div class="movie-card__meta">
-              <strong>${escapeHtml(item.title)}</strong>
-            </div>
-          </a>
-          <button type="button" class="link-btn" data-id="${item.id}">Remove</button>
-        `;
-        card.querySelector("button").addEventListener("click", async () => {
-          await removeFromWatchlist(item.id);
-          card.remove();
-          if (!grid.children.length) {
-            grid.innerHTML = `<p class="muted">No saved movies yet.</p>`;
-          }
-        });
-        grid.appendChild(card);
-      });
-    }
+    if (!items.length) paintEmpty();
+    else paintGrid(items);
   } catch (err) {
-    grid.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+    countEl.textContent = "";
+    body.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
   }
 
-  return {
-    unmount() {
-      auth.unmount();
-    },
-  };
+  return { unmount() {} };
 }
 
 function escapeHtml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
