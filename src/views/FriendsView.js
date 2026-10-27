@@ -12,7 +12,6 @@ import {
   removeFriendship,
   respondToFriendRequest,
   searchProfiles,
-  listSuggestedProfiles,
   notifyFriendsBadge,
   sendFriendRequest,
   sendMessage,
@@ -51,6 +50,8 @@ export async function FriendsView(root) {
   const clearChatViewport = () => {
     unsubChatVv?.();
     root.style.removeProperty("--friends-chat-vh");
+    root.style.removeProperty("transform");
+    document.body.classList.remove("is-friends-chat-kb");
   };
 
   const syncChatLock = () => {
@@ -188,7 +189,7 @@ export async function FriendsView(root) {
     if (!accepted.length) {
       friendsBox.innerHTML = emptyState(
         "No friends yet",
-        "Add someone from suggestions above."
+        "Search by name or email above to send a request."
       );
     } else {
       friendsBox.innerHTML = accepted
@@ -282,7 +283,7 @@ export async function FriendsView(root) {
           <div class="fp-find__head">
             <div>
               <h2>Find people</h2>
-              <p class="muted fp-lead">Browse suggestions or search by name / email.</p>
+              <p class="muted fp-lead">Search by name or email — profiles stay private until you look them up.</p>
             </div>
           </div>
           <div class="fp-search fp-find__search">
@@ -290,15 +291,19 @@ export async function FriendsView(root) {
               <input
                 type="search"
                 id="people-search"
-                placeholder="Filter by name or email"
+                placeholder="Search name or email"
                 autocomplete="off"
+                enterkeyhint="search"
               />
               <button type="button" class="fp-search__clear" id="people-clear" hidden>✕</button>
             </div>
           </div>
           <p class="fp-status muted" id="people-msg" hidden></p>
           <div class="fp-suggest" id="suggest-list">
-            <p class="muted fp-suggest__loading">Loading people…</p>
+            ${emptyState(
+              "Search to find people",
+              "Type a name or email to look someone up. We don’t list other users here."
+            )}
           </div>
         </section>
 
@@ -341,7 +346,7 @@ export async function FriendsView(root) {
       if (!accepted.length) {
         friendsBox.innerHTML = emptyState(
           "No friends yet",
-          "Add someone from suggestions above."
+          "Search by name or email above to send a request."
         );
       } else {
         friendsBox.innerHTML = accepted
@@ -355,25 +360,29 @@ export async function FriendsView(root) {
           .join("");
       }
 
-      const suggestBox = panel.querySelector("#suggest-list");
+      const resultsBox = panel.querySelector("#suggest-list");
       const peopleSearch = panel.querySelector("#people-search");
       const peopleClear = panel.querySelector("#people-clear");
       const peopleMsg = panel.querySelector("#people-msg");
-      let suggestAll = [];
-      let suggestToken = 0;
+      let searchToken = 0;
       let searchTimer = null;
 
-      const paintSuggestions = (rows, { filtered = false } = {}) => {
+      const showPrivacyEmpty = () => {
+        resultsBox.innerHTML = emptyState(
+          "Search to find people",
+          "Type a name or email to look someone up. We don’t list other users here."
+        );
+      };
+
+      const paintResults = (rows) => {
         if (!rows.length) {
-          suggestBox.innerHTML = emptyState(
-            filtered ? "No matches" : "No suggestions yet",
-            filtered
-              ? "Try another name or email."
-              : "When more people join LANTAW, they’ll show up here."
+          resultsBox.innerHTML = emptyState(
+            "No matches",
+            "Try another name or the full email address."
           );
           return;
         }
-        suggestBox.innerHTML = `<div class="fp-list">${rows
+        resultsBox.innerHTML = `<div class="fp-list">${rows
           .map((p) =>
             personRow(
               p,
@@ -381,64 +390,44 @@ export async function FriendsView(root) {
             )
           )
           .join("")}</div>`;
-
-        // Add handled via page delegation
       };
 
-      const loadSuggestions = async () => {
-        const token = ++suggestToken;
-        try {
-          suggestAll = await listSuggestedProfiles({
-            limit: 32,
-            excludeIds: relatedIds,
-          });
-          if (token !== suggestToken) return;
-          paintSuggestions(suggestAll);
-        } catch (err) {
-          if (token !== suggestToken) return;
-          suggestBox.innerHTML = emptyState(
-            "Couldn’t load people",
-            err.message || "Try again in a moment."
-          );
-        }
-      };
-
-      const runFilter = async (query) => {
-        const token = ++suggestToken;
+      const runSearch = async (query) => {
+        const token = ++searchToken;
         const q = query.trim();
         peopleClear.hidden = !q;
-        if (!q) {
+
+        if (q.length < 2) {
           peopleMsg.hidden = true;
-          paintSuggestions(suggestAll);
+          showPrivacyEmpty();
           return;
         }
+
         peopleMsg.hidden = false;
         peopleMsg.textContent = "Searching…";
         try {
           const rows = await searchProfiles(q, { limit: 16 });
-          if (token !== suggestToken) return;
-          const filtered = rows.filter((r) => !relatedIds.includes(r.id));
-          paintSuggestions(filtered, { filtered: true });
+          if (token !== searchToken) return;
+          paintResults(rows.filter((r) => !relatedIds.includes(r.id)));
           peopleMsg.hidden = true;
         } catch (err) {
-          if (token !== suggestToken) return;
+          if (token !== searchToken) return;
           peopleMsg.textContent = err.message || "Search failed";
         }
       };
 
       peopleSearch.addEventListener("input", () => {
         clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => runFilter(peopleSearch.value), 200);
+        searchTimer = setTimeout(() => runSearch(peopleSearch.value), 220);
       });
       peopleClear.addEventListener("click", () => {
         peopleSearch.value = "";
         peopleClear.hidden = true;
         peopleMsg.hidden = true;
-        paintSuggestions(suggestAll);
+        showPrivacyEmpty();
         peopleSearch.focus();
       });
 
-      loadSuggestions();
       return;
     }
 
@@ -594,12 +583,27 @@ export async function FriendsView(root) {
       const input = panel.querySelector("#chat-input");
       const sendBtn = panel.querySelector("#chat-send");
 
-      // Keep chat chrome inside the visible viewport (mobile keyboard)
+      // Only shrink to the keyboard while it's open — idle chat uses full 100dvh
       clearChatViewport();
       const syncChatViewport = () => {
         const vv = window.visualViewport;
-        const h = vv ? Math.round(vv.height) : window.innerHeight;
-        if (h > 0) root.style.setProperty("--friends-chat-vh", `${h}px`);
+        const layoutH = window.innerHeight;
+        const visibleH = vv ? vv.height : layoutH;
+        const offsetTop = vv ? vv.offsetTop : 0;
+        const kbOpen = layoutH - visibleH > 100;
+
+        document.body.classList.toggle("is-friends-chat-kb", kbOpen);
+
+        if (kbOpen) {
+          root.style.setProperty("--friends-chat-vh", `${Math.round(visibleH)}px`);
+          root.style.transform = offsetTop
+            ? `translateY(${Math.round(offsetTop)}px)`
+            : "";
+          box.scrollTop = box.scrollHeight;
+        } else {
+          root.style.removeProperty("--friends-chat-vh");
+          root.style.removeProperty("transform");
+        }
       };
       syncChatViewport();
       window.visualViewport?.addEventListener("resize", syncChatViewport);
@@ -656,11 +660,17 @@ export async function FriendsView(root) {
       });
 
       input?.addEventListener("focus", () => {
-        setTimeout(() => {
-          syncChatViewport();
-          form?.scrollIntoView({ block: "end", behavior: "smooth" });
-          box.scrollTop = box.scrollHeight;
-        }, 120);
+        // Wait for keyboard animation, then snap composer to keypad
+        [50, 180, 350].forEach((ms) => {
+          setTimeout(() => {
+            syncChatViewport();
+            box.scrollTop = box.scrollHeight;
+          }, ms);
+        });
+      });
+
+      input?.addEventListener("blur", () => {
+        setTimeout(syncChatViewport, 80);
       });
 
       return;
@@ -1225,7 +1235,7 @@ export async function FriendsView(root) {
       clearChatViewport();
       page.classList.remove("friends-page--chat");
       root.classList.remove("view--friends-chat");
-      document.body.classList.remove("is-friends-chat");
+      document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
     },
   };
 }

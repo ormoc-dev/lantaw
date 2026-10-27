@@ -13,11 +13,12 @@ import {
   onInstallStateChange,
   promptInstall,
 } from "../lib/pwaInstall.js";
+import { consumeReturnPath } from "../router/index.js";
 
 export async function LoginView(root) {
   const session = await getSession();
   if (session) {
-    location.hash = "#/";
+    location.hash = `#${consumeReturnPath()}`;
     return { unmount() {} };
   }
 
@@ -297,11 +298,11 @@ export async function LoginView(root) {
           successEl.hidden = false;
           setMode("signin");
         } else {
-          location.hash = "#/";
+          // Router auth handler restores the last category (e.g. #/anime)
         }
       } else {
         await signIn({ email, password });
-        location.hash = "#/";
+        // Router auth handler leaves /login → saved return path
       }
     } catch (err) {
       errorEl.textContent = err.message || "Something went wrong";

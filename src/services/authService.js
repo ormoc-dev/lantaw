@@ -162,8 +162,8 @@ export async function signOut() {
 }
 
 export function onAuthChange(callback) {
-  const { data } = getSupabase().auth.onAuthStateChange((_event, session) => {
-    callback(session);
+  const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
+    callback(session, event);
   });
   return () => data.subscription.unsubscribe();
 }

@@ -12,14 +12,21 @@ async function boot() {
     console.warn("Session recovery failed:", err?.message || err);
   }
 
-  // After Google OAuth, land in the app — not back on /login
-  // Password recovery keeps the user on #/reset-password
+  // After Google OAuth, land in the app — not back on /login.
+  // Keep category routes (e.g. #/anime) on refresh; only leave /login.
   if (session) {
     const hashPath = (location.hash.replace(/^#/, "") || "/").split("?")[0];
     if (hashPath === "/reset-password") {
       /* stay */
     } else if (!location.hash || location.hash === "#/login") {
-      location.hash = "#/";
+      let next = "/";
+      try {
+        const saved = sessionStorage.getItem("lantaw-return-path");
+        if (saved && saved.startsWith("/") && saved !== "/login") next = saved;
+      } catch {
+        /* ignore */
+      }
+      location.hash = `#${next}`;
     }
   }
 
