@@ -390,10 +390,13 @@ body:has(#view.view--auth) {
 }
 
 .fp-row__actions {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   justify-content: end;
+  pointer-events: auto;
 }
 
 .fp-btn {
@@ -411,12 +414,19 @@ body:has(#view.view--auth) {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .fp-btn--solid {
   border-color: transparent;
   background: var(--accent);
   color: #fff;
+}
+
+.fp-btn--danger {
+  border-color: color-mix(in srgb, var(--err) 45%, transparent);
+  color: #ffb4b4;
 }
 
 .fp-pill {
@@ -1089,7 +1099,19 @@ body:has(#view.view--auth) {
 }
 
 .me-identity__avatar-wrap {
+  appearance: none;
   position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.me-identity__avatar-wrap:disabled {
+  cursor: wait;
+  opacity: 0.75;
 }
 
 .me-identity__avatar-wrap::after {
@@ -1100,6 +1122,26 @@ body:has(#view.view--auth) {
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   opacity: 0.85;
   animation: me-ring 2.8s var(--ease) infinite;
+  pointer-events: none;
+}
+
+.me-identity__avatar-edit {
+  position: absolute;
+  left: 50%;
+  bottom: 0.15rem;
+  z-index: 1;
+  transform: translateX(-50%);
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 82%, #000);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  pointer-events: none;
 }
 
 @keyframes me-ring {

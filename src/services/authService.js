@@ -245,3 +245,55 @@ export async function resolveUserProfile(user) {
 
   return { name, avatar, email, profile };
 }
+
+/**
+ * Upload a profile photo to Storage and save URL on profiles.avatar_url.
+ * Requires migration 202603260009_profile_avatars.sql
+ */
+export async function uploadProfileAvatar(file) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in to update your photo");
+  if (!file) throw new Error("No file selected");
+  if (!String(file.type || "").startsWith("image/")) {
+    throw new Error("Choose a JPG, PNG, or WebP image");
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    throw new Error("Keep photos under 2 MB");
+  }
+
+  const ext =
+    file.type === "image/png"
+      ? "png"
+      : file.type === "image/webp"
+        ? "webp"
+        : file.type === "image/gif"
+          ? "gif"
+          : "jpg";
+  const path = `${user.id}/avatar.${ext}`;
+  const sb = getSupabase();
+
+  const { error: upErr } = await sb.storage.from("avatars").upload(path, file, {
+    upsert: true,
+    contentType: file.type,
+    cacheControl: "60",
+  });
+  if (upErr) {
+    if (/bucket|not found|policy|row-level/i.test(upErr.message || "")) {
+      throw new Error(
+        "Avatar storage needs setup — run supabase/migrations/202603260009_profile_avatars.sql"
+      );
+    }
+    throw upErr;
+  }
+
+  const { data: pub } = sb.storage.from("avatars").getPublicUrl(path);
+  const avatarUrl = `${pub.publicUrl}?v=${Date.now()}`;
+
+  const { error } = await sb
+    .from("profiles")
+    .update({ avatar_url: avatarUrl })
+    .eq("id", user.id);
+
+  if (error) throw error;
+  return avatarUrl;
+}

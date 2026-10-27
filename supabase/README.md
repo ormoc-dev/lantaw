@@ -63,6 +63,8 @@ Run these in Supabase → SQL Editor:
 - `supabase/migrations/202603260005_friends_realtime.sql` (live requests / chat / invites)
 - `supabase/migrations/202603260006_watch_party_chat.sql` (room chat while watching)
 - `supabase/migrations/202603260007_watch_party_playback.sql` (shared Play / Pause sync)
+- `supabase/migrations/202603260008_watch_party_delete.sql` (remove invites from the list)
+- `supabase/migrations/202603260009_profile_avatars.sql` (Me page profile photo uploads)
 
 Or enable Realtime in **Database → Publications → supabase_realtime** for:
 `friendships`, `friend_messages`, `watch_parties`, `watch_party_messages`.

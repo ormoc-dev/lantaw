@@ -2,6 +2,7 @@ import {
   getSession,
   resolveUserProfile,
   signOut,
+  uploadProfileAvatar,
 } from "../services/authService.js";
 import { listWatchlist } from "../services/watchlistService.js";
 import { linkTo } from "../router/index.js";
@@ -42,17 +43,19 @@ export async function MeView(root) {
       <div class="me-glow" aria-hidden="true"></div>
 
       <header class="me-identity">
-        <div class="me-identity__avatar-wrap">
+        <button type="button" class="me-identity__avatar-wrap" id="me-avatar-btn" aria-label="Change profile photo">
           ${
             avatar
-              ? `<img class="me-identity__avatar" src="${escapeHtml(
+              ? `<img class="me-identity__avatar" id="me-avatar-img" src="${escapeHtml(
                   avatar
                 )}" alt="" referrerpolicy="no-referrer" />`
-              : `<span class="me-identity__avatar me-identity__avatar--fallback">${escapeHtml(
+              : `<span class="me-identity__avatar me-identity__avatar--fallback" id="me-avatar-img">${escapeHtml(
                   initial
                 )}</span>`
           }
-        </div>
+          <span class="me-identity__avatar-edit">Photo</span>
+        </button>
+        <input type="file" id="me-avatar-file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
         <div class="me-identity__copy">
           <p class="me-identity__label">You</p>
           <h1>${escapeHtml(name || "Account")}</h1>
@@ -92,6 +95,39 @@ export async function MeView(root) {
   root.querySelector("#sign-out").addEventListener("click", async () => {
     await signOut();
     location.hash = "#/login";
+  });
+
+  const avatarBtn = root.querySelector("#me-avatar-btn");
+  const avatarFile = root.querySelector("#me-avatar-file");
+  avatarBtn?.addEventListener("click", () => avatarFile?.click());
+  avatarFile?.addEventListener("change", async () => {
+    const file = avatarFile.files?.[0];
+    if (!file) return;
+    avatarBtn.disabled = true;
+    avatarBtn.classList.add("is-busy");
+    try {
+      const url = await uploadProfileAvatar(file);
+      const wrap = root.querySelector(".me-identity__avatar-wrap");
+      const existing = root.querySelector("#me-avatar-img");
+      if (existing?.tagName === "IMG") {
+        existing.src = url;
+      } else if (wrap) {
+        existing?.remove();
+        const img = document.createElement("img");
+        img.className = "me-identity__avatar";
+        img.id = "me-avatar-img";
+        img.alt = "";
+        img.referrerPolicy = "no-referrer";
+        img.src = url;
+        wrap.insertBefore(img, wrap.querySelector(".me-identity__avatar-edit"));
+      }
+    } catch (err) {
+      alert(err.message || "Could not update photo");
+    } finally {
+      avatarBtn.disabled = false;
+      avatarBtn.classList.remove("is-busy");
+      avatarFile.value = "";
+    }
   });
 
   const saved = root.querySelector("#saved");

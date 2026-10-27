@@ -18,6 +18,7 @@ import {
   sendMessage,
   subscribeFriendsRealtime,
   updateWatchPartyStatus,
+  deleteWatchParty,
 } from "../services/friendsService.js";
 import { linkTo } from "../router/index.js";
 
@@ -65,6 +66,60 @@ export async function FriendsView(root) {
       <p class="muted">${escapeHtml(text)}</p>
     </div>
   `;
+
+  const partyListHtml = () => {
+    if (!parties.length) {
+      return emptyState("No invites", "Watch invites will show up here.");
+    }
+    return parties
+      .map((p) => {
+        const mineHost = p.host_id === me.id;
+        const openLabel =
+          p.status === "active" ? "Join room" : mineHost ? "Open & wait" : "Open";
+        return `
+          <div class="fp-party">
+            ${
+              p.poster
+                ? `<img src="${escapeHtml(p.poster)}" alt="" />`
+                : `<div class="fp-party__ph"></div>`
+            }
+            <div class="fp-party__body">
+              <strong>${escapeHtml(p.title)}</strong>
+              <span class="muted">${mineHost ? "You invited" : "Invite for you"} · ${escapeHtml(
+                p.status
+              )}</span>
+              <div class="fp-row__actions">
+                ${
+                  p.status === "active" || p.status === "invited"
+                    ? `<a class="fp-btn fp-btn--solid" href="${linkTo(
+                        partyWatchPath(p)
+                      )}">${openLabel}</a>`
+                    : ""
+                }
+                ${
+                  p.status === "invited" && !mineHost
+                    ? `<button class="fp-btn fp-btn--solid" type="button" data-party-accept="${p.id}">Accept</button>
+                       <button class="fp-btn" type="button" data-party-decline="${p.id}">Decline</button>`
+                    : ""
+                }
+                ${
+                  p.status === "active" || p.status === "invited"
+                    ? `<button class="fp-btn" type="button" data-party-end="${p.id}">End</button>`
+                    : ""
+                }
+                <button class="fp-btn fp-btn--danger" type="button" data-party-delete="${p.id}">Delete</button>
+              </div>
+            </div>
+          </div>`;
+      })
+      .join("");
+  };
+
+  const paintPartyList = () => {
+    const partyList = page.querySelector("#party-list");
+    if (!partyList) return;
+    partyList.innerHTML = partyListHtml();
+  };
 
   const personRow = (p, actions = "") => `
     <div class="fp-row">
@@ -571,52 +626,7 @@ export async function FriendsView(root) {
       </section>
     `;
 
-    const partyList = panel.querySelector("#party-list");
-    if (!parties.length) {
-      partyList.innerHTML = emptyState("No invites", "Watch invites will show up here.");
-    } else {
-      partyList.innerHTML = parties
-        .map((p) => {
-          const mineHost = p.host_id === me.id;
-          return `
-            <div class="fp-party">
-              ${
-                p.poster
-                  ? `<img src="${escapeHtml(p.poster)}" alt="" />`
-                  : `<div class="fp-party__ph"></div>`
-              }
-              <div class="fp-party__body">
-                <strong>${escapeHtml(p.title)}</strong>
-                <span class="muted">${mineHost ? "You invited" : "Invite for you"} · ${escapeHtml(
-                  p.status
-                )}</span>
-                <div class="fp-row__actions">
-                  <a class="fp-btn fp-btn--solid" href="${linkTo(
-                    partyWatchPath(p)
-                  )}">${
-                    p.status === "active"
-                      ? "Join room"
-                      : mineHost
-                        ? "Open & wait"
-                        : "Open"
-                  }</a>
-                  ${
-                    p.status === "invited" && !mineHost
-                      ? `<button class="fp-btn fp-btn--solid" type="button" data-party-accept="${p.id}">Accept</button>
-                         <button class="fp-btn" type="button" data-party-decline="${p.id}">Decline</button>`
-                      : ""
-                  }
-                  ${
-                    p.status === "active" || p.status === "invited"
-                      ? `<button class="fp-btn" type="button" data-party-end="${p.id}">End</button>`
-                      : ""
-                  }
-                </div>
-              </div>
-            </div>`;
-        })
-        .join("");
-    }
+    paintPartyList();
 
     const friendInput = panel.querySelector("#friend-search");
     const mediaInput = panel.querySelector("#media-search");
@@ -855,37 +865,77 @@ export async function FriendsView(root) {
       }
     });
 
-    panel.querySelectorAll("[data-party-accept]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.partyAccept;
-        const party = parties.find((p) => p.id === id);
+  }
+
+  // Stable delegation — survives soft list refreshes so Delete stays tappable
+  page.addEventListener("click", async (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const accept = t.closest("[data-party-accept]");
+    const decline = t.closest("[data-party-decline]");
+    const end = t.closest("[data-party-end]");
+    const del = t.closest("[data-party-delete]");
+    if (!accept && !decline && !end && !del) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (accept) {
+      const id = accept.dataset.partyAccept;
+      const party = parties.find((p) => p.id === id);
+      try {
         await updateWatchPartyStatus(id, "active");
         if (party) {
           location.hash = linkTo(partyWatchPath({ ...party, status: "active" }));
           return;
         }
         await refreshData();
-        renderShell();
-        renderPanel();
-      });
-    });
-    panel.querySelectorAll("[data-party-decline]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        await updateWatchPartyStatus(btn.dataset.partyDecline, "declined");
+        paintPartyList();
+        syncTabBadgesOnly();
+      } catch (err) {
+        alert(err.message || "Could not accept");
+      }
+      return;
+    }
+
+    if (decline) {
+      try {
+        await updateWatchPartyStatus(decline.dataset.partyDecline, "declined");
         await refreshData();
-        renderShell();
-        renderPanel();
-      });
-    });
-    panel.querySelectorAll("[data-party-end]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        await updateWatchPartyStatus(btn.dataset.partyEnd, "ended");
+        paintPartyList();
+        syncTabBadgesOnly();
+      } catch (err) {
+        alert(err.message || "Could not decline");
+      }
+      return;
+    }
+
+    if (end) {
+      try {
+        await updateWatchPartyStatus(end.dataset.partyEnd, "ended");
         await refreshData();
-        renderShell();
-        renderPanel();
-      });
-    });
-  }
+        paintPartyList();
+        syncTabBadgesOnly();
+      } catch (err) {
+        alert(err.message || "Could not end");
+      }
+      return;
+    }
+
+    if (del) {
+      if (!window.confirm("Remove this invite from the list?")) return;
+      del.setAttribute("disabled", "true");
+      try {
+        await deleteWatchParty(del.dataset.partyDelete);
+        await refreshData();
+        paintPartyList();
+        syncTabBadgesOnly();
+      } catch (err) {
+        alert(err.message || "Could not delete");
+        del.removeAttribute("disabled");
+      }
+    }
+  });
 
   const syncTabBadgesOnly = () => {
     const tabs = page.querySelector(".fp-tabs");
@@ -910,9 +960,45 @@ export async function FriendsView(root) {
     }
     liveBusy = true;
     try {
-      const table = payload?.table || payload?.source;
+      const table = payload?.table;
+      const soft =
+        payload?.source === "poll" ||
+        payload?.source === "visible" ||
+        payload?.source === "badge-event" ||
+        payload?.source === "queued";
+
       await refreshData();
       notifyFriendsBadge();
+
+      // Soft refresh: never remount Watch form (kills mid-tap on Delete)
+      if (soft) {
+        syncTabBadgesOnly();
+        if (tab === "watch") {
+          paintPartyList();
+        } else if (tab === "friends") {
+          renderShell();
+          await renderPanel();
+        } else if (tab === "chat" && activeChatId && chatPaint) {
+          try {
+            chatPaint(await listMessages(activeChatId));
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        return;
+      }
+
+      // Watch invites — refresh list only while on Watch
+      if (table === "watch_parties") {
+        syncTabBadgesOnly();
+        if (tab === "watch") {
+          paintPartyList();
+        } else if (tab === "friends") {
+          renderShell();
+          await renderPanel();
+        }
+        return;
+      }
 
       // Keep chat composer intact; only refresh bubbles for this thread
       if (tab === "chat" && table === "friend_messages") {
@@ -928,7 +1014,7 @@ export async function FriendsView(root) {
         return;
       }
 
-      // People / Watch (and friendship list changes while chatting) — full refresh
+      // People / other changes — full refresh
       renderShell();
       await renderPanel();
     } finally {
@@ -967,9 +1053,13 @@ export async function FriendsView(root) {
   }
   await renderPanel();
 
-  unsubPage = subscribeFriendsRealtime((payload) => {
-    scheduleLiveRefresh(payload);
-  });
+  // Realtime + short poll so Watch invites appear without a full page reload
+  unsubPage = subscribeFriendsRealtime(
+    (payload) => {
+      scheduleLiveRefresh(payload);
+    },
+    { pollMs: 7000, listenBadgeEvent: true }
+  );
 
   return {
     unmount() {

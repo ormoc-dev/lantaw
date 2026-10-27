@@ -301,6 +301,24 @@ export async function updateWatchPartyStatus(partyId, status) {
   return data;
 }
 
+export async function deleteWatchParty(partyId) {
+  await requireUser();
+  const { error } = await getSupabase()
+    .from("watch_parties")
+    .delete()
+    .eq("id", partyId);
+
+  if (error) {
+    if (/policy|permission|RLS/i.test(error.message || "")) {
+      throw new Error(
+        "Delete needs a DB update — run supabase/migrations/202603260008_watch_party_delete.sql"
+      );
+    }
+    throw error;
+  }
+  notifyFriendsBadge();
+}
+
 /**
  * Broadcast play/pause/sync so both party members load the stream together.
  * Requires migration 202603260007_watch_party_playback.sql
@@ -546,6 +564,25 @@ export async function getFriendsActivityCounts() {
 export function subscribeFriendsRealtime(onChange, opts = {}) {
   const { pollMs = 0, listenBadgeEvent = false } = opts;
   let channel = null;
+  let poll = null;
+  let pollMsActive = pollMs;
+
+  const emit = (payload) => {
+    try {
+      onChange(payload || {});
+    } catch {
+      /* ignore listener errors */
+    }
+  };
+
+  const startPoll = (ms) => {
+    if (poll) clearInterval(poll);
+    poll = null;
+    pollMsActive = ms;
+    if (ms > 0) {
+      poll = setInterval(() => emit({ source: "poll" }), ms);
+    }
+  };
 
   try {
     const sb = getSupabase();
@@ -554,33 +591,60 @@ export function subscribeFriendsRealtime(onChange, opts = {}) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "friendships" },
-        (payload) => onChange(payload)
+        (payload) => emit(payload)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "friend_messages" },
-        (payload) => onChange(payload)
+        (payload) => emit(payload)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "watch_parties" },
-        (payload) => onChange(payload)
+        (payload) => emit(payload)
       )
-      .subscribe();
+      .subscribe((status) => {
+        // If realtime never connects, poll more often so invites still appear
+        if (status === "SUBSCRIBED") {
+          startPoll(pollMsActive || pollMs);
+          return;
+        }
+        if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          startPoll(Math.min(pollMsActive || 12000, 8000) || 8000);
+        }
+      });
   } catch {
-    /* ignore */
+    startPoll(pollMs || 8000);
   }
 
-  const onBadgeEvent = () => onChange({ source: "badge-event" });
+  if (!channel && pollMs > 0) {
+    startPoll(pollMs);
+  } else if (pollMs > 0) {
+    // Poll even while subscribed — invites must show without a full reload
+    startPoll(pollMs);
+  }
+
+  const onBadgeEvent = () => emit({ source: "badge-event" });
   if (listenBadgeEvent) {
     window.addEventListener(FRIENDS_BADGE_EVENT, onBadgeEvent);
   }
-  const poll = pollMs > 0 ? setInterval(() => onChange({ source: "poll" }), pollMs) : null;
+
+  const onVisible = () => {
+    if (document.visibilityState === "visible") {
+      emit({ source: "visible" });
+    }
+  };
+  document.addEventListener("visibilitychange", onVisible);
 
   return () => {
     if (listenBadgeEvent) {
       window.removeEventListener(FRIENDS_BADGE_EVENT, onBadgeEvent);
     }
+    document.removeEventListener("visibilitychange", onVisible);
     if (poll) clearInterval(poll);
     if (channel) {
       try {
