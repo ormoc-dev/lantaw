@@ -6,11 +6,11 @@ import {
   isInWatchlist,
   removeByTmdbId,
 } from "../services/watchlistService.js";
-import {
-  getPartyIdFromHash,
-  mountWatchTogether,
-} from "../components/WatchTogether.js";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
+import {
+  bindStreamControls,
+  renderStreamPlayer,
+} from "../lib/streamEmbed.js";
 
 export async function MovieView(root, params = {}) {
   return renderMediaDetail(root, params, "movie");
@@ -20,11 +20,24 @@ export async function TvView(root, params = {}) {
   return renderMediaDetail(root, params, "tv");
 }
 
+function legacyPartyRedirect() {
+  const hash = location.hash.replace(/^#/, "");
+  const qi = hash.indexOf("?");
+  if (qi < 0) return false;
+  const partyId = new URLSearchParams(hash.slice(qi + 1)).get("party");
+  if (!partyId) return false;
+  location.hash = linkTo(`/watch-party/${partyId}`);
+  return true;
+}
+
 async function renderMediaDetail(root, params, mediaType) {
+  if (legacyPartyRedirect()) {
+    return { unmount() {} };
+  }
+
   const id = params.id;
   let cleanupPlayerHistory = () => {};
   let cleanupStreamGuard = () => {};
-  let watchTogether = null;
 
   root.innerHTML = `
     <a class="back" href="${linkTo("/")}">← Back</a>
@@ -43,11 +56,10 @@ async function renderMediaDetail(root, params, mediaType) {
     const genres = (movie.genres || []).map((g) => g.name).join(" · ");
     let saved = await isInWatchlist(Number(id));
     const trailerKey = movie.trailer?.key;
-    const partyId = getPartyIdFromHash();
 
     root.innerHTML = `
       <a class="back" href="${linkTo("/")}">← Back</a>
-      <article class="detail ${partyId ? "detail--together" : ""}">
+      <article class="detail">
         ${
           movie.backdrop
             ? `<div class="detail__hero" style="background-image:url('${movie.backdrop}')"></div>`
@@ -89,7 +101,6 @@ async function renderMediaDetail(root, params, mediaType) {
                 : ""
             }
             <div class="detail__actions" id="actions"></div>
-            <div class="detail__together" id="together-root"></div>
             <div class="detail__player" id="player" hidden></div>
           </div>
         </div>
@@ -98,7 +109,6 @@ async function renderMediaDetail(root, params, mediaType) {
 
     const actions = root.querySelector("#actions");
     const player = root.querySelector("#player");
-    const togetherRoot = root.querySelector("#together-root");
     const omdbBox = root.querySelector("#omdb-ratings");
 
     if (movie.omdb?.ratings?.length) {
@@ -208,48 +218,25 @@ async function renderMediaDetail(root, params, mediaType) {
       player.scrollIntoView({ behavior: "smooth", block: "nearest" });
     };
 
-    const dockWatchChat = () => {
-      // Keep live chat under the player — never inside the embed overlay
-      const stage =
-        togetherRoot?.querySelector(".wt__stage") ||
-        document.querySelector(".wt__stage");
-      if (!stage || !player) return;
-      player.after(stage);
-    };
-
     const openStream = () => {
       showPlayer(renderStreamPlayer(movie, mediaType), () => {
         mountStreamGuard();
-        bindStreamControls(player, movie, mediaType, () => {
-          mountStreamGuard();
+        bindStreamControls(player, movie, mediaType, {
+          onReload: () => mountStreamGuard(),
         });
-        dockWatchChat();
       });
     };
 
     actions.classList.add("detail__actions");
     actions.innerHTML = `
       <button type="button" class="btn btn--primary detail__watch-btn" id="watch-now">
-        ${partyId ? "Watch together" : "Watch now"}
+        Watch now
       </button>
       <div class="detail__tools" id="detail-tools"></div>
     `;
 
     const tools = actions.querySelector("#detail-tools");
     actions.querySelector("#watch-now")?.addEventListener("click", () => openStream());
-
-    if (partyId && togetherRoot) {
-      watchTogether = await mountWatchTogether({
-        partyId,
-        root: togetherRoot,
-        onStartPlayback: () => {
-          if (!playerOpen) openStream();
-          else dockWatchChat();
-        },
-      });
-      // Party rooms jump straight into the video
-      openStream();
-    }
 
     if (trailerKey) {
       const trailerBtn = document.createElement("button");
@@ -324,7 +311,6 @@ async function renderMediaDetail(root, params, mediaType) {
     unmount() {
       cleanupStreamGuard();
       cleanupPlayerHistory();
-      watchTogether?.unmount?.();
     },
   };
 }
@@ -334,128 +320,4 @@ function escapeHtml(str = "") {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
-}
-
-function getTvDefaults(movie) {
-  const firstSeason = Array.isArray(movie.seasons) && movie.seasons.length
-    ? movie.seasons[0]
-    : { seasonNumber: 1, episodeCount: 1, name: "Season 1" };
-
-  return {
-    season: Math.max(1, Number(firstSeason.seasonNumber) || 1),
-    episode: 1,
-  };
-}
-
-function buildStreamUrl({ mediaType, tmdbId, season = 1, episode = 1, anilistId }) {
-  if (mediaType === "tv") {
-    return `https://zoryva.me/embed/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(
-      season
-    )}/${encodeURIComponent(episode)}?color=%23ff0a43`;
-  }
-  if (mediaType === "anime") {
-    return `https://zoryva.me/embed/anime/${encodeURIComponent(
-      anilistId || tmdbId
-    )}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}?color=%23ff0a43`;
-  }
-  return `https://zoryva.me/embed/movie/${encodeURIComponent(tmdbId)}?color=%23ff0a43`;
-}
-
-function renderStreamPlayer(movie, mediaType) {
-  if (mediaType === "tv") {
-    const defaults = getTvDefaults(movie);
-    const options = (movie.seasons || [])
-      .map(
-        (season) =>
-          `<option value="${season.seasonNumber}" data-episode-count="${season.episodeCount}">${escapeHtml(
-            season.name
-          )}</option>`
-      )
-      .join("");
-
-    const seasonSelect = options
-      ? `<select id="stream-season">${options}</select>`
-      : `<input id="stream-season" type="number" min="1" value="${defaults.season}" />`;
-
-    const streamUrl = buildStreamUrl({
-      mediaType,
-      tmdbId: movie.id,
-      season: defaults.season,
-      episode: defaults.episode,
-    });
-
-    return `
-      <div class="stream-controls">
-        <label>Season ${seasonSelect}</label>
-        <label>Episode <input id="stream-episode" type="number" min="1" value="${defaults.episode}" /></label>
-        <button class="btn btn--ghost" id="stream-reload" type="button">Load episode</button>
-      </div>
-      <div class="detail__player-frame detail__player-frame--embed">
-        <iframe
-          id="stream-iframe"
-          src="${streamUrl}"
-          title="Streaming player"
-          frameborder="0"
-          style="border: 0; border-radius: 12px;"
-          allow="autoplay; fullscreen; picture-in-picture"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-          referrerpolicy="no-referrer"
-          allowfullscreen
-        ></iframe>
-      </div>
-    `;
-  }
-
-  const streamUrl = buildStreamUrl({ mediaType, tmdbId: movie.id });
-  return `
-    <div class="detail__player-frame detail__player-frame--embed">
-      <iframe
-        id="stream-iframe"
-        src="${streamUrl}"
-        title="Streaming player"
-        frameborder="0"
-        style="border: 0; border-radius: 12px;"
-        allow="autoplay; fullscreen; picture-in-picture"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-        referrerpolicy="no-referrer"
-        allowfullscreen
-      ></iframe>
-    </div>
-  `;
-}
-
-function bindStreamControls(player, movie, mediaType, onReload) {
-  if (mediaType !== "tv") return;
-
-  const seasonEl = player.querySelector("#stream-season");
-  const episodeEl = player.querySelector("#stream-episode");
-  const reloadBtn = player.querySelector("#stream-reload");
-  const iframe = player.querySelector("#stream-iframe");
-
-  if (!seasonEl || !episodeEl || !reloadBtn || !iframe) return;
-
-  const clampEpisode = () => {
-    if (seasonEl.tagName !== "SELECT") return;
-    const selected = seasonEl.selectedOptions?.[0];
-    const max = Number(selected?.dataset?.episodeCount || 1);
-    const current = Number(episodeEl.value) || 1;
-    if (current < 1) episodeEl.value = "1";
-    if (current > max) episodeEl.value = String(max);
-    episodeEl.max = String(max);
-  };
-
-  seasonEl.addEventListener("change", clampEpisode);
-  clampEpisode();
-
-  reloadBtn.addEventListener("click", () => {
-    const season = Math.max(1, Number(seasonEl.value) || 1);
-    const episode = Math.max(1, Number(episodeEl.value) || 1);
-    iframe.src = buildStreamUrl({
-      mediaType,
-      tmdbId: movie.id,
-      season,
-      episode,
-    });
-    onReload?.();
-  });
 }

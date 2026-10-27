@@ -301,6 +301,67 @@ export async function updateWatchPartyStatus(partyId, status) {
   return data;
 }
 
+/**
+ * Broadcast play/pause/sync so both party members load the stream together.
+ * Requires migration 202603260007_watch_party_playback.sql
+ */
+export async function updateWatchPartyPlayback(
+  partyId,
+  {
+    state,
+    positionSec = 0,
+    season = null,
+    episode = null,
+    bumpSync = true,
+  } = {}
+) {
+  const user = await requireUser();
+  if (!partyId) throw new Error("Missing watch party");
+  if (!["idle", "playing", "paused"].includes(state)) {
+    throw new Error("Invalid playback state");
+  }
+
+  const current = await getWatchParty(partyId);
+  if (!current) throw new Error("Watch party not found");
+  if (!current.isHost) {
+    throw new Error("Only the host can control playback");
+  }
+
+  const nextToken = bumpSync
+    ? Number(current.playback_sync_token || 0) + 1
+    : Number(current.playback_sync_token || 0);
+
+  const patch = {
+    playback_state: state,
+    playback_position_sec: Math.max(0, Number(positionSec) || 0),
+    playback_sync_token: nextToken,
+    playback_by: user.id,
+  };
+
+  if (state === "playing") {
+    patch.playback_started_at = new Date().toISOString();
+  }
+  if (season != null) patch.playback_season = Math.max(1, Number(season) || 1);
+  if (episode != null) patch.playback_episode = Math.max(1, Number(episode) || 1);
+
+  const { data, error } = await getSupabase()
+    .from("watch_parties")
+    .update(patch)
+    .eq("id", partyId)
+    .select()
+    .single();
+
+  if (error) {
+    if (/playback_/i.test(error.message || "")) {
+      throw new Error(
+        "Playback sync needs a DB update — run supabase/migrations/202603260007_watch_party_playback.sql"
+      );
+    }
+    throw error;
+  }
+  return data;
+}
+
 export async function getWatchParty(partyId) {
   const user = await requireUser();
   const { data, error } = await getSupabase()
@@ -326,10 +387,8 @@ export async function getWatchParty(partyId) {
 }
 
 export function partyWatchPath(party) {
-  if (!party) return "/";
-  const base =
-    party.media_type === "tv" ? `/tv/${party.tmdb_id}` : `/movie/${party.tmdb_id}`;
-  return `${base}?party=${party.id}`;
+  if (!party?.id) return "/friends";
+  return `/watch-party/${party.id}`;
 }
 
 export async function listWatchPartyMessages(partyId, { limit = 80 } = {}) {

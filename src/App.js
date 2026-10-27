@@ -11,6 +11,7 @@ import { RankingsView } from "./views/RankingsView.js";
 import { DiscoverView } from "./views/DiscoverView.js";
 import { MeView } from "./views/MeView.js";
 import { FriendsView } from "./views/FriendsView.js";
+import { WatchPartyView } from "./views/WatchPartyView.js";
 import { RecentView } from "./views/RecentView.js";
 import { RecommendView } from "./views/categories/RecommendView.js";
 import { FilipinoView } from "./views/categories/FilipinoView.js";
@@ -46,6 +47,7 @@ export function createApp(root) {
   router.add("/discover", DiscoverView);
   router.add("/me", MeView);
   router.add("/friends", FriendsView);
+  router.add("/watch-party/:id", WatchPartyView);
   router.add("/recent", RecentView);
   router.add("/watchlist", WatchlistView);
   router.add("/movie/:id", MovieView);

@@ -529,7 +529,6 @@ export async function FriendsView(root) {
                 autocomplete="off"
                 ${!accepted.length ? "disabled" : ""}
               />
-              <button type="button" class="fp-search__clear" data-clear="friend" hidden>✕</button>
             </div>
             <div class="fp-search__menu" id="friend-menu" hidden></div>
             <input type="hidden" name="friendshipId" id="friend-value" />
@@ -547,7 +546,6 @@ export async function FriendsView(root) {
                 autocomplete="off"
                 ${!recent.length ? "disabled" : ""}
               />
-              <button type="button" class="fp-search__clear" data-clear="media" hidden>✕</button>
             </div>
             <div class="fp-search__menu" id="media-menu" hidden></div>
             <input type="hidden" name="media" id="media-value" />
@@ -604,7 +602,7 @@ export async function FriendsView(root) {
                   }</a>
                   ${
                     p.status === "invited" && !mineHost
-                      ? `<button class="fp-btn fp-btn--solid" type="button" data-party-accept="${p.id}">Accept & watch</button>
+                      ? `<button class="fp-btn fp-btn--solid" type="button" data-party-accept="${p.id}">Accept</button>
                          <button class="fp-btn" type="button" data-party-decline="${p.id}">Decline</button>`
                       : ""
                   }
@@ -629,8 +627,8 @@ export async function FriendsView(root) {
     const mediaValue = panel.querySelector("#media-value");
     const friendPicked = panel.querySelector("#friend-picked");
     const mediaPicked = panel.querySelector("#media-picked");
-    const friendClear = panel.querySelector('[data-clear="friend"]');
-    const mediaClear = panel.querySelector('[data-clear="media"]');
+    const friendWrap = panel.querySelector('[data-search="friend"]');
+    const mediaWrap = panel.querySelector('[data-search="media"]');
     const submitBtn = panel.querySelector("#watch-submit");
 
     const syncSubmit = () => {
@@ -649,16 +647,17 @@ export async function FriendsView(root) {
         guestValue.value = "";
         friendPicked.hidden = true;
         friendPicked.innerHTML = "";
-        friendClear.hidden = true;
         friendInput.value = "";
         friendInput.hidden = false;
+        friendWrap?.classList.remove("is-picked");
         syncSubmit();
         return;
       }
       friendValue.value = friend.id;
       guestValue.value = friend.otherId;
       friendInput.hidden = true;
-      friendClear.hidden = false;
+      friendInput.blur();
+      friendWrap?.classList.add("is-picked");
       friendPicked.hidden = false;
       friendPicked.innerHTML = `
         ${avatarHtml(friend.other, "fp-avatar--sm")}
@@ -666,7 +665,11 @@ export async function FriendsView(root) {
           <strong>${escapeHtml(friend.other?.display_name || "Friend")}</strong>
           <span>${escapeHtml(friend.other?.email || "")}</span>
         </div>
+        <button type="button" class="fp-search__clear" data-clear="friend" aria-label="Clear friend">✕</button>
       `;
+      friendPicked.querySelector('[data-clear="friend"]')?.addEventListener("click", () =>
+        setFriend(null)
+      );
       closeMenus();
       syncSubmit();
     };
@@ -677,15 +680,16 @@ export async function FriendsView(root) {
         mediaValue.value = "";
         mediaPicked.hidden = true;
         mediaPicked.innerHTML = "";
-        mediaClear.hidden = true;
         mediaInput.value = "";
         mediaInput.hidden = false;
+        mediaWrap?.classList.remove("is-picked");
         syncSubmit();
         return;
       }
       mediaValue.value = `${item.mediaType || "movie"}:${item.id}`;
       mediaInput.hidden = true;
-      mediaClear.hidden = false;
+      mediaInput.blur();
+      mediaWrap?.classList.add("is-picked");
       mediaPicked.hidden = false;
       mediaPicked.innerHTML = `
         ${
@@ -697,7 +701,11 @@ export async function FriendsView(root) {
           <strong>${escapeHtml(item.title)}</strong>
           <span>${escapeHtml((item.mediaType || "movie").toUpperCase())}</span>
         </div>
+        <button type="button" class="fp-search__clear" data-clear="media" aria-label="Clear title">✕</button>
       `;
+      mediaPicked.querySelector('[data-clear="media"]')?.addEventListener("click", () =>
+        setMedia(null)
+      );
       closeMenus();
       syncSubmit();
     };
@@ -822,9 +830,6 @@ export async function FriendsView(root) {
       document.removeEventListener("pointerdown", onDocPointer, true);
       unsubWatchDoc = null;
     };
-
-    friendClear?.addEventListener("click", () => setFriend(null));
-    mediaClear?.addEventListener("click", () => setMedia(null));
 
     panel.querySelector("#watch-invite")?.addEventListener("submit", async (e) => {
       e.preventDefault();
