@@ -39,29 +39,35 @@ export function FeaturedHero({ item, items } = {}) {
         <p class="home-hero__overview">${escapeHtml(
           truncate(current.overview, 120)
         )}</p>
-        ${
-          list.length > 1
-            ? `
-        <div class="home-hero__dots" role="tablist" aria-label="Featured titles">
-          ${list
-            .map(
-              (_, i) => `
-            <button
-              type="button"
-              class="home-hero__dot ${i === index ? "is-active" : ""}"
-              role="tab"
-              aria-selected="${i === index ? "true" : "false"}"
-              aria-label="Featured ${i + 1}"
-              data-index="${i}"
-            ></button>`
-            )
-            .join("")}
-        </div>`
-            : ""
-        }
-        <a class="btn btn--primary home-hero__cta" href="${linkTo(
-          href
-        )}">View details</a>
+        <div class="home-hero__actions">
+          <a class="home-hero__cta" href="${linkTo(href)}">
+            <svg class="home-hero__cta-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 5.5v13l10-6.5-10-6.5Z" fill="currentColor"/>
+              <path d="M5 5.5h2.2v13H5V5.5Z" fill="currentColor"/>
+            </svg>
+            <span>View details</span>
+          </a>
+          ${
+            list.length > 1
+              ? `
+          <div class="home-hero__dots" role="tablist" aria-label="Featured titles">
+            ${list
+              .map(
+                (_, i) => `
+              <button
+                type="button"
+                class="home-hero__dot ${i === index ? "is-active" : ""}"
+                role="tab"
+                aria-selected="${i === index ? "true" : "false"}"
+                aria-label="Featured ${i + 1}"
+                data-index="${i}"
+              ></button>`
+              )
+              .join("")}
+          </div>`
+              : ""
+          }
+        </div>
       </div>
     `;
 
