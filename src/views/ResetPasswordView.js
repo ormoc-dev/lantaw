@@ -13,8 +13,6 @@ export async function ResetPasswordView(root) {
     <section class="auth-page">
       <div class="auth-page__glow auth-page__glow--a" aria-hidden="true"></div>
       <div class="auth-page__glow auth-page__glow--b" aria-hidden="true"></div>
-      <div class="auth-page__grain" aria-hidden="true"></div>
-
       <div class="auth-shell">
         <aside class="auth-brand-pane">
           <p class="auth-brand">LANTAW</p>

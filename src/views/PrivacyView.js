@@ -7,8 +7,6 @@ export async function PrivacyView(root) {
     <section class="auth-page legal-page">
       <div class="auth-page__glow auth-page__glow--a" aria-hidden="true"></div>
       <div class="auth-page__glow auth-page__glow--b" aria-hidden="true"></div>
-      <div class="auth-page__grain" aria-hidden="true"></div>
-
       <div class="auth-shell legal-shell">
         <a class="back" href="${linkTo("/login")}">← Back</a>
         <p class="auth-brand">LANTAW</p>

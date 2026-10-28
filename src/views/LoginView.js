@@ -31,7 +31,6 @@ export async function LoginView(root) {
     <section class="auth-page">
       <div class="auth-page__glow auth-page__glow--a" aria-hidden="true"></div>
       <div class="auth-page__glow auth-page__glow--b" aria-hidden="true"></div>
-      <div class="auth-page__grain" aria-hidden="true"></div>
 
       <div class="auth-showcase" id="auth-showcase" aria-hidden="true">
         <div class="auth-showcase__fade auth-showcase__fade--left"></div>
