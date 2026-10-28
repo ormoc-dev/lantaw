@@ -11,13 +11,26 @@ export function MovieCard(movie) {
     ? `<img src="${movie.poster}" alt="" loading="lazy" />`
     : `<div class="movie-card__placeholder">No poster</div>`;
 
+  const rating =
+    movie.rating != null && !Number.isNaN(Number(movie.rating)) && Number(movie.rating) > 0
+      ? Number(movie.rating).toFixed(1)
+      : null;
+
   el.innerHTML = `
-    ${img}
+    <div class="movie-card__poster">
+      ${img}
+      ${
+        rating
+          ? `<span class="movie-card__rating" title="Rating ${rating}">
+              <span class="movie-card__star" aria-hidden="true">★</span>
+              <span>${rating}</span>
+            </span>`
+          : ""
+      }
+    </div>
     <div class="movie-card__meta">
       <strong>${escapeHtml(movie.title)}</strong>
-      <span>${movie.releaseDate?.slice(0, 4) || "—"} · ${
-        movie.rating ? movie.rating.toFixed(1) : "—"
-      }</span>
+      <span>${movie.releaseDate?.slice(0, 4) || "—"}</span>
     </div>
   `;
 

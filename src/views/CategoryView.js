@@ -7,6 +7,11 @@ import { CategoryChips } from "../components/CategoryChips.js";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
 import { HomeSticky } from "../components/HomeSticky.js";
 import { MediaGrid } from "../components/MediaGrid.js";
+import { CategoryRow } from "../components/CategoryRow.js";
+import {
+  MovieStudiosRail,
+  TvNetworksRail,
+} from "../components/BrandRails.js";
 import { FeaturedHero } from "../components/FeaturedHero.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
@@ -66,7 +71,9 @@ export async function CategoryView(root, { categoryId } = {}) {
   root.appendChild(page);
 
   try {
-    const { results } = await getCategoryItems(category.id);
+    const data = await getCategoryItems(category.id);
+    const results = data.results || [];
+    const sections = data.sections || [];
     body.innerHTML = "";
 
     if (results.length) {
@@ -85,12 +92,34 @@ export async function CategoryView(root, { categoryId } = {}) {
     `;
     body.appendChild(head);
 
-    body.appendChild(
-      MediaGrid({
-        items: results,
-        emptyText: `No titles in ${category.title} yet.`,
-      })
-    );
+    if (sections.length) {
+      for (const section of sections) {
+        // Movie Studios sit directly above Popular TV shows
+        if (category.id === "recommend" && section.id === "popular-tv") {
+          body.appendChild(MovieStudiosRail());
+        }
+
+        body.appendChild(
+          CategoryRow({
+            id: section.id,
+            title: section.title,
+            movies: section.items,
+          })
+        );
+
+        // TV Networks sit directly under Top 10 Today · United States
+        if (category.id === "recommend" && section.id === "top10-us") {
+          body.appendChild(TvNetworksRail());
+        }
+      }
+    } else {
+      body.appendChild(
+        MediaGrid({
+          items: results,
+          emptyText: `No titles in ${category.title} yet.`,
+        })
+      );
+    }
   } catch (err) {
     body.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
   }

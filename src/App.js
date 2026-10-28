@@ -19,6 +19,7 @@ import { MoviesView } from "./views/categories/MoviesView.js";
 import { TvShowView } from "./views/categories/TvShowView.js";
 import { AnimeView } from "./views/categories/AnimeView.js";
 import { VivamaxView } from "./views/categories/VivamaxView.js";
+import { BrandView } from "./views/BrandView.js";
 
 export function createApp(root) {
   const shell = document.createElement("div");
@@ -37,6 +38,7 @@ export function createApp(root) {
   router.add("/privacy", PrivacyView);
   router.add("/reset-password", ResetPasswordView);
   router.add("/recommend", RecommendView);
+  router.add("/brand/:kind/:id", BrandView);
   router.add("/filipino", FilipinoView);
   router.add("/vivamax", VivamaxView);
   router.add("/movies", MoviesView);

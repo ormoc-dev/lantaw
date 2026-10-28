@@ -16,7 +16,7 @@ function mapTitle(m) {
   };
 }
 
-function mapList(data, mediaType) {
+export function mapList(data, mediaType) {
   return {
     page: data.page,
     totalPages: data.total_pages,
@@ -32,6 +32,9 @@ function mapList(data, mediaType) {
       }),
   };
 }
+
+/** Alias for brand / discover callers */
+export const mapListFromRaw = mapList;
 
 export async function getPopularMovies(page = 1) {
   return mapList(await tmdb.popular(page), "movie");
@@ -82,16 +85,64 @@ function mergeByRating(...lists) {
   return [...byKey.values()].sort((a, b) => (b.rating || 0) - (a.rating || 0));
 }
 
-/** Recommend = highest-rated movies + TV */
+/**
+ * Recommend page rows:
+ * Top 10 Today · US, Trending, Popular movies/TV, New on air, Popular anime.
+ * (TV Networks + Movie Studios are logo rails above the list.)
+ */
 export async function getRecommended() {
-  const [movies, tv] = await Promise.all([
-    getTopRatedMovies(),
-    mapList(await tmdb.topRatedTv(1), "tv"),
-  ]);
+  const [trendingToday, trendingNow, popularMovies, popularTv, nowPlaying, anime] =
+    await Promise.all([
+      mapList(await tmdb.trendingAll("day")),
+      mapList(await tmdb.trendingAll("week")),
+      getPopularMovies(),
+      getTvShows(),
+      getNowPlayingMovies(),
+      getAnime(),
+    ]);
 
-  return {
-    results: mergeByRating(movies.results, tv.results),
-  };
+  const sections = [
+    {
+      id: "top10-us",
+      title: "Top 10 Today · United States",
+      items: (trendingToday.results || []).slice(0, 10),
+    },
+    {
+      id: "trending-now",
+      title: "Trending now",
+      items: (trendingNow.results || []).slice(0, 18),
+    },
+    {
+      id: "popular-movies",
+      title: "Popular movies",
+      items: (popularMovies.results || []).slice(0, 18),
+    },
+    {
+      id: "popular-tv",
+      title: "Popular TV shows",
+      items: (popularTv.results || []).slice(0, 18),
+    },
+    {
+      id: "now-playing",
+      title: "New on air movies",
+      items: (nowPlaying.results || []).slice(0, 18),
+    },
+    {
+      id: "popular-anime",
+      title: "Popular anime",
+      items: (anime.results || []).slice(0, 18),
+    },
+  ].filter((s) => s.items.length);
+
+  // Flat list for hero / home preview (prefer today's top + trending)
+  const results = mergeByRating(
+    sections[0]?.items,
+    trendingNow.results,
+    popularMovies.results,
+    popularTv.results
+  );
+
+  return { results, sections };
 }
 
 export async function getFilipino() {
@@ -248,7 +299,7 @@ export async function getHomeCatalog() {
       {
         id: "recommend",
         title: "Recommend",
-        description: "Highest-rated movies and TV.",
+        description: "Top picks, trending titles, and what’s popular now.",
         path: "/recommend",
         items: previewList(recommend.results, heroes),
       },

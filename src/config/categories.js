@@ -4,7 +4,7 @@ export const CATEGORIES = [
     id: "recommend",
     path: "/recommend",
     title: "Recommend",
-    description: "Highest-rated movies and TV.",
+    description: "Top picks, trending titles, and what’s popular now.",
   },
   {
     id: "filipino",

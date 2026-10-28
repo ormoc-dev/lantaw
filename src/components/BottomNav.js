@@ -15,6 +15,7 @@ const ITEMS = [
       p.startsWith("/movie/") ||
       p.startsWith("/tv/") ||
       p.startsWith("/recent") ||
+      p.startsWith("/brand/") ||
       ["/recommend", "/filipino", "/movies", "/tv-show", "/anime", "/vivamax"].includes(p),
     icon: `
       <svg viewBox="0 0 24 24" aria-hidden="true">

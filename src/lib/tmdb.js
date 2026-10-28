@@ -44,6 +44,7 @@ export const tmdb = {
   nowPlaying: (page = 1) => tmdbFetch("/movie/now_playing", { page }),
   upcoming: (page = 1) => tmdbFetch("/movie/upcoming", { page }),
   trending: (timeWindow = "week") => tmdbFetch(`/trending/movie/${timeWindow}`),
+  trendingTv: (timeWindow = "week") => tmdbFetch(`/trending/tv/${timeWindow}`),
   trendingAll: (timeWindow = "week") =>
     tmdbFetch(`/trending/all/${timeWindow}`),
   byGenre: (genreId, page = 1) =>
@@ -67,6 +68,8 @@ export const tmdb = {
     }),
   popularTv: (page = 1) => tmdbFetch("/tv/popular", { page }),
   topRatedTv: (page = 1) => tmdbFetch("/tv/top_rated", { page }),
+  network: (id) => tmdbFetch(`/network/${id}`),
+  company: (id) => tmdbFetch(`/company/${id}`),
   search: (query, page = 1) =>
     tmdbFetch("/search/movie", { query, page, include_adult: false }),
   movie: (id) => tmdbFetch(`/movie/${id}`),
