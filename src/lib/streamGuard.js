@@ -85,19 +85,27 @@ export function attachStreamAdGuard(
   frame.addEventListener("pointerdown", onFramePointer);
 
   const nativeOpen = window.open.bind(window);
+  let blockedPopupAt = 0;
   // While this guard is mounted, swallow popup attempts from the page/embed flow.
-  window.open = () => null;
+  window.open = () => {
+    blockedPopupAt = Date.now();
+    return null;
+  };
 
   const reclaimFocus = () => {
     if (!unlocked) return;
-    if (Date.now() - lastInteract > 2500) return;
+    // Only reclaim after a blocked popup — never when the user is using the player
+    // (seek / pause / fullscreen). Stealing focus mid-seek restarts many embeds.
+    if (!blockedPopupAt || Date.now() - blockedPopupAt > 2500) return;
     window.setTimeout(() => {
+      if (iframe && document.activeElement === iframe) return;
       try {
         window.focus();
       } catch {
         /* ignore */
       }
-    }, 0);
+      blockedPopupAt = 0;
+    }, 80);
   };
 
   window.addEventListener("blur", reclaimFocus);
