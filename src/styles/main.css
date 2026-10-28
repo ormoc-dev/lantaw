@@ -3853,11 +3853,11 @@ body.me-modal-open {
     max-width: 42rem;
     min-height: auto;
     margin: 0 auto;
-    padding: clamp(1.75rem, 3vw, 2.5rem);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    background: rgba(26, 16, 18, 0.55);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .legal-page .auth-brand {

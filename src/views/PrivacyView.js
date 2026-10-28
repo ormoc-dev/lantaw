@@ -25,17 +25,11 @@ export async function PrivacyView(root) {
             Catalog data comes from third-party services. Some streams may be pirated / unofficial embeds,
             so don’t expect perfect quality, uptime, or every title to work.
           </p>
-          <p>
-            Questions?
-            <a href="mailto:anthony.capuyan23@gmail.com">anthony.capuyan23@gmail.com</a>
-          </p>
         </div>
       </div>
 
       <footer class="auth-legal">
         <a href="#/privacy" aria-current="page">Privacy</a>
-        <span class="auth-legal__sep" aria-hidden="true">|</span>
-        <a href="mailto:anthony.capuyan23@gmail.com">Support</a>
       </footer>
     </section>
   `;

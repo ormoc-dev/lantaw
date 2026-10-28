@@ -11,6 +11,7 @@ import {
   dismissInstallBanner,
   getInstallState,
   onInstallStateChange,
+  openInExternalBrowser,
   promptInstall,
 } from "../lib/pwaInstall.js";
 import { consumeReturnPath } from "../router/index.js";
@@ -107,8 +108,6 @@ export async function LoginView(root) {
 
       <footer class="auth-legal">
         <a href="#/privacy">Privacy</a>
-        <span class="auth-legal__sep" aria-hidden="true">|</span>
-        <a href="mailto:anthony.capuyan23@gmail.com">Support</a>
       </footer>
 
       <div class="auth-install-modal" id="auth-install" hidden>
@@ -124,12 +123,7 @@ export async function LoginView(root) {
           <p class="auth-install__hint" id="install-hint">
             Add to your home screen for a faster, full-screen app.
           </p>
-          <ol class="auth-install__steps" id="install-steps" hidden>
-            <li>Open this site in <strong>Safari</strong></li>
-            <li>Tap the <strong>Share</strong> button <span aria-hidden="true">□↑</span></li>
-            <li>Scroll and tap <strong>Add to Home Screen</strong></li>
-            <li>Tap <strong>Add</strong> — LANTAW opens like an app</li>
-          </ol>
+          <ol class="auth-install__steps" id="install-steps" hidden></ol>
           <div class="auth-install__actions">
             <button type="button" class="btn btn--primary auth-install__btn" id="install-btn">
               Install app
@@ -321,7 +315,13 @@ export async function LoginView(root) {
   const installSteps = root.querySelector("#install-steps");
   const installDismiss = root.querySelector("#install-dismiss");
   let unsubInstall = () => {};
-  let stepsOpen = false;
+
+  const setInstallSteps = (items) => {
+    if (!installSteps) return;
+    installSteps.innerHTML = items
+      .map((html) => `<li>${html}</li>`)
+      .join("");
+  };
 
   const paintInstall = (state = getInstallState()) => {
     if (!installBox) return;
@@ -330,15 +330,44 @@ export async function LoginView(root) {
     const show = state.mode !== "installed" && !state.dismissed;
     installBox.hidden = !show;
     installBox.classList.toggle("is-ios", Boolean(state.ios));
+    installBox.classList.toggle("is-in-app", state.mode === "in-app");
     if (!show) return;
 
-    if (state.mode === "ios" || state.mode === "ios-other") {
+    if (state.mode === "in-app") {
+      const browser = state.browserLabel || (state.ios ? "Safari" : "Chrome");
+      installTitle.textContent = `Open in ${browser}`;
+      installHint.textContent =
+        "Messenger, Instagram, and Facebook can’t install apps. Open LANTAW in a real browser, then install.";
+      if (state.ios) {
+        setInstallSteps([
+          "Tap <strong>⋯</strong> or <strong>Open in browser</strong> in this app",
+          `Choose <strong>${browser}</strong>`,
+          "Come back here — you’ll get Install / Add to Home Screen",
+        ]);
+      } else {
+        setInstallSteps([
+          `Tap <strong>Open in ${browser}</strong> below`,
+          "LANTAW opens in a real browser",
+          "Tap <strong>Install app</strong> when it appears",
+        ]);
+      }
+      installSteps.hidden = false;
+      installBtn.textContent = `Open in ${browser}`;
+      installBtn.onclick = () => {
+        openInExternalBrowser();
+      };
+    } else if (state.mode === "ios" || state.mode === "ios-other") {
       installTitle.textContent = "Add LANTAW to iPhone";
       installHint.textContent =
         state.mode === "ios-other"
           ? "Open this page in Safari, then follow the steps below."
           : "iPhone installs from Safari’s Share menu — tap below for steps.";
-      stepsOpen = true;
+      setInstallSteps([
+        "Open this site in <strong>Safari</strong>",
+        'Tap the <strong>Share</strong> button <span aria-hidden="true">□↑</span>',
+        "Scroll and tap <strong>Add to Home Screen</strong>",
+        "Tap <strong>Add</strong> — LANTAW opens like an app",
+      ]);
       installSteps.hidden = false;
       installBtn.textContent = "Got it";
       installBtn.onclick = () => {
@@ -365,8 +394,22 @@ export async function LoginView(root) {
       };
     } else {
       installTitle.textContent = "Install LANTAW";
-      installHint.textContent =
-        "Use your browser menu → Install app / Add to Home screen. On iPhone, open in Safari first.";
+      installHint.textContent = state.android
+        ? "Tap your browser menu (⋮) → Install app / Add to Home screen."
+        : "Use your browser menu → Install app / Add to Home screen. On iPhone, open in Safari first.";
+      setInstallSteps(
+        state.android
+          ? [
+              "Tap the <strong>⋮</strong> menu in Chrome",
+              "Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>",
+              "Confirm — LANTAW opens like an app",
+            ]
+          : [
+              "Open this site in <strong>Chrome</strong> or <strong>Edge</strong>",
+              "Use the browser menu → <strong>Install app</strong>",
+              "Confirm — LANTAW opens like an app",
+            ]
+      );
       installSteps.hidden = false;
       installBtn.textContent = "Got it";
       installBtn.onclick = () => {
@@ -386,9 +429,9 @@ export async function LoginView(root) {
 
   // Clear a previous session dismiss so updates show the modal again once
   try {
-    if (sessionStorage.getItem("lantaw-pwa-force") !== "53") {
+    if (sessionStorage.getItem("lantaw-pwa-force") !== "54") {
       sessionStorage.removeItem("lantaw-pwa-dismiss");
-      sessionStorage.setItem("lantaw-pwa-force", "53");
+      sessionStorage.setItem("lantaw-pwa-force", "54");
     }
   } catch {
     /* ignore */

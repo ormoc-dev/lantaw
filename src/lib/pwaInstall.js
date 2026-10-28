@@ -21,6 +21,10 @@ export function isIosDevice() {
   return iOS || iPadOs;
 }
 
+export function isAndroidDevice() {
+  return /Android/i.test(window.navigator.userAgent || "");
+}
+
 export function isSafariBrowser() {
   const ua = window.navigator.userAgent || "";
   // Chrome/Firefox/Edge on iOS include CriOS/FxiOS/EdgiOS
@@ -28,6 +32,81 @@ export function isSafariBrowser() {
     /Safari/i.test(ua) &&
     !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Android/i.test(ua);
   return isVendorSafari || (isIosDevice() && !/CriOS|FxiOS|EdgiOS/i.test(ua) && /Safari/i.test(ua));
+}
+
+/**
+ * Facebook, Instagram, Messenger, and other WebViews cannot install PWAs.
+ * Detect them so we can send users to Chrome (Android) or Safari (iOS).
+ */
+export function isInAppBrowser() {
+  const ua = window.navigator.userAgent || "";
+  if (
+    /FBAN|FBAV|FB_IAB|FBIOS|FB_FW|MessengerLite|Messenger(?:ForiOS)?/i.test(ua) ||
+    /Instagram/i.test(ua) ||
+    /Line\//i.test(ua) ||
+    /Twitter|X\/|Tweetbot/i.test(ua) ||
+    /TikTok|BytedanceWebview|musical_ly|ByteLocale/i.test(ua) ||
+    /Snapchat|Pinterest|LinkedInApp|MicroMessenger|WhatsApp|Discord|Telegram/i.test(ua) ||
+    /GSA\//i.test(ua) // Google Search App WebView
+  ) {
+    return true;
+  }
+  // Android WebView marker (Chrome has "Chrome/… Mobile Safari", WV has "; wv)")
+  if (/Android/i.test(ua) && /; wv\)/i.test(ua)) return true;
+  return false;
+}
+
+export function getPreferredBrowserLabel() {
+  if (isIosDevice()) return "Safari";
+  if (isAndroidDevice()) return "Chrome";
+  return "your browser";
+}
+
+/** Try to leave Messenger/IG/FB and open a real browser that can install the PWA. */
+export function openInExternalBrowser() {
+  const url = window.location.href;
+  const ios = isIosDevice();
+  const android = isAndroidDevice();
+
+  if (android) {
+    // Prefer Chrome navigate scheme so hash routes (#/login) stay intact
+    window.location.href = `googlechrome://navigate?url=${encodeURIComponent(url)}`;
+    // If the scheme is ignored, fall back to an Intent (path only + full URL fallback)
+    window.setTimeout(() => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const parsed = new URL(url);
+        const intent =
+          `intent://${parsed.host}${parsed.pathname}${parsed.search}` +
+          `#Intent;scheme=https;package=com.android.chrome;` +
+          `S.browser_fallback_url=${encodeURIComponent(url)};end`;
+        window.location.href = intent;
+      } catch {
+        /* ignore */
+      }
+    }, 700);
+    return { attempted: true, target: "chrome" };
+  }
+
+  if (ios) {
+    // Private Safari scheme supported by some iOS apps / versions
+    const safariUrl = url
+      .replace(/^https:\/\//i, "x-safari-https://")
+      .replace(/^http:\/\//i, "x-safari-http://");
+    try {
+      window.location.href = safariUrl;
+    } catch {
+      /* ignore */
+    }
+    return { attempted: true, target: "safari" };
+  }
+
+  try {
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch {
+    /* ignore */
+  }
+  return { attempted: true, target: "blank" };
 }
 
 function notify() {
@@ -51,32 +130,76 @@ export function getInstallState() {
   })();
 
   const ios = isIosDevice();
+  const android = isAndroidDevice();
   const safari = isSafariBrowser();
+  const inApp = isInAppBrowser();
+  const browserLabel = getPreferredBrowserLabel();
 
   if (isStandalone()) {
     return {
       canInstall: false,
       mode: "installed",
       ios,
+      android,
       safari,
+      inApp,
+      browserLabel,
       dismissed,
     };
   }
-  if (deferredPrompt) {
-    return { canInstall: true, mode: "prompt", ios, safari, dismissed };
+
+  // In-app browsers cannot install — send user to Chrome/Safari first
+  if (inApp) {
+    return {
+      canInstall: true,
+      mode: "in-app",
+      ios,
+      android,
+      safari,
+      inApp: true,
+      browserLabel,
+      dismissed,
+    };
   }
+
+  if (deferredPrompt) {
+    return {
+      canInstall: true,
+      mode: "prompt",
+      ios,
+      android,
+      safari,
+      inApp,
+      browserLabel,
+      dismissed,
+    };
+  }
+
   if (ios) {
     // iPhone/iPad never get beforeinstallprompt — guide Add to Home Screen
     return {
       canInstall: true,
       mode: safari ? "ios" : "ios-other",
       ios: true,
+      android,
       safari,
+      inApp,
+      browserLabel,
       dismissed,
     };
   }
-  // Desktop/Android: still show the install UI (browser may enable prompt later)
-  return { canInstall: true, mode: "manual", ios, safari, dismissed };
+
+  // Desktop/Android Chrome: show install UI (prompt may arrive later)
+  return {
+    canInstall: true,
+    mode: "manual",
+    ios,
+    android,
+    safari,
+    inApp,
+    browserLabel,
+    dismissed,
+  };
 }
 
 export function onInstallStateChange(fn) {

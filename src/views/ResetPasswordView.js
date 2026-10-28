@@ -64,8 +64,6 @@ export async function ResetPasswordView(root) {
 
       <footer class="auth-legal">
         <a href="#/privacy">Privacy</a>
-        <span class="auth-legal__sep" aria-hidden="true">|</span>
-        <a href="mailto:anthony.capuyan23@gmail.com">Support</a>
       </footer>
     </section>
   `;
