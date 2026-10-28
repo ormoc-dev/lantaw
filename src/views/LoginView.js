@@ -449,33 +449,81 @@ export async function LoginView(root) {
   };
 }
 
+const AUTH_POSTER_CACHE = "lantaw-auth-posters-v1";
+
+function paintAuthPosters(track, showcase, posters) {
+  if (!track || !showcase) return;
+  const list = (posters || []).filter((m) => m?.poster).slice(0, 14);
+  if (!list.length) {
+    showcase.classList.add("is-ready", "is-empty");
+    return;
+  }
+
+  const strip = list
+    .map(
+      (m, i) =>
+        `<img class="auth-showcase__poster" src="${escapeAttr(
+          m.poster
+        )}" alt="" ${
+          // Eager load — lazy often never fires inside a transforming marquee on mobile PWA
+          i < 8 ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"'
+        } decoding="async" draggable="false" />`
+    )
+    .join("");
+
+  track.innerHTML = strip + strip;
+  showcase.classList.remove("is-empty");
+  showcase.classList.add("is-ready");
+}
+
 async function loadAuthShowcase(track) {
   if (!track) return;
   const showcase = track.closest(".auth-showcase");
+  if (!showcase) return;
+
+  // Instant paint from cache so PWA / slow networks aren't blank
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(AUTH_POSTER_CACHE) || "null");
+    if (Array.isArray(cached) && cached.length) {
+      paintAuthPosters(track, showcase, cached);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const fetchPosters = async () => {
+    const { results } = await getTrendingMovies();
+    return (results || []).filter((m) => m.poster).slice(0, 14);
+  };
 
   try {
-    const { results } = await getTrendingMovies();
-    const posters = (results || []).filter((m) => m.poster).slice(0, 14);
-
+    let posters = await fetchPosters();
     if (!posters.length) {
-      showcase?.remove();
+      await new Promise((r) => setTimeout(r, 700));
+      posters = await fetchPosters();
+    }
+
+    if (posters.length) {
+      try {
+        sessionStorage.setItem(
+          AUTH_POSTER_CACHE,
+          JSON.stringify(posters.map((p) => ({ poster: p.poster })))
+        );
+      } catch {
+        /* ignore */
+      }
+      paintAuthPosters(track, showcase, posters);
       return;
     }
 
-    const strip = posters
-      .map(
-        (m) =>
-          `<img class="auth-showcase__poster" src="${escapeAttr(
-            m.poster
-          )}" alt="" loading="lazy" draggable="false" />`
-      )
-      .join("");
-
-    // Duplicate for a seamless marquee loop
-    track.innerHTML = strip + strip;
-    showcase?.classList.add("is-ready");
+    if (!track.querySelector("img")) {
+      showcase.classList.add("is-ready", "is-empty");
+    }
   } catch {
-    showcase?.remove();
+    // Keep cached posters if any; otherwise show brand on gradient
+    if (!track.querySelector("img")) {
+      showcase.classList.add("is-ready", "is-empty");
+    }
   }
 }
 

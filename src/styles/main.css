@@ -3469,6 +3469,12 @@ body.me-modal-open {
   opacity: 1;
 }
 
+.auth-showcase.is-empty {
+  background:
+    linear-gradient(160deg, rgba(255, 10, 67, 0.22), transparent 55%),
+    linear-gradient(180deg, #1a0c10, #0c0708);
+}
+
 .auth-showcase__track {
   display: flex;
   gap: 0.45rem;
@@ -3476,7 +3482,8 @@ body.me-modal-open {
   height: 100%;
   align-items: stretch;
   padding: 0 0.15rem;
-  animation: auth-marquee 48s linear infinite;
+  /* Slow cinema crawl — fast marquee feels broken on mobile PWA */
+  animation: auth-marquee 110s linear infinite;
   will-change: transform;
 }
 
