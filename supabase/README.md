@@ -79,11 +79,13 @@ Or enable Realtime in **Database → Publications → supabase_realtime** for:
 
 ## Login IP monitor
 
-Run this SQL in Supabase → SQL Editor:
+Run this SQL in Supabase → SQL Editor (required once; table stays empty until it exists):
 
 - `supabase/migrations/202603260004_login_ip_monitor.sql`
 
 Table: `public.login_events` (`user_id`, `email`, `ip_address`, `user_agent`, `logged_in_at`, `login_date`).
+
+The app inserts a row on each real sign-in (email password + Google). Refreshing an already-signed-in session does **not** add a row. Check **Table Editor → login_events** after signing out and back in. If inserts fail, open the browser console for `login_events insert failed`.
 
 ## Delete own account
 

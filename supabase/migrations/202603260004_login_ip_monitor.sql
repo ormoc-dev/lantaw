@@ -38,5 +38,7 @@ create policy "login_events_insert_own"
   to authenticated
   with check (auth.uid() = user_id);
 
+grant select, insert on table public.login_events to authenticated;
+
 comment on table public.login_events is
   'Tracks who logged in each day (IP address + optional user agent).';

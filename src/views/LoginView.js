@@ -48,10 +48,6 @@ export async function LoginView(root) {
       <div class="auth-shell">
         <div class="auth-flow" id="auth-flow">
           <header class="auth-flow__head">
-            <div class="auth-flow__brand">
-              <p class="auth-showcase__free">FREE</p>
-              <p class="auth-brand">LANTAW</p>
-            </div>
             <h1 id="auth-title">Welcome</h1>
             <p class="auth-lead" id="auth-lead">One Google button for new and existing accounts. Or use email below.</p>
           </header>

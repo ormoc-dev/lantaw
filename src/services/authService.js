@@ -37,6 +37,63 @@ function stashAuthError(message) {
   }
 }
 
+const LOGIN_EVENT_KEY = "lantaw-login-event";
+
+async function fetchClientIp() {
+  try {
+    const res = await fetch("https://api.ipify.org?format=json", {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.ip ? String(data.ip) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write a row to public.login_events (migration 202603260004_login_ip_monitor.sql).
+ * Safe to call more than once for the same session — deduped in this tab.
+ */
+export async function recordLoginEvent(session) {
+  const user = session?.user;
+  if (!user?.id) return { ok: false, reason: "no-user" };
+
+  const dedupe = `${user.id}:${(session.access_token || "").slice(-16)}`;
+  try {
+    if (sessionStorage.getItem(LOGIN_EVENT_KEY) === dedupe) {
+      return { ok: true, reason: "already-logged" };
+    }
+    sessionStorage.setItem(LOGIN_EVENT_KEY, dedupe);
+  } catch {
+    /* ignore */
+  }
+
+  const ip_address = await fetchClientIp();
+  const { error } = await getSupabase().from("login_events").insert({
+    user_id: user.id,
+    email: user.email || null,
+    ip_address,
+    user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+  });
+
+  if (error) {
+    // Roll back dedupe so a retry can succeed after migration is applied
+    try {
+      if (sessionStorage.getItem(LOGIN_EVENT_KEY) === dedupe) {
+        sessionStorage.removeItem(LOGIN_EVENT_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+    console.warn("login_events insert failed:", error.message);
+    return { ok: false, reason: error.message };
+  }
+
+  return { ok: true };
+}
+
 export async function getSession() {
   const { data, error } = await getSupabase().auth.getSession();
   if (error) throw error;
@@ -80,6 +137,9 @@ export async function recoverSession() {
       return null;
     }
     cleanAuthParamsFromUrl(isRecovery ? "#/reset-password" : "#/");
+    if (data.session && !isRecovery) {
+      recordLoginEvent(data.session).catch(() => {});
+    }
     return data.session;
   }
 
@@ -88,6 +148,7 @@ export async function recoverSession() {
     const { data, error } = await supabase.auth.getSession();
     if (!error && data.session) {
       cleanAuthParamsFromUrl("#/");
+      recordLoginEvent(data.session).catch(() => {});
       return data.session;
     }
   }
@@ -120,6 +181,9 @@ export async function signIn({ email, password }) {
     password,
   });
   if (error) throw error;
+  if (data.session) {
+    recordLoginEvent(data.session).catch(() => {});
+  }
   return data;
 }
 
@@ -188,6 +252,9 @@ export async function deleteOwnAccount() {
 
 export function onAuthChange(callback) {
   const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_IN" && session) {
+      recordLoginEvent(session).catch(() => {});
+    }
     callback(session, event);
   });
   return () => data.subscription.unsubscribe();

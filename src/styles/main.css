@@ -3656,20 +3656,6 @@ body.me-modal-open {
   margin-bottom: 0.75rem;
 }
 
-.auth-flow__brand {
-  margin: 0 0 0.45rem;
-}
-
-.auth-flow__brand .auth-showcase__free {
-  margin: 0 0 0.1rem;
-  font-size: 0.68rem;
-  letter-spacing: 0.2em;
-}
-
-.auth-flow__brand .auth-brand {
-  font-size: clamp(1.55rem, 6vw, 1.85rem);
-}
-
 .auth-flow h1 {
   margin: 0;
   font-family: var(--font-display);
@@ -4177,14 +4163,6 @@ body.me-modal-open {
 
   .auth-flow__head {
     margin-bottom: 0.35rem;
-  }
-
-  .auth-flow__brand {
-    margin-bottom: 0.3rem;
-  }
-
-  .auth-flow__brand .auth-brand {
-    font-size: clamp(1.4rem, 5.5vw, 1.65rem);
   }
 
   .auth-flow h1 {
