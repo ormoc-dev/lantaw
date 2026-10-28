@@ -25,34 +25,66 @@ export function isAndroidDevice() {
   return /Android/i.test(window.navigator.userAgent || "");
 }
 
+function isKnownIosBrowserApp(ua = "") {
+  return /CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|Brave/i.test(ua);
+}
+
 export function isSafariBrowser() {
   const ua = window.navigator.userAgent || "";
+  // In-app WebViews often include "Safari" in the UA — they are not Safari.
+  if (isNamedInAppBrowser(ua)) return false;
+  if (isIosDevice() && !("safari" in window) && !isKnownIosBrowserApp(ua)) {
+    return false;
+  }
   // Chrome/Firefox/Edge on iOS include CriOS/FxiOS/EdgiOS
   const isVendorSafari =
     /Safari/i.test(ua) &&
     !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Android/i.test(ua);
-  return isVendorSafari || (isIosDevice() && !/CriOS|FxiOS|EdgiOS/i.test(ua) && /Safari/i.test(ua));
+  return (
+    isVendorSafari ||
+    (isIosDevice() &&
+      "safari" in window &&
+      !/CriOS|FxiOS|EdgiOS/i.test(ua) &&
+      /Safari/i.test(ua))
+  );
+}
+
+/** Explicit app tokens in the user agent (Instagram, Facebook, etc.). */
+function isNamedInAppBrowser(ua = "") {
+  return (
+    /FBAN|FBAV|FB_IAB|FBIOS|FB_FW|FBBV|IABMV|IABMH|MessengerLite|Messenger(?:ForiOS)?/i.test(
+      ua
+    ) ||
+    /Instagram|IGLA|\bIG\s?\d/i.test(ua) ||
+    /Line\//i.test(ua) ||
+    /Twitter|X\/|Tweetbot/i.test(ua) ||
+    /TikTok|BytedanceWebview|musical_ly|ByteLocale/i.test(ua) ||
+    /Snapchat|Pinterest|LinkedInApp|MicroMessenger|WhatsApp|Discord|Telegram/i.test(
+      ua
+    ) ||
+    /GSA\//i.test(ua) // Google Search App WebView
+  );
 }
 
 /**
  * Facebook, Instagram, Messenger, and other WebViews cannot install PWAs.
  * Detect them so we can send users to Chrome (Android) or Safari (iOS).
+ *
+ * Instagram/Facebook on iOS often omit their name and look like Safari —
+ * real Safari exposes window.safari; their WKWebView usually does not.
  */
 export function isInAppBrowser() {
   const ua = window.navigator.userAgent || "";
-  if (
-    /FBAN|FBAV|FB_IAB|FBIOS|FB_FW|MessengerLite|Messenger(?:ForiOS)?/i.test(ua) ||
-    /Instagram/i.test(ua) ||
-    /Line\//i.test(ua) ||
-    /Twitter|X\/|Tweetbot/i.test(ua) ||
-    /TikTok|BytedanceWebview|musical_ly|ByteLocale/i.test(ua) ||
-    /Snapchat|Pinterest|LinkedInApp|MicroMessenger|WhatsApp|Discord|Telegram/i.test(ua) ||
-    /GSA\//i.test(ua) // Google Search App WebView
-  ) {
-    return true;
-  }
+  if (isNamedInAppBrowser(ua)) return true;
+
   // Android WebView marker (Chrome has "Chrome/… Mobile Safari", WV has "; wv)")
   if (/Android/i.test(ua) && /; wv\)/i.test(ua)) return true;
+
+  // iOS in-app browser heuristic (covers Instagram when UA is stripped)
+  if (isIosDevice() && /AppleWebKit/i.test(ua) && !isKnownIosBrowserApp(ua)) {
+    if (!("safari" in window)) return true;
+  }
+
   return false;
 }
 

@@ -337,18 +337,19 @@ export async function LoginView(root) {
     if (state.mode === "in-app") {
       const browser = state.browserLabel || (state.ios ? "Safari" : "Chrome");
       installTitle.textContent = `Open in ${browser}`;
-      installHint.textContent =
-        "Messenger, Instagram, and Facebook can’t install apps. Open LANTAW in a real browser, then install.";
+      installHint.textContent = state.ios
+        ? "Instagram / Facebook can’t install apps. Open this link in Safari, then add LANTAW to your Home Screen."
+        : "Instagram / Facebook can’t install apps. Open LANTAW in Chrome, then tap Install.";
       if (state.ios) {
         setInstallSteps([
-          "Tap <strong>⋯</strong> or <strong>Open in browser</strong> in this app",
-          `Choose <strong>${browser}</strong>`,
-          "Come back here — you’ll get Install / Add to Home Screen",
+          "Tap <strong>⋯</strong> (top right) in Instagram",
+          "Tap <strong>Open in external browser</strong> / <strong>Open in Safari</strong>",
+          "In Safari, tap <strong>Share</strong> → <strong>Add to Home Screen</strong>",
         ]);
       } else {
         setInstallSteps([
           `Tap <strong>Open in ${browser}</strong> below`,
-          "LANTAW opens in a real browser",
+          "LANTAW opens in Chrome",
           "Tap <strong>Install app</strong> when it appears",
         ]);
       }
@@ -430,9 +431,9 @@ export async function LoginView(root) {
 
   // Clear a previous session dismiss so updates show the modal again once
   try {
-    if (sessionStorage.getItem("lantaw-pwa-force") !== "54") {
+    if (sessionStorage.getItem("lantaw-pwa-force") !== "55") {
       sessionStorage.removeItem("lantaw-pwa-dismiss");
-      sessionStorage.setItem("lantaw-pwa-force", "54");
+      sessionStorage.setItem("lantaw-pwa-force", "55");
     }
   } catch {
     /* ignore */
