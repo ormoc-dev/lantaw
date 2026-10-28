@@ -260,13 +260,6 @@ export async function getHomeCatalog() {
         items: previewList(filipino.results, heroes),
       },
       {
-        id: "vivamax",
-        title: "Vivamax",
-        description: "Bold Filipino originals from Vivamax.",
-        path: "/vivamax",
-        items: previewList(vivamax.results, heroes),
-      },
-      {
         id: "movies",
         title: "Movies",
         description: "Popular movies worldwide.",
@@ -286,6 +279,13 @@ export async function getHomeCatalog() {
         description: "Japanese animation movies and series.",
         path: "/anime",
         items: previewList(anime.results, heroes),
+      },
+      {
+        id: "vivamax",
+        title: "Vivamax",
+        description: "Bold Filipino originals from Vivamax.",
+        path: "/vivamax",
+        items: previewList(vivamax.results, heroes),
       },
     ],
   };

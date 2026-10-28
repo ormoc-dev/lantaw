@@ -13,12 +13,6 @@ export const CATEGORIES = [
     description: "Movies and shows from the Philippines.",
   },
   {
-    id: "vivamax",
-    path: "/vivamax",
-    title: "Vivamax",
-    description: "Bold Filipino originals from Vivamax.",
-  },
-  {
     id: "movies",
     path: "/movies",
     title: "Movies",
@@ -35,6 +29,12 @@ export const CATEGORIES = [
     path: "/anime",
     title: "Anime",
     description: "Japanese animation movies and series.",
+  },
+  {
+    id: "vivamax",
+    path: "/vivamax",
+    title: "Vivamax",
+    description: "Bold Filipino originals from Vivamax.",
   },
 ];
 

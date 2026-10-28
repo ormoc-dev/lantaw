@@ -39,6 +39,7 @@ export async function LoginView(root) {
         <div class="auth-showcase__fade auth-showcase__fade--right"></div>
         <div class="auth-showcase__veil" aria-hidden="true"></div>
         <div class="auth-showcase__brand">
+          <p class="auth-showcase__free">FREE</p>
           <p class="auth-brand">LANTAW</p>
           <p class="auth-showcase__tag">Now showing — sign in to watch</p>
         </div>

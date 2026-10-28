@@ -1,5 +1,4 @@
 import {
-  deleteOwnAccount,
   getSession,
   resolveUserProfile,
   signOut,
@@ -99,39 +98,25 @@ export async function MeView(root) {
         <h2 class="me-section__title" id="me-account-title">Account</h2>
         <div class="me-actions">
           <button type="button" class="me-signout" id="sign-out">Sign out</button>
-          <button type="button" class="me-delete" id="delete-account">Delete account</button>
         </div>
       </section>
 
-      <div class="me-modal" id="delete-modal" hidden>
-        <div class="me-modal__backdrop" data-close-modal></div>
+      <div class="me-modal" id="signout-modal" hidden>
+        <div class="me-modal__backdrop" data-close-signout></div>
         <div
           class="me-modal__dialog"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="delete-modal-title"
+          aria-labelledby="signout-modal-title"
         >
-          <h2 id="delete-modal-title">Delete account</h2>
+          <h2 id="signout-modal-title">Sign out?</h2>
           <p class="me-modal__lead">
-            This permanently removes your profile, watchlist, and chats. Type
-            <strong>delete ${escapeHtml(name || "Account")}</strong> to confirm.
+            You’ll need to sign in again to use your watchlist and friends.
           </p>
-          <label class="me-modal__label" for="delete-confirm-input">
-            Confirmation
-          </label>
-          <input
-            type="text"
-            id="delete-confirm-input"
-            class="me-modal__input"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="delete ${escapeHtml(name || "Account")}"
-          />
-          <p class="me-modal__error" id="delete-modal-error" hidden></p>
           <div class="me-modal__actions">
-            <button type="button" class="me-modal__btn" data-close-modal>Cancel</button>
-            <button type="button" class="me-modal__btn me-modal__btn--danger" id="delete-confirm-btn" disabled>
-              Delete forever
+            <button type="button" class="me-modal__btn" data-close-signout>Cancel</button>
+            <button type="button" class="me-modal__btn me-modal__btn--accent" id="signout-confirm">
+              Sign out
             </button>
           </div>
         </div>
@@ -139,67 +124,36 @@ export async function MeView(root) {
     </div>
   `;
 
-  root.querySelector("#sign-out").addEventListener("click", async () => {
-    await signOut();
-    location.hash = "#/login";
-  });
-
-  const confirmPhrase = `delete ${name || "Account"}`;
-  const modal = root.querySelector("#delete-modal");
-  const confirmInput = root.querySelector("#delete-confirm-input");
-  const confirmBtn = root.querySelector("#delete-confirm-btn");
-  const modalError = root.querySelector("#delete-modal-error");
-
-  const openDeleteModal = () => {
-    modal.hidden = false;
+  const signOutModal = root.querySelector("#signout-modal");
+  const openSignOutModal = () => {
+    signOutModal.hidden = false;
     document.body.classList.add("me-modal-open");
-    modalError.hidden = true;
-    modalError.textContent = "";
-    confirmInput.value = "";
-    confirmBtn.disabled = true;
-    requestAnimationFrame(() => confirmInput.focus());
   };
-
-  const closeDeleteModal = () => {
-    modal.hidden = true;
+  const closeSignOutModal = () => {
+    signOutModal.hidden = true;
     document.body.classList.remove("me-modal-open");
-    confirmInput.value = "";
-    confirmBtn.disabled = true;
-    modalError.hidden = true;
   };
 
-  const phraseMatches = () =>
-    confirmInput.value.trim().toLowerCase() === confirmPhrase.toLowerCase();
-
-  root.querySelector("#delete-account")?.addEventListener("click", openDeleteModal);
-  modal.querySelectorAll("[data-close-modal]").forEach((el) => {
-    el.addEventListener("click", closeDeleteModal);
+  root.querySelector("#sign-out")?.addEventListener("click", openSignOutModal);
+  signOutModal.querySelectorAll("[data-close-signout]").forEach((el) => {
+    el.addEventListener("click", closeSignOutModal);
   });
-  confirmInput?.addEventListener("input", () => {
-    confirmBtn.disabled = !phraseMatches();
-    modalError.hidden = true;
-  });
-  confirmInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeDeleteModal();
-    if (e.key === "Enter" && phraseMatches()) confirmBtn.click();
-  });
-  confirmBtn?.addEventListener("click", async () => {
-    if (!phraseMatches()) {
-      modalError.textContent = `Type exactly: ${confirmPhrase}`;
-      modalError.hidden = false;
-      return;
+  root.querySelector("#signout-confirm")?.addEventListener("click", async () => {
+    const btn = root.querySelector("#signout-confirm");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Signing out…";
     }
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = "Deleting…";
     try {
-      await deleteOwnAccount();
-      closeDeleteModal();
+      await signOut();
+      closeSignOutModal();
       location.hash = "#/login";
     } catch (err) {
-      modalError.textContent = err.message || "Could not delete account";
-      modalError.hidden = false;
-      confirmBtn.disabled = !phraseMatches();
-      confirmBtn.textContent = "Delete forever";
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Sign out";
+      }
+      alert(err.message || "Could not sign out");
     }
   });
 
