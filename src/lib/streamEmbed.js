@@ -23,20 +23,29 @@ export function buildStreamUrl({
   season = 1,
   episode = 1,
   anilistId,
+  autoplay = false,
+  startAt = 0,
 }) {
   const id = encodeURIComponent(tmdbId);
   const s = encodeURIComponent(Math.max(1, Number(season) || 1));
   const e = encodeURIComponent(Math.max(1, Number(episode) || 1));
+  const play = autoplay ? "&autoplay=true" : "";
+  const t = Math.max(0, Math.floor(Number(startAt) || 0));
+  // CineSrc: jump both watchers to the same timestamp (skip Continue prompt)
+  const seek =
+    t > 0 && mediaType !== "anime"
+      ? `&t=${encodeURIComponent(t)}&continueprompt=false`
+      : "";
 
   if (mediaType === "tv") {
-    return `https://cinesrc.st/embed/tv/${id}?s=${s}&e=${e}&color=${ACCENT}&back=close`;
+    return `https://cinesrc.st/embed/tv/${id}?s=${s}&e=${e}&color=${ACCENT}&back=close${play}${seek}`;
   }
   if (mediaType === "anime") {
     return `https://zoryva.me/embed/anime/${encodeURIComponent(
       anilistId || tmdbId
-    )}/${s}/${e}?color=${ACCENT}`;
+    )}/${s}/${e}?color=${ACCENT}${play}`;
   }
-  return `https://cinesrc.st/embed/movie/${id}?color=${ACCENT}&back=close`;
+  return `https://cinesrc.st/embed/movie/${id}?color=${ACCENT}&back=close${play}${seek}`;
 }
 
 function iframeAttrs(streamUrl) {
@@ -53,46 +62,70 @@ function iframeAttrs(streamUrl) {
   `.trim();
 }
 
+/** Season / episode picker used by detail + watch-party host toolbar. */
+export function renderTvEpisodeControls(movie, opts = {}) {
+  const defaults = getTvDefaults(movie);
+  const seasonNum = Math.max(1, Number(opts.season) || defaults.season);
+  const episodeNum = Math.max(1, Number(opts.episode) || defaults.episode);
+  const disabled = Boolean(opts.disabled);
+  const options = (movie.seasons || [])
+    .map(
+      (season) =>
+        `<option value="${season.seasonNumber}" data-episode-count="${
+          season.episodeCount
+        }" ${season.seasonNumber === seasonNum ? "selected" : ""}>${escapeHtml(
+          season.name
+        )}</option>`
+    )
+    .join("");
+
+  const seasonSelect = options
+    ? `<select id="stream-season" ${disabled ? "disabled" : ""}>${options}</select>`
+    : `<input id="stream-season" type="number" min="1" value="${seasonNum}" ${
+        disabled ? "disabled" : ""
+      } />`;
+
+  return `
+    <div class="stream-controls">
+      <label>Season ${seasonSelect}</label>
+      <label>Episode <input id="stream-episode" type="number" min="1" value="${episodeNum}" ${
+        disabled ? "disabled" : ""
+      } /></label>
+      <button class="btn btn--ghost" id="stream-reload" type="button" ${
+        disabled ? "disabled" : ""
+      }>Load</button>
+    </div>
+  `;
+}
+
 export function renderStreamPlayer(movie, mediaType, opts = {}) {
   const readOnly = Boolean(opts.readOnly);
+  const autoplay = Boolean(opts.autoplay);
+  const omitControls = Boolean(opts.omitControls);
+  const startAt = Math.max(0, Number(opts.startAt) || 0);
 
   if (mediaType === "tv") {
     const defaults = getTvDefaults(movie);
     const seasonNum = Math.max(1, Number(opts.season) || defaults.season);
     const episodeNum = Math.max(1, Number(opts.episode) || defaults.episode);
-    const options = (movie.seasons || [])
-      .map(
-        (season) =>
-          `<option value="${season.seasonNumber}" data-episode-count="${
-            season.episodeCount
-          }" ${season.seasonNumber === seasonNum ? "selected" : ""}>${escapeHtml(
-            season.name
-          )}</option>`
-      )
-      .join("");
-
-    const seasonSelect = options
-      ? `<select id="stream-season" ${readOnly ? "disabled" : ""}>${options}</select>`
-      : `<input id="stream-season" type="number" min="1" value="${seasonNum}" ${
-          readOnly ? "disabled" : ""
-        } />`;
 
     const streamUrl = buildStreamUrl({
       mediaType,
       tmdbId: movie.id,
       season: seasonNum,
       episode: episodeNum,
+      autoplay,
+      startAt,
     });
 
     return `
       ${
-        readOnly
+        readOnly || omitControls
           ? ""
-          : `<div class="stream-controls">
-        <label>Season ${seasonSelect}</label>
-        <label>Episode <input id="stream-episode" type="number" min="1" value="${episodeNum}" /></label>
-        <button class="btn btn--ghost" id="stream-reload" type="button">Load episode</button>
-      </div>`
+          : renderTvEpisodeControls(movie, {
+              season: seasonNum,
+              episode: episodeNum,
+            })
       }
       <div class="detail__player-frame detail__player-frame--embed">
         <iframe
@@ -102,7 +135,12 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
     `;
   }
 
-  const streamUrl = buildStreamUrl({ mediaType, tmdbId: movie.id });
+  const streamUrl = buildStreamUrl({
+    mediaType,
+    tmdbId: movie.id,
+    autoplay,
+    startAt,
+  });
   return `
     <div class="detail__player-frame detail__player-frame--embed">
       <iframe
@@ -117,13 +155,15 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
   const onReload = typeof hooks === "function" ? hooks : hooks.onReload;
   const onEpisodeChange =
     typeof hooks === "function" ? null : hooks.onEpisodeChange;
+  const autoplay =
+    typeof hooks === "function" ? false : Boolean(hooks.autoplay);
 
   const seasonEl = player.querySelector("#stream-season");
   const episodeEl = player.querySelector("#stream-episode");
   const reloadBtn = player.querySelector("#stream-reload");
   const iframe = player.querySelector("#stream-iframe");
 
-  if (!seasonEl || !episodeEl || !reloadBtn || !iframe) return;
+  if (!seasonEl || !episodeEl || !reloadBtn) return;
 
   const clampEpisode = () => {
     if (seasonEl.tagName !== "SELECT") return;
@@ -141,12 +181,15 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
   reloadBtn.addEventListener("click", () => {
     const season = Math.max(1, Number(seasonEl.value) || 1);
     const episode = Math.max(1, Number(episodeEl.value) || 1);
-    iframe.src = buildStreamUrl({
-      mediaType,
-      tmdbId: movie.id,
-      season,
-      episode,
-    });
+    if (iframe) {
+      iframe.src = buildStreamUrl({
+        mediaType,
+        tmdbId: movie.id,
+        season,
+        episode,
+        autoplay,
+      });
+    }
     onReload?.();
     onEpisodeChange?.({ season, episode });
   });

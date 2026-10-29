@@ -534,13 +534,19 @@ export async function sendWatchPartyMessage(partyId, body) {
   return data;
 }
 
-/** Subscribe to one party’s status + live comments. */
-export function subscribeWatchParty(partyId, { onParty, onMessage } = {}) {
+/** Subscribe to one party’s status + live comments + typing broadcast. */
+export function subscribeWatchParty(
+  partyId,
+  { onParty, onMessage, onTyping } = {}
+) {
   let channel = null;
   try {
     const sb = getSupabase();
+    // Stable topic so typing broadcast reaches the other member.
     channel = sb
-      .channel(`watch-party-${partyId}-${Date.now()}`)
+      .channel(`watch-party-${partyId}`, {
+        config: { broadcast: { self: false } },
+      })
       .on(
         "postgres_changes",
         {
@@ -561,20 +567,39 @@ export function subscribeWatchParty(partyId, { onParty, onMessage } = {}) {
         },
         (payload) => onMessage?.(payload)
       )
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        onTyping?.(payload || {});
+      })
       .subscribe();
   } catch {
     /* ignore */
   }
 
-  return () => {
+  const sendTyping = async ({ typing = true, userId, name } = {}) => {
+    if (!channel || !userId) return;
+    try {
+      await channel.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { typing: Boolean(typing), userId, name: name || "" },
+      });
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const stop = () => {
     if (channel) {
       try {
         getSupabase().removeChannel(channel);
       } catch {
         /* ignore */
       }
+      channel = null;
     }
   };
+
+  return { stop, sendTyping };
 }
 
 /**

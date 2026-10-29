@@ -9,7 +9,12 @@
 
 export function attachStreamAdGuard(
   frame,
-  { onSafeExit, skipShield = false } = {}
+  {
+    onSafeExit,
+    skipShield = false,
+    shieldLabel = "Tap to play",
+    shieldHint = "Blocks pop-up ads on the first click",
+  } = {}
 ) {
   if (!frame) return () => {};
 
@@ -18,16 +23,16 @@ export function attachStreamAdGuard(
   let lastInteract = 0;
   let shield = null;
 
-  // Solo watch only — watch-together host Play already starts the stream.
+  // Solo watch / guest sync — host Play already starts under a user gesture.
   if (!skipShield) {
     shield = document.createElement("button");
     shield.type = "button";
     shield.className = "stream-shield";
-    shield.setAttribute("aria-label", "Tap to unlock player");
+    shield.setAttribute("aria-label", shieldLabel);
     shield.innerHTML = `
       <span class="stream-shield__pulse" aria-hidden="true"></span>
-      <span class="stream-shield__label">Tap to play</span>
-      <span class="stream-shield__hint">Blocks pop-up ads on the first click</span>
+      <span class="stream-shield__label">${escapeShieldText(shieldLabel)}</span>
+      <span class="stream-shield__hint">${escapeShieldText(shieldHint)}</span>
     `;
     frame.appendChild(shield);
 
@@ -127,4 +132,12 @@ export function attachStreamAdGuard(
     exitBtn.remove();
     iframe?.classList.remove("is-guarded");
   };
+}
+
+function escapeShieldText(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
