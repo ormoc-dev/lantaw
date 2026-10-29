@@ -6,15 +6,6 @@
  * Never put the database password or service_role key in .env for this app.
  */
 
-export const env = {
-  supabaseUrl: "https://xzsynwcpzljzgaghetem.supabase.co",
-  supabaseAnonKey: "sb_publishable_id6kL1SjDSem3f1BBBMZHA_mGhyeXhu",
-  siteUrl: "https://lantaw-us.vercel.app",
-  tmdbApiKey: "0da320d23d1a48a9bfc19aa7f2316470",
-  tmdbBaseUrl: "https://api.themoviedb.org/3",
-  tmdbImageBase: "https://image.tmdb.org/t/p",
-  omdbApiKey: "419c2d70",
-};
 
 export function assertEnv() {
   const missing = [];
