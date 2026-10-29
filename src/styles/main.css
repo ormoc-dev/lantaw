@@ -413,9 +413,9 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   min-height: 0;
   height: 100%;
   max-height: 100%;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   align-content: stretch;
-  gap: 0.5rem;
+  gap: 0;
   overflow: hidden;
 }
 
@@ -510,6 +510,289 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 .fp-count {
   margin: 0;
   font-size: 0.88rem;
+}
+
+/* Messenger-style Friends chrome */
+.fp-msg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.15rem;
+}
+
+.fp-msg-head h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 5vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.fp-msg-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fp-icon-btn {
+  appearance: none;
+  position: relative;
+  width: 2.55rem;
+  height: 2.55rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.fp-icon-btn svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: block;
+}
+
+.fp-icon-btn.is-active {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.fp-icon-btn em {
+  position: absolute;
+  top: -0.15rem;
+  right: -0.15rem;
+  font-style: normal;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.fp-text-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.25rem 0.15rem;
+  white-space: nowrap;
+}
+
+.fp-inbox {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.fp-inbox__cta {
+  justify-self: center;
+  margin-top: 0.35rem;
+}
+
+.fp-watch-banner {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fp-watch-banner > span:first-child {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+}
+
+.fp-watch-banner strong,
+.fp-watch-banner em {
+  display: block;
+}
+
+.fp-watch-banner strong {
+  font-size: 0.95rem;
+}
+
+.fp-watch-banner em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 0.1rem;
+}
+
+.fp-invite-strip {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.fp-invite-strip__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.fp-invite-strip__head strong {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fp-invite-strip__list {
+  display: flex;
+  gap: 0.55rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 0.15rem;
+}
+
+.fp-invite-strip__list::-webkit-scrollbar {
+  display: none;
+}
+
+.fp-invite-card {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 11.5rem;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.55rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fp-invite-card img,
+.fp-invite-card__ph {
+  width: 36px;
+  height: 54px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--surface);
+  display: block;
+}
+
+.fp-invite-card strong,
+.fp-invite-card em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-invite-card strong {
+  font-size: 0.82rem;
+}
+
+.fp-invite-card em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 0.7rem;
+  margin-top: 0.12rem;
+}
+
+.fp-convo-list {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.fp-convo {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.7rem 0.35rem;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 12px;
+}
+
+.fp-convo:hover,
+.fp-convo:focus-visible {
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+}
+
+.fp-convo__meta {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.fp-convo__meta strong {
+  font-size: 0.98rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-convo__meta em {
+  font-style: normal;
+  font-size: 0.78rem;
+}
+
+.fp-convo.has-unread strong {
+  color: #fff;
+}
+
+.fp-chat--thread .fp-chat__thread {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.fp-chat__back {
+  flex-shrink: 0;
+}
+
+.fp-chat__head-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.fp-chat__watch-btn {
+  margin-left: auto;
 }
 
 .fp-tabs {
