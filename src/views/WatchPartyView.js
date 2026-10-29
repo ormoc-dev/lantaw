@@ -123,14 +123,20 @@ export async function WatchPartyView(root, params = {}) {
       </div>
 
       <div class="wparty__chat">
-        <div class="wt__comments" id="wp-comments" aria-live="polite"></div>
-        <form class="wt__compose" id="wp-compose" autocomplete="off">
+        <header class="wparty__chat-head">
+          <strong>Room chat</strong>
+          <span class="muted">with ${escapeHtml(otherName)}</span>
+        </header>
+        <div class="wparty__messages" id="wp-comments" aria-live="polite"></div>
+        <form class="wparty__compose" id="wp-compose" autocomplete="off">
           <input
             type="text"
             name="body"
             maxlength="280"
-            placeholder="Message…"
+            placeholder="Write a message"
             aria-label="Room chat"
+            enterkeyhint="send"
+            inputmode="text"
           />
           <button type="submit" class="btn btn--primary">Send</button>
         </form>
@@ -359,14 +365,16 @@ export async function WatchPartyView(root, params = {}) {
     if (!msg?.id || knownMsgIds.has(msg.id)) return;
     knownMsgIds.add(msg.id);
     const el = document.createElement("div");
-    el.className = `wt__float ${mine ? "is-me" : ""} is-in`;
+    el.className = `fp-bubble wparty__bubble ${mine ? "is-me" : ""}`;
     el.innerHTML = `
-      <strong>${escapeHtml(name)}</strong>
-      <span>${escapeHtml(msg.body)}</span>
+      ${mine ? "" : `<span class="wparty__bubble-name">${escapeHtml(name)}</span>`}
+      <p class="fp-bubble__text">${escapeHtml(msg.body)}</p>
       <time>${formatTime(msg.created_at)}</time>
     `;
     comments.appendChild(el);
-    while (comments.children.length > 80) comments.firstElementChild?.remove();
+    while (comments.querySelectorAll(".fp-bubble").length > 80) {
+      comments.querySelector(".fp-bubble")?.remove();
+    }
     comments.scrollTop = comments.scrollHeight;
   }
 
@@ -384,7 +392,7 @@ export async function WatchPartyView(root, params = {}) {
       comments.innerHTML = "";
       knownMsgIds.clear();
       if (!rows.length) {
-        comments.innerHTML = `<p class="muted wt__chat-empty">No messages yet.</p>`;
+        comments.innerHTML = `<p class="muted wparty__chat-empty">Say hi while you watch.</p>`;
         return;
       }
       for (const m of rows) {
@@ -394,7 +402,7 @@ export async function WatchPartyView(root, params = {}) {
         });
       }
     } catch (_) {
-      comments.innerHTML = `<p class="muted wt__chat-empty">Chat unavailable.</p>`;
+      comments.innerHTML = `<p class="muted wparty__chat-empty">Chat unavailable.</p>`;
     }
   }
 
@@ -404,13 +412,14 @@ export async function WatchPartyView(root, params = {}) {
     if (!text) return;
     if (party.status !== "active" && party.status !== "invited") return;
     form.body.value = "";
-    comments.querySelector(".wt__chat-empty")?.remove();
+    comments.querySelector(".wparty__chat-empty")?.remove();
     try {
       const msg = await sendWatchPartyMessage(partyId, text);
       spawnComment(msg, { mine: true, name: "You" });
     } catch (err) {
       alert(err.message || "Could not send");
     }
+    form.body?.focus();
   });
 
   paintBanner();
@@ -438,7 +447,7 @@ export async function WatchPartyView(root, params = {}) {
     onMessage: (payload) => {
       const msg = payload?.new;
       if (!msg) return;
-      comments.querySelector(".wt__chat-empty")?.remove();
+      comments.querySelector(".wparty__chat-empty")?.remove();
       spawnComment(msg, {
         mine: msg.sender_id === me.id,
         name: displayNameFor(msg.sender_id),

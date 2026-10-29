@@ -2362,11 +2362,19 @@ body.me-modal-open {
   font-size: 0.85rem;
 }
 
+.app-modal {
+  z-index: 140;
+}
+
 .me-modal__actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.55rem;
   margin-top: 0.35rem;
+}
+
+.me-modal__actions--single {
+  grid-template-columns: 1fr;
 }
 
 .me-modal__btn {
@@ -5441,6 +5449,12 @@ body.is-watch-party {
   overflow: hidden;
 }
 
+body.has-mobile-nav .wparty {
+  padding-bottom: var(--bottom-nav-clearance);
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
 .wparty__loading {
   margin: 2rem 0.5rem;
 }
@@ -5513,20 +5527,94 @@ body.is-watch-party {
 
 .wparty__chat {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.45rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.55rem;
   min-height: 0;
   overflow: hidden;
+  padding: 0.75rem 0.15rem 0.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.wparty__chat .wt__comments {
+.wparty__chat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-inline: 0.15rem;
+}
+
+.wparty__chat-head strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.wparty__chat-head .muted {
+  font-size: 0.78rem;
+}
+
+.wparty__messages {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
   min-height: 0;
-  max-height: none;
   height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 0.15rem 0.1rem 0.35rem;
 }
 
-.wparty__chat .wt__compose {
-  padding-bottom: 0.05rem;
+.wparty__chat-empty {
+  margin: 1rem 0.15rem;
+  font-size: 0.9rem;
+}
+
+.wparty__bubble {
+  cursor: default;
+}
+
+.wparty__bubble-name {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.wparty__compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.1rem 0.15rem;
+}
+
+.wparty__compose input {
+  width: 100%;
+  min-height: 2.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 0.65rem 0.95rem;
+  font: inherit;
+  font-size: 16px;
+}
+
+.wparty__compose input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.wparty__compose .btn--primary {
+  border-radius: 14px;
+  min-height: 2.7rem;
+  padding-inline: 1.05rem;
+  font-weight: 700;
 }
 
 /* —— Video call overlay (WebRTC) —— */

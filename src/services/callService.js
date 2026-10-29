@@ -1,10 +1,22 @@
 import { getSupabase } from "../lib/supabase.js";
 import { getUser } from "./authService.js";
+import { showNotice } from "../lib/appModal.js";
 
 const ICE_CONFIG = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    // Public TURN fallback so mobile/strict NATs can finish connecting
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
   ],
 };
 
@@ -12,12 +24,14 @@ let pc = null;
 let localStream = null;
 let inboxChannel = null;
 let sessionChannel = null;
+let pendingIce = [];
+let remoteReady = false;
 
 let myId = null;
 let ui = null;
 let pendingInvite = null;
-let activeCall = null; // { friendshipId, peerId, peerName, role: 'caller'|'callee' }
-let makingOffer = false;
+let activeCall = null;
+let offerStarted = false;
 
 function el(sel) {
   return ui?.root?.querySelector(sel) || null;
@@ -71,7 +85,12 @@ function ensureUi() {
   document.body.appendChild(root);
 
   root.querySelector("[data-vc-accept]")?.addEventListener("click", () => {
-    acceptIncomingCall().catch((err) => alert(err.message || "Could not accept"));
+    acceptIncomingCall().catch((err) =>
+      showNotice({
+        title: "Couldn’t answer",
+        message: err.message || "Could not accept the call.",
+      })
+    );
   });
   root.querySelector("[data-vc-decline]")?.addEventListener("click", () => {
     declineIncomingCall().catch(() => {});
@@ -98,66 +117,162 @@ function ensureUi() {
   return ui;
 }
 
+function sdpPayload(desc) {
+  if (!desc) return null;
+  return { type: desc.type, sdp: desc.sdp };
+}
+
+async function sendSignal(payload) {
+  if (!sessionChannel) return;
+  await sessionChannel.send({
+    type: "broadcast",
+    event: "signal",
+    payload: { ...payload, from: myId },
+  });
+}
+
+async function flushIce() {
+  if (!pc || !remoteReady) return;
+  const queued = pendingIce.splice(0);
+  for (const raw of queued) {
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(raw));
+    } catch (err) {
+      console.warn("ICE flush failed", err);
+    }
+  }
+}
+
 async function getLocalMedia() {
-  if (localStream) return localStream;
+  if (localStream) {
+    const localVideo = el("[data-vc-local]");
+    if (localVideo && localVideo.srcObject !== localStream) {
+      localVideo.srcObject = localStream;
+    }
+    return localStream;
+  }
   localStream = await navigator.mediaDevices.getUserMedia({
     audio: true,
     video: { facingMode: "user" },
   });
   const localVideo = el("[data-vc-local]");
-  if (localVideo) {
-    localVideo.srcObject = localStream;
-  }
+  if (localVideo) localVideo.srcObject = localStream;
   return localStream;
 }
 
 function wirePeerConnection() {
+  if (pc) return pc;
+  pendingIce = [];
+  remoteReady = false;
   pc = new RTCPeerConnection(ICE_CONFIG);
 
   pc.onicecandidate = (ev) => {
-    if (!ev.candidate || !sessionChannel || !activeCall) return;
-    sessionChannel.send({
-      type: "broadcast",
-      event: "signal",
-      payload: {
-        kind: "ice",
-        from: myId,
-        candidate: ev.candidate.toJSON(),
-      },
-    });
+    if (!ev.candidate) return;
+    sendSignal({
+      kind: "ice",
+      candidate: ev.candidate.toJSON(),
+    }).catch(() => {});
   };
 
   pc.ontrack = (ev) => {
     const remoteVideo = el("[data-vc-remote]");
     if (!remoteVideo) return;
-    if (ev.streams?.[0]) {
-      remoteVideo.srcObject = ev.streams[0];
-    } else {
-      const stream = remoteVideo.srcObject || new MediaStream();
-      stream.addTrack(ev.track);
-      remoteVideo.srcObject = stream;
-    }
+    const stream = ev.streams?.[0] || new MediaStream([ev.track]);
+    remoteVideo.srcObject = stream;
+    remoteVideo.play?.().catch(() => {});
   };
 
   pc.onconnectionstatechange = () => {
     const state = pc?.connectionState;
     if (state === "connected") setStatus("Connected");
     else if (state === "connecting") setStatus("Connecting…");
-    else if (state === "failed") setStatus("Connection failed");
-    else if (state === "disconnected") setStatus("Reconnecting…");
+    else if (state === "failed") {
+      setStatus("Connection failed");
+      showNotice({
+        title: "Call couldn’t connect",
+        message:
+          "Network blocked the peer link. Try the same Wi‑Fi, or a different network.",
+      }).catch(() => {});
+    } else if (state === "disconnected") setStatus("Reconnecting…");
     else if (state === "closed") setStatus("");
   };
+
+  pc.oniceconnectionstatechange = () => {
+    const state = pc?.iceConnectionState;
+    if (state === "connected" || state === "completed") setStatus("Connected");
+    else if (state === "checking") setStatus("Connecting…");
+    else if (state === "failed") setStatus("Connection failed");
+  };
+
+  return pc;
 }
 
 async function attachLocalTracks() {
   const stream = await getLocalMedia();
+  const conn = wirePeerConnection();
   for (const track of stream.getTracks()) {
-    const already = pc.getSenders().some((s) => s.track?.id === track.id);
-    if (!already) pc.addTrack(track, stream);
+    const already = conn.getSenders().some((s) => s.track?.kind === track.kind);
+    if (!already) conn.addTrack(track, stream);
   }
 }
 
-async function joinSession(friendshipId, { onAccepted } = {}) {
+async function handleSignal(payload) {
+  if (!payload || payload.from === myId) return;
+
+  if (payload.kind === "offer" && activeCall?.role === "callee") {
+    setStatus("Connecting…");
+    await attachLocalTracks();
+    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    remoteReady = true;
+    await flushIce();
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await sendSignal({ kind: "answer", sdp: sdpPayload(pc.localDescription) });
+    setStatus("Connecting…");
+    return;
+  }
+
+  if (payload.kind === "answer" && activeCall?.role === "caller") {
+    if (!pc) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    remoteReady = true;
+    await flushIce();
+    setStatus("Connecting…");
+    return;
+  }
+
+  if (payload.kind === "ice" && payload.candidate) {
+    if (!pc || !remoteReady) {
+      pendingIce.push(payload.candidate);
+      return;
+    }
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+    } catch (err) {
+      console.warn("addIceCandidate", err);
+    }
+    return;
+  }
+
+  if (payload.kind === "hangup") {
+    await hangUp({ notify: false });
+  }
+}
+
+async function startCallerOffer() {
+  if (offerStarted || activeCall?.role !== "caller") return;
+  offerStarted = true;
+  setStatus("Connecting…");
+  await attachLocalTracks();
+  const offer = await pc.createOffer({
+    offerToReceiveAudio: true,
+    offerToReceiveVideo: true,
+  });
+  await pc.setLocalDescription(offer);
+  await sendSignal({ kind: "offer", sdp: sdpPayload(pc.localDescription) });
+}
+
+async function joinSession(friendshipId) {
   if (sessionChannel) {
     try {
       await getSupabase().removeChannel(sessionChannel);
@@ -172,75 +287,79 @@ async function joinSession(friendshipId, { onAccepted } = {}) {
   });
 
   sessionChannel.on("broadcast", { event: "signal" }, async ({ payload }) => {
-    if (!payload || payload.from === myId) return;
     try {
-      if (payload.kind === "offer" && activeCall?.role === "callee") {
-        if (!pc) {
-          wirePeerConnection();
-          await attachLocalTracks();
-        }
-        await pc.setRemoteDescription(payload.sdp);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sessionChannel.send({
-          type: "broadcast",
-          event: "signal",
-          payload: {
-            kind: "answer",
-            from: myId,
-            sdp: pc.localDescription,
-          },
-        });
-        setStatus("Connected");
-      } else if (payload.kind === "answer" && activeCall?.role === "caller") {
-        await pc?.setRemoteDescription(payload.sdp);
-        setStatus("Connected");
-      } else if (payload.kind === "ice" && payload.candidate) {
-        try {
-          await pc?.addIceCandidate(payload.candidate);
-        } catch {
-          /* ignore late candidates */
-        }
-      } else if (payload.kind === "hangup") {
-        await hangUp({ notify: false });
-      }
+      await handleSignal(payload);
     } catch (err) {
       console.warn("Call signal error:", err);
       setStatus(err.message || "Call error");
     }
   });
 
-  if (onAccepted) {
-    sessionChannel.on("broadcast", { event: "accepted" }, (msg) => {
-      onAccepted(msg);
-    });
-  }
+  sessionChannel.on("broadcast", { event: "accepted" }, async ({ payload }) => {
+    if (!payload || payload.from === myId) return;
+    if (activeCall?.role !== "caller") return;
+    try {
+      await startCallerOffer();
+    } catch (err) {
+      offerStarted = false;
+      await showNotice({
+        title: "Call failed",
+        message: err.message || "Could not start the video call.",
+      });
+      await hangUp({ notify: true });
+    }
+  });
 
-  await new Promise((resolve) => {
+  // Callee may have accepted before caller finished joining — ask again.
+  sessionChannel.on("broadcast", { event: "ready" }, async ({ payload }) => {
+    if (!payload || payload.from === myId) return;
+    if (activeCall?.role === "caller") {
+      try {
+        await startCallerOffer();
+      } catch (err) {
+        console.warn(err);
+      }
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Could not join call channel")),
+      10000
+    );
     sessionChannel.subscribe((status) => {
-      if (status === "SUBSCRIBED") resolve();
+      if (status === "SUBSCRIBED") {
+        clearTimeout(timer);
+        resolve();
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        clearTimeout(timer);
+        reject(new Error("Call channel error — check Realtime is enabled"));
+      }
     });
   });
 }
 
 async function sendInbox(peerId, event, payload) {
-  const ch = getSupabase().channel(`lantaw-call-inbox:${peerId}`, {
+  const topic = `lantaw-call-inbox:${peerId}`;
+  const ch = getSupabase().channel(topic, {
     config: { broadcast: { self: false } },
   });
-  await new Promise((resolve) => {
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Inbox timeout")), 8000);
     ch.subscribe((status) => {
-      if (status === "SUBSCRIBED") resolve();
+      if (status === "SUBSCRIBED") {
+        clearTimeout(timer);
+        resolve();
+      }
     });
   });
   await ch.send({ type: "broadcast", event, payload });
   setTimeout(() => {
     getSupabase().removeChannel(ch).catch(() => {});
-  }, 800);
+  }, 1200);
 }
 
-/**
- * Listen for incoming calls for the signed-in user (app-wide).
- */
 export async function startCallInbox() {
   ensureUi();
   const user = await getUser();
@@ -292,7 +411,10 @@ export async function startCallInbox() {
       payload?.friendshipId === activeCall.friendshipId
     ) {
       hangUp({ notify: false }).catch(() => {});
-      alert("Call declined");
+      showNotice({
+        title: "Call declined",
+        message: "Your friend declined the video call.",
+      });
     }
   });
 
@@ -300,7 +422,10 @@ export async function startCallInbox() {
     if (activeCall?.role === "caller") {
       setStatus("Busy");
       hangUp({ notify: false }).catch(() => {});
-      alert("Friend is busy on another call.");
+      showNotice({
+        title: "Friend is busy",
+        message: "They’re already on another call. Try again in a bit.",
+      });
     }
   });
 
@@ -338,6 +463,7 @@ export async function startVideoCall({ friendshipId, peerId, peerName }) {
   }
 
   myId = user.id;
+  offerStarted = false;
   activeCall = {
     friendshipId,
     peerId,
@@ -351,35 +477,8 @@ export async function startVideoCall({ friendshipId, peerId, peerName }) {
   if (nameEl) nameEl.textContent = activeCall.peerName;
 
   try {
-    await joinSession(friendshipId, {
-      onAccepted: async ({ payload }) => {
-        if (payload?.from === myId || activeCall?.role !== "caller") return;
-        if (makingOffer || pc) return;
-        try {
-          setStatus("Connecting…");
-          wirePeerConnection();
-          await attachLocalTracks();
-          makingOffer = true;
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          makingOffer = false;
-          sessionChannel.send({
-            type: "broadcast",
-            event: "signal",
-            payload: {
-              kind: "offer",
-              from: myId,
-              sdp: pc.localDescription,
-            },
-          });
-        } catch (err) {
-          makingOffer = false;
-          alert(err.message || "Could not start call");
-          await hangUp({ notify: true });
-        }
-      },
-    });
     await getLocalMedia();
+    await joinSession(friendshipId);
     await sendInbox(peerId, "invite", {
       friendshipId,
       from: myId,
@@ -399,6 +498,7 @@ export async function acceptIncomingCall() {
 
   const invite = pendingInvite;
   pendingInvite = null;
+  offerStarted = false;
   activeCall = {
     friendshipId: invite.friendshipId,
     peerId: invite.peerId,
@@ -409,14 +509,19 @@ export async function acceptIncomingCall() {
   showStage("active");
   setStatus("Connecting…");
 
-  await joinSession(invite.friendshipId);
   await getLocalMedia();
-  wirePeerConnection();
+  await joinSession(invite.friendshipId);
   await attachLocalTracks();
 
   await sessionChannel.send({
     type: "broadcast",
     event: "accepted",
+    payload: { from: myId, friendshipId: invite.friendshipId },
+  });
+  // If caller missed "accepted", nudge them to send the offer.
+  await sessionChannel.send({
+    type: "broadcast",
+    event: "ready",
     payload: { from: myId, friendshipId: invite.friendshipId },
   });
 }
@@ -437,15 +542,13 @@ export async function hangUp({ notify = true } = {}) {
   const call = activeCall;
   activeCall = null;
   pendingInvite = null;
-  makingOffer = false;
+  offerStarted = false;
+  remoteReady = false;
+  pendingIce = [];
 
   if (notify && call && sessionChannel) {
     try {
-      await sessionChannel.send({
-        type: "broadcast",
-        event: "signal",
-        payload: { kind: "hangup", from: myId },
-      });
+      await sendSignal({ kind: "hangup" });
     } catch {
       /* ignore */
     }

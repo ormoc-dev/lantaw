@@ -27,6 +27,7 @@ import {
   startPresence,
 } from "../services/presenceService.js";
 import { startVideoCall } from "../services/callService.js";
+import { showConfirm, showNotice } from "../lib/appModal.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
 
@@ -698,20 +699,35 @@ export async function FriendsView(root) {
       panel.querySelector("[data-video-call]")?.addEventListener("click", async () => {
         const peer = current.other;
         if (!peer?.id) return;
+        const name = peer.display_name || peer.email || "Friend";
         if (!isUserOnline(peer.id)) {
-          const ok = confirm(
-            `${peer.display_name || "Friend"} looks offline. Call anyway?`
-          );
+          const ok = await showConfirm({
+            title: "Friend looks offline",
+            message: `${name} doesn’t appear online right now. Start the video call anyway?`,
+            confirmLabel: "Call anyway",
+            cancelLabel: "Cancel",
+          });
+          if (!ok) return;
+        } else {
+          const ok = await showConfirm({
+            title: "Start video call?",
+            message: `Call ${name} with camera and microphone?`,
+            confirmLabel: "Start call",
+            cancelLabel: "Cancel",
+          });
           if (!ok) return;
         }
         try {
           await startVideoCall({
             friendshipId: current.id,
             peerId: peer.id,
-            peerName: peer.display_name || peer.email || "Friend",
+            peerName: name,
           });
         } catch (err) {
-          alert(err.message || "Could not start video call");
+          await showNotice({
+            title: "Couldn’t start call",
+            message: err.message || "Something went wrong starting the video call.",
+          });
         }
       });
 
