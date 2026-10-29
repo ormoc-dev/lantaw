@@ -40,7 +40,6 @@ export async function ShortsView(root) {
     <div class="shorts-page">
       <header class="shorts-page__head">
         <h1>Shorts</h1>
-        <p class="muted">Trailers that play as you scroll</p>
       </header>
       <div class="shorts-feed" id="feed" aria-label="Shorts feed">
         ${loadingHtml()}
@@ -53,6 +52,15 @@ export async function ShortsView(root) {
   let activeReel = null;
   let muted = true;
   let unmounted = false;
+
+  const syncReelHeights = () => {
+    if (!feed) return;
+    const h = Math.max(240, Math.round(feed.clientHeight));
+    feed.querySelectorAll(".shorts-reel").forEach((reel) => {
+      reel.style.height = `${h}px`;
+      reel.style.minHeight = `${h}px`;
+    });
+  };
 
   const stopReel = (reel) => {
     if (!reel) return;
@@ -159,7 +167,7 @@ export async function ShortsView(root) {
           <span>${m.rating ? m.rating.toFixed(1) : "—"} · ${
             m.releaseDate?.slice(0, 4) || "—"
           }</span>
-          <p>${escapeHtml(truncate(m.overview, 72))}</p>
+          <p>${escapeHtml(truncate(m.overview, 56))}</p>
           <a class="shorts-reel__open" href="${linkTo(
             `/${m.mediaType === "tv" ? "tv" : "movie"}/${m.id}`
           )}">Open title</a>
@@ -198,10 +206,13 @@ export async function ShortsView(root) {
       }
     );
 
+    syncReelHeights();
     feed.querySelectorAll(".shorts-reel").forEach((reel) => observer.observe(reel));
+    window.addEventListener("resize", syncReelHeights);
 
-    // Kick first visible reel
+    // Kick first visible reel after layout settles
     requestAnimationFrame(() => {
+      syncReelHeights();
       const first = feed.querySelector(".shorts-reel[data-trailer-key]");
       if (first) playReel(first);
     });
@@ -294,6 +305,7 @@ export async function ShortsView(root) {
 
   function unmount() {
     unmounted = true;
+    window.removeEventListener("resize", syncReelHeights);
     observer?.disconnect();
     observer = null;
     if (activeReel) stopReel(activeReel);

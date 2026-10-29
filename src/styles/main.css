@@ -409,22 +409,22 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   position: fixed !important;
   left: 0;
   right: 0;
-  bottom: var(--friends-kb-bottom, 0px);
-  z-index: 80;
+  bottom: var(--friends-kb-bottom, 0px) !important;
+  z-index: 120;
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 0.5rem max(0.85rem, env(safe-area-inset-left))
-    max(0.4rem, env(safe-area-inset-bottom))
-    max(0.85rem, env(safe-area-inset-right));
+  /* No safe-area bottom while keyboard is up — inset already clears the keys */
+  padding: 0.45rem max(0.75rem, env(safe-area-inset-left)) 0.45rem
+    max(0.75rem, env(safe-area-inset-right));
   box-sizing: border-box;
   background: color-mix(in srgb, var(--bg) 96%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px 18px 0 0;
+  border-radius: 16px 16px 0 0;
   box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.4);
-  transform: none;
+  transform: none !important;
 }
 
 .fp-chat__compose-spacer {
@@ -784,13 +784,25 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 
 .fp-convo-list {
   display: grid;
-  gap: 0.1rem;
+  gap: 0.35rem;
   margin: 0 -0.15rem;
 }
 
 .fp-inbox__error {
   margin: 0.75rem 0.35rem;
   font-size: 0.88rem;
+}
+
+.fp-convo-wrap {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.15rem 0.2rem 0.35rem;
+  border-radius: 16px;
+}
+
+.fp-convo-wrap.is-watching-live {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .fp-convo {
@@ -801,13 +813,13 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   gap: 0.8rem;
   align-items: center;
   text-align: left;
-  padding: 0.65rem 0.55rem;
+  padding: 0.55rem 0.4rem;
   border: 0;
   background: transparent;
   color: var(--text);
   font: inherit;
   cursor: pointer;
-  border-radius: 16px;
+  border-radius: 14px;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.15s ease;
 }
@@ -820,6 +832,84 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 
 .fp-convo:active {
   background: rgba(255, 255, 255, 0.07);
+}
+
+.fp-convo__watching {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  text-align: left;
+  margin: 0 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 14%, rgba(0, 0, 0, 0.25));
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fp-convo__watching.is-live {
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--accent) 28%, transparent),
+    color-mix(in srgb, var(--accent) 12%, rgba(0, 0, 0, 0.2))
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.fp-convo__watching img,
+.fp-convo__watching-ph {
+  width: 34px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  color: #fff;
+}
+
+.fp-convo__watching-ph {
+  background: var(--accent);
+}
+
+.fp-convo__watching-text {
+  min-width: 0;
+  display: grid;
+  gap: 0.08rem;
+}
+
+.fp-convo__watching-text strong {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.fp-convo__watching-text em {
+  font-style: normal;
+  font-size: 0.86rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-convo__watching-cta {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fff;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent);
 }
 
 .fp-convo__meta {
@@ -1515,7 +1605,8 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   flex-direction: column;
   gap: 0.12rem;
   justify-content: flex-start;
-  align-content: flex-start;
+  align-items: stretch;
+  align-content: stretch;
   padding: 0.4rem 0.55rem 0.5rem;
   scroll-padding-bottom: 0.5rem;
 }
@@ -1549,18 +1640,18 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   display: flex;
   align-items: flex-end;
   gap: 0.4rem;
+  width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
   padding-inline: 0;
 }
 
 .fp-msg.is-me {
   justify-content: flex-end;
-  align-self: flex-end;
 }
 
 .fp-msg.is-them {
   justify-content: flex-start;
-  align-self: flex-start;
 }
 
 .fp-msg.is-start,
@@ -1582,18 +1673,21 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 }
 
 .fp-msg__stack {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.18rem;
+  /* Parent is full row width, so % max-width resolves correctly */
   max-width: min(78%, 22rem);
   min-width: 0;
+  flex: 0 1 auto;
 }
 
 .fp-msg.is-me .fp-msg__stack {
-  justify-items: end;
+  align-items: flex-end;
 }
 
 .fp-msg.is-them .fp-msg__stack {
-  justify-items: start;
+  align-items: flex-start;
 }
 
 .fp-msg__time {
@@ -1608,6 +1702,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 
 .fp-bubble {
   position: relative;
+  display: block;
   width: fit-content;
   max-width: 100%;
   padding: 0.55rem 0.8rem;
@@ -1617,6 +1712,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+  box-sizing: border-box;
 }
 
 .fp-bubble.is-me {
@@ -1671,7 +1767,8 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   line-height: 1.35;
   font-size: 0.95rem;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .fp-bubble__reactions {
@@ -2157,7 +2254,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 
   body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
     position: fixed !important;
-    bottom: var(--friends-kb-bottom, 0px);
+    bottom: var(--friends-kb-bottom, 0px) !important;
     margin-top: 0;
   }
 }
@@ -2180,22 +2277,24 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 
 /* —— Shorts / Reels —— */
 #view.view--shorts {
+  --shorts-ui-bottom: 0.85rem;
   max-width: none;
   width: 100%;
   margin: 0;
   padding: 0;
-  height: var(--shorts-vh, 100dvh);
-  max-height: var(--shorts-vh, 100dvh);
+  height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 
 body.has-mobile-nav #view.view--shorts {
-  padding: 0;
-  padding-bottom: 0;
-  height: calc(100dvh - var(--bottom-nav-clearance));
-  max-height: calc(100dvh - var(--bottom-nav-clearance));
+  /* Keep reels above the fixed bottom nav via padding, not a fragile height calc */
+  padding: 0 0 var(--bottom-nav-clearance) !important;
+  height: 100dvh;
+  max-height: 100dvh;
 }
 
 body.is-shorts {
@@ -2204,38 +2303,42 @@ body.is-shorts {
 }
 
 .shorts-page {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
 .shorts-page__head {
-  flex: 0 0 auto;
-  padding: max(0.55rem, env(safe-area-inset-top)) 0.9rem 0.35rem;
-  z-index: 2;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  padding: max(0.45rem, env(safe-area-inset-top)) 0.9rem 0.35rem;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(8, 4, 5, 0.72), transparent);
 }
 
 .shorts-page__head h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   letter-spacing: -0.03em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 
 .shorts-page__head .muted {
-  margin: 0.15rem 0 0;
-  font-size: 0.8rem;
+  display: none;
 }
 
 .shorts-feed {
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  height: 100%;
+  display: block;
   overflow-x: hidden;
   overflow-y: auto;
   scroll-snap-type: y mandatory;
@@ -2256,11 +2359,9 @@ body.is-shorts {
 
 .shorts-reel {
   position: relative;
-  flex: 0 0 100%;
   width: 100%;
   height: 100%;
   min-height: 100%;
-  max-height: 100%;
   scroll-snap-align: start;
   scroll-snap-stop: always;
   overflow: hidden;
@@ -2271,17 +2372,19 @@ body.is-shorts {
 .shorts-reel__stage {
   position: absolute;
   inset: 0;
+  overflow: hidden;
   background: var(--surface) center/cover no-repeat;
 }
 
 .shorts-reel__stage iframe {
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 50%;
   width: 100%;
   height: 100%;
   border: 0;
-  /* Zoom past YouTube letterboxing for a Reels-like fill */
-  transform: scale(1.35);
+  /* Cover portrait frame — landscape YT trailers otherwise leave huge black bars */
+  transform: translate(-50%, -50%) scale(2.35);
   transform-origin: center center;
   pointer-events: none;
 }
@@ -2301,24 +2404,24 @@ body.is-shorts {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(8, 4, 5, 0.55) 0%, transparent 22%),
-    linear-gradient(0deg, rgba(8, 4, 5, 0.92) 0%, rgba(8, 4, 5, 0.55) 28%, transparent 52%);
+    linear-gradient(180deg, rgba(8, 4, 5, 0.5) 0%, transparent 18%),
+    linear-gradient(0deg, rgba(8, 4, 5, 0.88) 0%, rgba(8, 4, 5, 0.4) 24%, transparent 48%);
   pointer-events: none;
 }
 
 .shorts-reel__meta {
   position: absolute;
-  left: 0.9rem;
-  right: 4.4rem;
-  bottom: 0.85rem;
+  left: 0.85rem;
+  right: 4.35rem;
+  bottom: var(--shorts-ui-bottom);
   z-index: 2;
   display: grid;
-  gap: 0.15rem;
-  max-width: 18rem;
+  gap: 0.1rem;
+  max-width: 17rem;
 }
 
 .shorts-reel__meta strong {
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
@@ -2328,31 +2431,31 @@ body.is-shorts {
 }
 
 .shorts-reel__meta span {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.72);
 }
 
 .shorts-reel__meta p {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   line-height: 1.25;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.68);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  max-height: 2.5em;
+  max-height: 1.3em;
 }
 
 .shorts-reel__open {
   justify-self: start;
   margin-top: 0.2rem;
   color: #fff;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-decoration: none;
-  padding: 0.32rem 0.65rem;
+  padding: 0.3rem 0.6rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 82%, #000);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
@@ -2360,18 +2463,18 @@ body.is-shorts {
 
 .shorts-reel__actions {
   position: absolute;
-  right: 0.65rem;
-  bottom: 1.15rem;
+  right: 0.55rem;
+  bottom: var(--shorts-ui-bottom);
   z-index: 3;
   display: grid;
-  gap: 0.75rem;
+  gap: 0.55rem;
   justify-items: center;
 }
 
 .shorts-reel__btn {
   appearance: none;
-  width: 3rem;
-  height: 3rem;
+  width: 2.65rem;
+  height: 2.65rem;
   display: grid;
   place-items: center;
   border: 0;
@@ -2391,8 +2494,8 @@ body.is-shorts {
 }
 
 .shorts-reel__btn svg {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.2rem;
+  height: 1.2rem;
   display: block;
 }
 
@@ -3083,13 +3186,11 @@ body.me-modal-open {
   }
 
   .shorts-reel__meta {
-    left: 1.25rem;
-    bottom: 1.35rem;
+    left: 1.15rem;
   }
 
   .shorts-reel__actions {
-    right: 1.1rem;
-    bottom: 1.5rem;
+    right: 0.9rem;
   }
 
   .rank-list {
@@ -3103,10 +3204,11 @@ body.me-modal-open {
 
 @media (min-width: 768px) {
   body.has-mobile-nav #view.view--shorts {
-    height: calc(100dvh - var(--bottom-nav-clearance));
-    max-height: calc(100dvh - var(--bottom-nav-clearance));
     max-width: min(520px, 100%);
     margin-inline: auto;
+    height: 100dvh;
+    max-height: 100dvh;
+    padding-bottom: var(--bottom-nav-clearance) !important;
   }
 }
 

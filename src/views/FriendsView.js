@@ -181,8 +181,20 @@ export async function FriendsView(root) {
     return mine ? `You: ${clipped}` : clipped;
   };
 
+  const watchingPartyFor = (friendshipId) =>
+    parties.find(
+      (p) =>
+        p.friendship_id === friendshipId &&
+        (p.status === "active" || p.status === "invited")
+    ) || null;
+
   const sortedInboxFriends = (accepted, previews = chatPreviews) =>
     [...accepted].sort((a, b) => {
+      const wa = watchingPartyFor(a.id);
+      const wb = watchingPartyFor(b.id);
+      const waRank = wa?.status === "active" ? 2 : wa ? 1 : 0;
+      const wbRank = wb?.status === "active" ? 2 : wb ? 1 : 0;
+      if (waRank !== wbRank) return wbRank - waRank;
       const pa = previews[a.id];
       const pb = previews[b.id];
       const ta = pa?.created_at ? new Date(pa.created_at).getTime() : 0;
@@ -203,44 +215,79 @@ export async function FriendsView(root) {
         const unread = activity.chatIds?.includes(f.id);
         const preview = previews[f.id];
         const hasChat = Boolean(preview);
+        const watching = watchingPartyFor(f.id);
+        const watchingActive = watching?.status === "active";
         return `
-        <button type="button" class="fp-convo ${
-          unread ? "has-unread" : ""
-        } ${hasChat ? "has-chat" : ""}" data-open-chat="${f.id}" role="listitem">
-          ${presenceAvatarHtml(f.other)}
-          <span class="fp-convo__meta">
-            <span class="fp-convo__top">
-              <strong>${escapeHtml(
-                f.other?.display_name || f.other?.email || "Friend"
-              )}</strong>
-              ${
-                hasChat
-                  ? `<time class="fp-convo__time">${escapeHtml(
-                      formatConvoTime(preview.created_at)
-                    )}</time>`
-                  : ""
-              }
+        <div
+          class="fp-convo-wrap ${watching ? "is-watching" : ""} ${
+            watchingActive ? "is-watching-live" : ""
+          }"
+          role="listitem"
+        >
+          <button type="button" class="fp-convo ${
+            unread ? "has-unread" : ""
+          } ${hasChat ? "has-chat" : ""}" data-open-chat="${f.id}">
+            ${presenceAvatarHtml(f.other)}
+            <span class="fp-convo__meta">
+              <span class="fp-convo__top">
+                <strong>${escapeHtml(
+                  f.other?.display_name || f.other?.email || "Friend"
+                )}</strong>
+                ${
+                  hasChat
+                    ? `<time class="fp-convo__time">${escapeHtml(
+                        formatConvoTime(preview.created_at)
+                      )}</time>`
+                    : ""
+                }
+              </span>
+              <span class="fp-convo__preview ${unread ? "is-unread" : ""}">
+                ${
+                  hasChat
+                    ? escapeHtml(previewLine(preview))
+                    : `<em class="fp-presence-label ${
+                        on ? "is-online" : ""
+                      }" data-presence-id="${escapeHtml(
+                        f.other?.id || ""
+                      )}"><span data-presence-label>${
+                        on ? "Active now" : "Offline"
+                      }</span></em>`
+                }
+              </span>
             </span>
-            <span class="fp-convo__preview ${unread ? "is-unread" : ""}">
-              ${
-                hasChat
-                  ? escapeHtml(previewLine(preview))
-                  : `<em class="fp-presence-label ${
-                      on ? "is-online" : ""
-                    }" data-presence-id="${escapeHtml(
-                      f.other?.id || ""
-                    )}"><span data-presence-label>${
-                      on ? "Active now" : "Offline"
-                    }</span></em>`
-              }
-            </span>
-          </span>
+            ${
+              unread
+                ? `<i class="fp-convo__unread" aria-label="Unread"></i>`
+                : `<span class="fp-convo__chev" aria-hidden="true"></span>`
+            }
+          </button>
           ${
-            unread
-              ? `<i class="fp-convo__unread" aria-label="Unread"></i>`
-              : `<span class="fp-convo__chev" aria-hidden="true"></span>`
+            watching
+              ? `<button
+                  type="button"
+                  class="fp-convo__watching ${
+                    watchingActive ? "is-live" : ""
+                  }"
+                  data-open-party="${escapeHtml(watching.id)}"
+                >
+                  ${
+                    watching.poster
+                      ? `<img src="${escapeHtml(watching.poster)}" alt="" />`
+                      : `<span class="fp-convo__watching-ph" aria-hidden="true">▶</span>`
+                  }
+                  <span class="fp-convo__watching-text">
+                    <strong>${
+                      watchingActive ? "Watching now" : "Watch invite"
+                    }</strong>
+                    <em>${escapeHtml(watching.title || "a title")}</em>
+                  </span>
+                  <span class="fp-convo__watching-cta">${
+                    watchingActive ? "Join" : "Open"
+                  }</span>
+                </button>`
+              : ""
           }
-        </button>`;
+        </div>`;
       })
       .join("");
 
@@ -248,12 +295,39 @@ export async function FriendsView(root) {
     sortedInboxFriends(accepted, previews)
       .map((f) => {
         const p = previews[f.id];
+        const w = watchingPartyFor(f.id);
         const unread = activity.chatIds?.includes(f.id) ? "1" : "0";
         return `${f.id}:${p?.id || ""}:${p?.created_at || ""}:${unread}:${
           isUserOnline(f.other?.id) ? "1" : "0"
-        }`;
+        }:${w?.id || ""}:${w?.status || ""}`;
       })
       .join("|");
+
+  const bindInboxListActions = (rootEl = page) => {
+    rootEl.querySelectorAll("[data-open-chat]").forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        activeChatId = btn.dataset.openChat;
+        renderShell();
+        renderPanel();
+      });
+    });
+    rootEl.querySelectorAll("[data-open-party]").forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        const party = parties.find((p) => p.id === btn.dataset.openParty);
+        if (party) location.hash = linkTo(partyWatchPath(party));
+        else {
+          tab = "watch";
+          renderShell();
+          renderPanel();
+        }
+      });
+    });
+    syncPresenceUi();
+  };
 
   /** Soft-update inbox rows in place — avoids remount blink. */
   const paintInboxList = () => {
@@ -267,16 +341,7 @@ export async function FriendsView(root) {
     }
     list.dataset.paintKey = key;
     list.innerHTML = convoListHtml(accepted);
-    list.querySelectorAll("[data-open-chat]").forEach((btn) => {
-      if (btn.dataset.bound) return;
-      btn.dataset.bound = "1";
-      btn.addEventListener("click", () => {
-        activeChatId = btn.dataset.openChat;
-        renderShell();
-        renderPanel();
-      });
-    });
-    syncPresenceUi();
+    bindInboxListActions(list);
   };
 
   const refreshChatPreviews = async () => {
@@ -752,26 +817,7 @@ export async function FriendsView(root) {
             renderPanel();
           });
         });
-        panel.querySelectorAll("[data-open-party]").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const party = parties.find((p) => p.id === btn.dataset.openParty);
-            if (party) location.hash = linkTo(partyWatchPath(party));
-            else {
-              tab = "watch";
-              renderShell();
-              renderPanel();
-            }
-          });
-        });
-        panel.querySelectorAll("[data-open-chat]").forEach((btn) => {
-          btn.dataset.bound = "1";
-          btn.addEventListener("click", () => {
-            activeChatId = btn.dataset.openChat;
-            renderShell();
-            renderPanel();
-          });
-        });
-        syncPresenceUi();
+        bindInboxListActions(panel);
 
         // Soft-refresh previews in background; only rewrite list if data changed
         refreshChatPreviews().then(() => {
@@ -1178,6 +1224,8 @@ export async function FriendsView(root) {
       const composeSpacer = panel.querySelector("#chat-compose-spacer");
       const chatShell = panel.querySelector(".fp-chat--thread");
       let chatLockH = 0;
+      let inputFocused = false;
+      let kbPollTimer = null;
 
       const lockPageScroll = () => {
         window.scrollTo(0, 0);
@@ -1186,15 +1234,37 @@ export async function FriendsView(root) {
         if (root.scrollTop) root.scrollTop = 0;
       };
 
+      const keyboardInset = () => {
+        const vv = window.visualViewport;
+        if (!vv) return 0;
+        // Space covered by the keyboard (layout bottom → visual bottom)
+        return Math.max(
+          0,
+          Math.round(window.innerHeight - vv.height - vv.offsetTop)
+        );
+      };
+
+      // Prefer overlay keyboard so visualViewport reports the real inset
+      try {
+        if (navigator.virtualKeyboard) {
+          navigator.virtualKeyboard.overlaysContent = true;
+        }
+      } catch {
+        /* unsupported */
+      }
+
       // Pin compose above the mobile keyboard so typing stays visible.
       clearChatViewport();
       const syncChatViewport = () => {
         const vv = window.visualViewport;
         const layoutH = window.innerHeight;
         const visibleH = vv ? vv.height : layoutH;
-        const offsetTop = vv ? vv.offsetTop : 0;
-        const covered = Math.max(0, Math.round(layoutH - (offsetTop + visibleH)));
-        const kbOpen = covered > 80 || offsetTop > 40;
+        const inset = keyboardInset();
+        const shrunk = vv ? layoutH - vv.height > 50 : false;
+        const kbOpen =
+          inset > 40 ||
+          shrunk ||
+          (inputFocused && vv && vv.height / layoutH < 0.9);
 
         document.body.classList.toggle("is-friends-chat-kb", kbOpen);
 
@@ -1206,6 +1276,7 @@ export async function FriendsView(root) {
           root.style.removeProperty("transform");
           document.documentElement.style.removeProperty("--friends-kb-bottom");
           document.documentElement.style.removeProperty("--friends-compose-h");
+          form?.style.removeProperty("bottom");
           if (composeSpacer) composeSpacer.hidden = true;
           return;
         }
@@ -1214,20 +1285,21 @@ export async function FriendsView(root) {
           chatLockH =
             Math.round(chatShell.getBoundingClientRect().height) || layoutH;
         }
-        if (chatShell && chatLockH) {
-          chatShell.style.height = `${chatLockH}px`;
-          chatShell.style.maxHeight = `${chatLockH}px`;
+
+        // Prefer visual viewport height so the thread fits above the keyboard
+        const chatVh = Math.max(220, Math.round(visibleH));
+        root.style.setProperty("--friends-chat-vh", `${chatVh}px`);
+        if (chatShell) {
+          chatShell.style.height = `${chatVh}px`;
+          chatShell.style.maxHeight = `${chatVh}px`;
         }
 
-        root.style.setProperty(
-          "--friends-chat-vh",
-          `${Math.max(240, Math.round(visibleH))}px`
-        );
-        root.style.removeProperty("transform");
         document.documentElement.style.setProperty(
           "--friends-kb-bottom",
-          `${covered}px`
+          `${inset}px`
         );
+        // Inline bottom as a hard fallback (some WebViews ignore the CSS var)
+        if (form) form.style.bottom = `${inset}px`;
 
         const composeH = Math.ceil(form?.getBoundingClientRect().height || 0) || 58;
         document.documentElement.style.setProperty(
@@ -1241,16 +1313,33 @@ export async function FriendsView(root) {
           box.scrollTop = box.scrollHeight;
         });
       };
+
+      const startKbPoll = () => {
+        clearInterval(kbPollTimer);
+        let ticks = 0;
+        kbPollTimer = setInterval(() => {
+          syncChatViewport();
+          ticks += 1;
+          if (ticks >= 16 || (!inputFocused && keyboardInset() < 40)) {
+            clearInterval(kbPollTimer);
+            kbPollTimer = null;
+          }
+        }, 50);
+      };
+
       syncChatViewport();
       window.visualViewport?.addEventListener("resize", syncChatViewport);
       window.visualViewport?.addEventListener("scroll", syncChatViewport);
       window.addEventListener("resize", syncChatViewport);
       unsubChatVv = () => {
+        clearInterval(kbPollTimer);
+        kbPollTimer = null;
         window.visualViewport?.removeEventListener("resize", syncChatViewport);
         window.visualViewport?.removeEventListener("scroll", syncChatViewport);
         window.removeEventListener("resize", syncChatViewport);
         chatShell?.style.removeProperty("height");
         chatShell?.style.removeProperty("max-height");
+        form?.style.removeProperty("bottom");
         document.documentElement.style.removeProperty("--friends-kb-bottom");
         document.documentElement.style.removeProperty("--friends-compose-h");
         if (composeSpacer) composeSpacer.hidden = true;
@@ -1311,12 +1400,18 @@ export async function FriendsView(root) {
       });
 
       input?.addEventListener("focus", () => {
+        inputFocused = true;
+        // Lift immediately so the bar isn’t trapped under the rising keyboard
+        document.body.classList.add("is-friends-chat-kb");
         if (chatShell && !chatLockH) {
           chatLockH = Math.round(chatShell.getBoundingClientRect().height);
         }
         lockPageScroll();
-        [40, 120, 240, 400].forEach((ms) => {
+        syncChatViewport();
+        startKbPoll();
+        [80, 160, 280, 450, 700].forEach((ms) => {
           setTimeout(() => {
+            if (!inputFocused) return;
             syncChatViewport();
             lockPageScroll();
             box.scrollTop = box.scrollHeight;
@@ -1325,7 +1420,11 @@ export async function FriendsView(root) {
       });
 
       input?.addEventListener("blur", () => {
-        setTimeout(syncChatViewport, 80);
+        inputFocused = false;
+        setTimeout(() => {
+          if (inputFocused) return;
+          syncChatViewport();
+        }, 120);
       });
 
       return;
