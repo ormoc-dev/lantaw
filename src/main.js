@@ -4,6 +4,10 @@ import {
   startPresence,
   stopPresence,
 } from "./services/presenceService.js";
+import {
+  startCallInbox,
+  stopCallInbox,
+} from "./services/callService.js";
 import { initPwaInstall } from "./lib/pwaInstall.js";
 
 initPwaInstall();
@@ -43,11 +47,19 @@ async function boot() {
   const app = createApp(root);
   app.mount();
 
-  // Friend online/offline via Realtime Presence (while the app is open).
-  if (session) startPresence().catch(() => {});
+  // Friend online/offline + incoming video-call inbox (while the app is open).
+  if (session) {
+    startPresence().catch(() => {});
+    startCallInbox().catch(() => {});
+  }
   onAuthChange((next) => {
-    if (next) startPresence().catch(() => {});
-    else stopPresence().catch(() => {});
+    if (next) {
+      startPresence().catch(() => {});
+      startCallInbox().catch(() => {});
+    } else {
+      stopPresence().catch(() => {});
+      stopCallInbox().catch(() => {});
+    }
   });
 }
 

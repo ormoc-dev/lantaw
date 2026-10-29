@@ -15,6 +15,8 @@ import {
   notifyFriendsBadge,
   sendFriendRequest,
   sendMessage,
+  editMessage,
+  toggleMessageReaction,
   subscribeFriendsRealtime,
   updateWatchPartyStatus,
   deleteWatchParty,
@@ -24,6 +26,7 @@ import {
   onPresenceChange,
   startPresence,
 } from "../services/presenceService.js";
+import { startVideoCall } from "../services/callService.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
 
@@ -646,8 +649,17 @@ export async function FriendsView(root) {
                   isUserOnline(current.other?.id) ? "Online" : "Offline"
                 }</em></span>
               </div>
-              <button type="button" class="fp-text-btn fp-chat__watch-btn" data-tab="watch">
-                Watch
+              <button type="button" class="fp-icon-btn" data-video-call aria-label="Video call" title="Video call">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3.5" y="7" width="11.5" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M15.5 10.2 20 7.8v8.4l-4.5-2.4V10.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button type="button" class="fp-icon-btn fp-chat__watch-btn" data-tab="watch" aria-label="Watch together" title="Watch together">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M10.2 9.4v5.2L14.8 12l-4.6-2.6Z" fill="currentColor"/>
+                </svg>
               </button>
             </header>
             <div class="fp-chat__messages" id="chat-messages">${loadingHtml({
@@ -683,32 +695,160 @@ export async function FriendsView(root) {
         renderShell();
         renderPanel();
       });
+      panel.querySelector("[data-video-call]")?.addEventListener("click", async () => {
+        const peer = current.other;
+        if (!peer?.id) return;
+        if (!isUserOnline(peer.id)) {
+          const ok = confirm(
+            `${peer.display_name || "Friend"} looks offline. Call anyway?`
+          );
+          if (!ok) return;
+        }
+        try {
+          await startVideoCall({
+            friendshipId: current.id,
+            peerId: peer.id,
+            peerName: peer.display_name || peer.email || "Friend",
+          });
+        } catch (err) {
+          alert(err.message || "Could not start video call");
+        }
+      });
 
       const box = panel.querySelector("#chat-messages");
+      const chatId = activeChatId;
+      const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+
+      const groupReactions = (reactions = []) => {
+        const map = new Map();
+        for (const r of reactions) {
+          const key = r.emoji;
+          if (!map.has(key)) map.set(key, []);
+          map.get(key).push(r.user_id);
+        }
+        return [...map.entries()].map(([emoji, users]) => ({ emoji, users }));
+      };
+
       const paint = (messages) => {
         if (!box.isConnected) return;
+        const stickBottom =
+          box.scrollHeight - box.scrollTop - box.clientHeight < 80;
         if (!messages.length) {
           box.innerHTML = `<p class="muted fp-chat__empty">Say hi — or tap Watch to start a party.</p>`;
           markChatRead(activeChatId);
           return;
         }
         box.innerHTML = messages
-          .map(
-            (m) => `
-          <div class="fp-bubble ${m.sender_id === me.id ? "is-me" : ""}">
-            <p>${escapeHtml(m.body)}</p>
+          .map((m) => {
+            const mine = m.sender_id === me.id;
+            const groups = groupReactions(m.reactions);
+            return `
+          <div
+            class="fp-bubble ${mine ? "is-me" : ""}"
+            data-msg-id="${escapeHtml(m.id)}"
+            data-msg-mine="${mine ? "1" : "0"}"
+          >
+            <p class="fp-bubble__text">${escapeHtml(m.body)}</p>
             <time>${new Date(m.created_at).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
-            })}</time>
-          </div>`
-          )
+            })}${m.edited_at ? " · edited" : ""}</time>
+            ${
+              groups.length
+                ? `<div class="fp-bubble__reactions" data-react-chips>
+                    ${groups
+                      .map(
+                        (g) => `
+                      <button
+                        type="button"
+                        class="fp-react-chip ${
+                          g.users.includes(me.id) ? "is-mine" : ""
+                        }"
+                        data-react="${escapeHtml(m.id)}"
+                        data-emoji="${escapeHtml(g.emoji)}"
+                      >${escapeHtml(g.emoji)} <span>${g.users.length}</span></button>`
+                      )
+                      .join("")}
+                  </div>`
+                : ""
+            }
+            <div class="fp-bubble__tools" hidden>
+              <div class="fp-react-bar">
+                ${REACTIONS.map(
+                  (e) =>
+                    `<button type="button" class="fp-react-pick" data-react="${escapeHtml(
+                      m.id
+                    )}" data-emoji="${escapeHtml(e)}" aria-label="React ${e}">${e}</button>`
+                ).join("")}
+              </div>
+              ${
+                mine
+                  ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
+                      m.id
+                    )}">Edit</button>`
+                  : ""
+              }
+            </div>
+          </div>`;
+          })
           .join("");
-        box.scrollTop = box.scrollHeight;
+        if (stickBottom) box.scrollTop = box.scrollHeight;
         const latest = messages[messages.length - 1];
         markChatRead(activeChatId, latest?.created_at);
       };
       chatPaint = paint;
+
+      const refreshThread = async () => {
+        paint(await listMessages(chatId));
+      };
+
+      box.addEventListener("click", async (e) => {
+        const t = e.target;
+        if (!(t instanceof Element)) return;
+
+        const reactBtn = t.closest("[data-react]");
+        if (reactBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            await toggleMessageReaction(
+              reactBtn.dataset.react,
+              reactBtn.dataset.emoji
+            );
+            await refreshThread();
+          } catch (err) {
+            alert(err.message || "Could not react");
+          }
+          return;
+        }
+
+        const editBtn = t.closest("[data-edit]");
+        if (editBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const bubble = editBtn.closest(".fp-bubble");
+          const textEl = bubble?.querySelector(".fp-bubble__text");
+          const current = textEl?.textContent || "";
+          const next = window.prompt("Edit message", current);
+          if (next == null) return;
+          try {
+            await editMessage(editBtn.dataset.edit, next);
+            await refreshThread();
+          } catch (err) {
+            alert(err.message || "Could not edit");
+          }
+          return;
+        }
+
+        const bubble = t.closest(".fp-bubble[data-msg-id]");
+        if (!bubble || !box.contains(bubble)) return;
+        // Toggle tools on this bubble; close others
+        box.querySelectorAll(".fp-bubble__tools").forEach((el) => {
+          if (el.parentElement !== bubble) el.hidden = true;
+        });
+        const tools = bubble.querySelector(".fp-bubble__tools");
+        if (tools) tools.hidden = !tools.hidden;
+      });
 
       try {
         paint(await listMessages(activeChatId));
@@ -718,27 +858,36 @@ export async function FriendsView(root) {
       }
 
       if (unsubChat) unsubChat();
-      const chatId = activeChatId;
       const channel = getSupabase()
         .channel(`chat-${chatId}-${Date.now()}`)
         .on(
           "postgres_changes",
           {
-            event: "INSERT",
+            event: "*",
             schema: "public",
             table: "friend_messages",
             filter: `friendship_id=eq.${chatId}`,
           },
-          async (payload) => {
+          async () => {
             try {
-              if (payload?.new && payload.new.friendship_id === chatId) {
-                // Fast path: append via full reload for correct order
-                paint(await listMessages(chatId));
-              } else {
-                paint(await listMessages(chatId));
-              }
+              paint(await listMessages(chatId));
               activity = await getFriendsActivityCounts().catch(() => activity);
               notifyFriendsBadge();
+            } catch (_) {
+              /* ignore */
+            }
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "friend_message_reactions",
+          },
+          async () => {
+            try {
+              paint(await listMessages(chatId));
             } catch (_) {
               /* ignore */
             }
@@ -755,23 +904,26 @@ export async function FriendsView(root) {
       const input = panel.querySelector("#chat-input");
       const sendBtn = panel.querySelector("#chat-send");
 
-      // Only shrink to the keyboard while it's open — idle chat uses full 100dvh
+      // Keep thread inside the visible viewport when the mobile keyboard opens.
       clearChatViewport();
       const syncChatViewport = () => {
         const vv = window.visualViewport;
         const layoutH = window.innerHeight;
         const visibleH = vv ? vv.height : layoutH;
-        const offsetTop = vv ? vv.offsetTop : 0;
-        const kbOpen = layoutH - visibleH > 100;
+        const kbOpen = layoutH - visibleH > 80;
 
         document.body.classList.toggle("is-friends-chat-kb", kbOpen);
 
         if (kbOpen) {
-          root.style.setProperty("--friends-chat-vh", `${Math.round(visibleH)}px`);
-          root.style.transform = offsetTop
-            ? `translateY(${Math.round(offsetTop)}px)`
-            : "";
-          box.scrollTop = box.scrollHeight;
+          // Use visible height only — avoid translateY that shoved messages off-screen.
+          root.style.setProperty(
+            "--friends-chat-vh",
+            `${Math.max(240, Math.round(visibleH))}px`
+          );
+          root.style.removeProperty("transform");
+          requestAnimationFrame(() => {
+            box.scrollTop = box.scrollHeight;
+          });
         } else {
           root.style.removeProperty("--friends-chat-vh");
           root.style.removeProperty("transform");

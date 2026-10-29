@@ -215,13 +215,31 @@ export async function listMessages(friendshipId) {
   await requireUser();
   const { data, error } = await getSupabase()
     .from("friend_messages")
-    .select("id, friendship_id, sender_id, body, created_at")
+    .select(
+      "id, friendship_id, sender_id, body, created_at, edited_at, reactions:friend_message_reactions(id, user_id, emoji)"
+    )
     .eq("friendship_id", friendshipId)
     .order("created_at", { ascending: true })
     .limit(200);
 
-  if (error) throw error;
-  return data || [];
+  if (error) {
+    // Fallback if migration 011 not applied yet
+    if (/edited_at|friend_message_reactions|column|schema cache/i.test(error.message || "")) {
+      const { data: basic, error: basicErr } = await getSupabase()
+        .from("friend_messages")
+        .select("id, friendship_id, sender_id, body, created_at")
+        .eq("friendship_id", friendshipId)
+        .order("created_at", { ascending: true })
+        .limit(200);
+      if (basicErr) throw basicErr;
+      return (basic || []).map((m) => ({ ...m, edited_at: null, reactions: [] }));
+    }
+    throw error;
+  }
+  return (data || []).map((m) => ({
+    ...m,
+    reactions: Array.isArray(m.reactions) ? m.reactions : [],
+  }));
 }
 
 export async function sendMessage(friendshipId, body) {
@@ -242,6 +260,73 @@ export async function sendMessage(friendshipId, body) {
   if (error) throw error;
   notifyFriendsBadge();
   return data;
+}
+
+export async function editMessage(messageId, body) {
+  const user = await requireUser();
+  const text = String(body || "").trim();
+  if (!text) throw new Error("Message can’t be empty");
+
+  const { data, error } = await getSupabase()
+    .from("friend_messages")
+    .update({ body: text, edited_at: new Date().toISOString() })
+    .eq("id", messageId)
+    .eq("sender_id", user.id)
+    .select("id, friendship_id, sender_id, body, created_at, edited_at")
+    .maybeSingle();
+
+  if (error) {
+    if (/edited_at|policy|permission|RLS|column/i.test(error.message || "")) {
+      throw new Error(
+        "Edit needs a DB update — run supabase/migrations/202603260011_friend_message_edit_react.sql"
+      );
+    }
+    throw error;
+  }
+  if (!data) throw new Error("Could not edit this message");
+  return data;
+}
+
+/** Toggle an emoji reaction on a message (add if missing, remove if yours). */
+export async function toggleMessageReaction(messageId, emoji) {
+  const user = await requireUser();
+  const mark = String(emoji || "").trim();
+  if (!mark) throw new Error("Pick a reaction");
+
+  const sb = getSupabase();
+  const { data: existing, error: findErr } = await sb
+    .from("friend_message_reactions")
+    .select("id")
+    .eq("message_id", messageId)
+    .eq("user_id", user.id)
+    .eq("emoji", mark)
+    .maybeSingle();
+
+  if (findErr) {
+    if (/friend_message_reactions|schema cache|does not exist/i.test(findErr.message || "")) {
+      throw new Error(
+        "Reactions need a DB update — run supabase/migrations/202603260011_friend_message_edit_react.sql"
+      );
+    }
+    throw findErr;
+  }
+
+  if (existing?.id) {
+    const { error } = await sb
+      .from("friend_message_reactions")
+      .delete()
+      .eq("id", existing.id);
+    if (error) throw error;
+    return { removed: true, emoji: mark };
+  }
+
+  const { error } = await sb.from("friend_message_reactions").insert({
+    message_id: messageId,
+    user_id: user.id,
+    emoji: mark,
+  });
+  if (error) throw error;
+  return { removed: false, emoji: mark };
 }
 
 export async function createWatchParty({
