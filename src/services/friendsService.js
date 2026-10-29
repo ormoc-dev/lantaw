@@ -412,6 +412,14 @@ export async function deleteWatchParty(partyId) {
 }
 
 /**
+ * Host ends the room: remove it from the Friends lobby.
+ * Chat messages cascade-delete with the party row.
+ */
+export async function endWatchParty(partyId) {
+  await deleteWatchParty(partyId);
+}
+
+/**
  * Broadcast play/pause/sync so both party members load the stream together.
  * Requires migration 202603260007_watch_party_playback.sql
  */
@@ -503,15 +511,37 @@ export function partyWatchPath(party) {
 
 export async function listWatchPartyMessages(partyId, { limit = 80 } = {}) {
   await requireUser();
-  const { data, error } = await getSupabase()
+  const sb = getSupabase();
+  const { data, error } = await sb
     .from("watch_party_messages")
-    .select("id, party_id, sender_id, body, created_at")
+    .select(
+      "id, party_id, sender_id, body, created_at, reactions:watch_party_message_reactions(id, user_id, emoji)"
+    )
     .eq("party_id", partyId)
     .order("created_at", { ascending: true })
     .limit(limit);
 
-  if (error) throw error;
-  return data || [];
+  if (error) {
+    if (
+      /watch_party_message_reactions|schema cache|does not exist/i.test(
+        error.message || ""
+      )
+    ) {
+      const { data: basic, error: basicErr } = await sb
+        .from("watch_party_messages")
+        .select("id, party_id, sender_id, body, created_at")
+        .eq("party_id", partyId)
+        .order("created_at", { ascending: true })
+        .limit(limit);
+      if (basicErr) throw basicErr;
+      return (basic || []).map((m) => ({ ...m, reactions: [] }));
+    }
+    throw error;
+  }
+  return (data || []).map((m) => ({
+    ...m,
+    reactions: Array.isArray(m.reactions) ? m.reactions : [],
+  }));
 }
 
 export async function sendWatchPartyMessage(partyId, body) {
@@ -531,13 +561,59 @@ export async function sendWatchPartyMessage(partyId, body) {
     .single();
 
   if (error) throw error;
-  return data;
+  return { ...data, reactions: [] };
+}
+
+/** Toggle an emoji reaction on a watch-party message. */
+export async function toggleWatchPartyReaction(messageId, emoji) {
+  const user = await requireUser();
+  const mark = String(emoji || "").trim();
+  if (!mark) throw new Error("Pick a reaction");
+
+  const sb = getSupabase();
+  const { data: existing, error: findErr } = await sb
+    .from("watch_party_message_reactions")
+    .select("id")
+    .eq("message_id", messageId)
+    .eq("user_id", user.id)
+    .eq("emoji", mark)
+    .maybeSingle();
+
+  if (findErr) {
+    if (
+      /watch_party_message_reactions|schema cache|does not exist/i.test(
+        findErr.message || ""
+      )
+    ) {
+      throw new Error(
+        "Reactions need a DB update — run supabase/migrations/202603260012_watch_party_message_react.sql"
+      );
+    }
+    throw findErr;
+  }
+
+  if (existing?.id) {
+    const { error } = await sb
+      .from("watch_party_message_reactions")
+      .delete()
+      .eq("id", existing.id);
+    if (error) throw error;
+    return { removed: true, emoji: mark };
+  }
+
+  const { error } = await sb.from("watch_party_message_reactions").insert({
+    message_id: messageId,
+    user_id: user.id,
+    emoji: mark,
+  });
+  if (error) throw error;
+  return { removed: false, emoji: mark };
 }
 
 /** Subscribe to one party’s status + live comments + typing broadcast. */
 export function subscribeWatchParty(
   partyId,
-  { onParty, onMessage, onTyping } = {}
+  { onParty, onMessage, onTyping, onReaction } = {}
 ) {
   let channel = null;
   try {
@@ -566,6 +642,15 @@ export function subscribeWatchParty(
           filter: `party_id=eq.${partyId}`,
         },
         (payload) => onMessage?.(payload)
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "watch_party_message_reactions",
+        },
+        (payload) => onReaction?.(payload)
       )
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         onTyping?.(payload || {});

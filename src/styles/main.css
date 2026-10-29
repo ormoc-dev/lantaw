@@ -5340,6 +5340,29 @@ body.is-halloween .app-shell::before {
   transition: background 0.2s var(--ease), transform 0.2s var(--ease);
 }
 
+.stream-exit--end {
+  left: auto;
+  right: 0.45rem;
+  top: 0.45rem;
+  width: auto;
+  min-width: 0;
+  height: 1.85rem;
+  padding: 0 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wparty__player .stream-exit--end {
+  right: 0.4rem;
+  top: 0.4rem;
+  height: 1.75rem;
+  padding: 0 0.65rem;
+  font-size: 0.68rem;
+  background: rgba(8, 4, 6, 0.78);
+}
+
 .stream-exit:hover,
 .stream-exit:focus-visible {
   background: color-mix(in srgb, var(--accent) 55%, rgba(8, 4, 6, 0.85));
@@ -5461,7 +5484,7 @@ body.has-mobile-nav .wparty {
   max-height: 100dvh;
 }
 
-/* Keyboard open: freeze the room layout — only the compose bar moves */
+/* Keyboard open: freeze the room; pin compose to the visible viewport */
 body.is-wparty-kb {
   overflow: hidden !important;
 }
@@ -5478,16 +5501,35 @@ body.is-wparty-kb .wparty {
   overscroll-behavior: none;
 }
 
-/* Compose stays in-flow (no layout jump) and only translates above the keypad */
 body.is-wparty-kb .wparty__compose {
-  position: relative;
-  z-index: 50;
-  transform: translate3d(0, calc(-1 * var(--wparty-kb-lift, 0px)), 0);
+  position: fixed;
+  left: 50%;
+  right: auto;
+  bottom: var(--wparty-kb-bottom, 0px);
+  z-index: 80;
+  width: min(920px, 100%);
+  max-width: 920px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.45rem max(0.85rem, env(safe-area-inset-left))
+    max(0.45rem, env(safe-area-inset-bottom))
+    max(0.85rem, env(safe-area-inset-right));
+  box-sizing: border-box;
   background: color-mix(in srgb, var(--bg) 96%, transparent);
-  backdrop-filter: blur(10px);
-  border-radius: 12px 12px 0 0;
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
-  will-change: transform;
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.wparty__compose-spacer {
+  flex: 0 0 auto;
+  height: var(--wparty-compose-h, 3rem);
+  pointer-events: none;
+}
+
+.wparty__compose-spacer[hidden] {
+  display: none !important;
 }
 
 .wparty__loading {
@@ -5666,13 +5708,13 @@ body.is-wparty-kb .wparty__compose {
 
 .wparty__sync-tip {
   margin: 0;
-  padding: 0.55rem 0.65rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 10, 67, 0.28);
-  background: rgba(255, 10, 67, 0.1);
-  color: var(--text, #f5f5f5);
-  font-size: 0.8rem;
-  line-height: 1.4;
+  padding: 0.28rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 10, 67, 0.22);
+  background: rgba(255, 10, 67, 0.08);
+  color: var(--muted, #b9a8ad);
+  font-size: 0.7rem;
+  line-height: 1.25;
 }
 
 .wparty__sync-tip[hidden] {
@@ -5681,7 +5723,7 @@ body.is-wparty-kb .wparty__compose {
 
 .wparty__chat {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   gap: 0.4rem;
   min-height: 0;
   overflow: hidden;
@@ -5759,10 +5801,30 @@ body.is-wparty-kb .wparty__compose {
 }
 
 .wparty__bubble {
-  cursor: default;
+  cursor: pointer;
   max-width: min(78%, 15.5rem);
   padding: 0.35rem 0.55rem 0.3rem;
   border-radius: 12px 12px 12px 4px;
+}
+
+.wparty__bubble .fp-bubble__reactions {
+  margin-top: 0.25rem;
+}
+
+.wparty__bubble .fp-react-chip {
+  min-height: 1.25rem;
+  padding: 0.05rem 0.32rem;
+  font-size: 0.68rem;
+}
+
+.wparty__bubble .fp-react-pick {
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 0.9rem;
+}
+
+.wparty__bubble .fp-bubble__tools {
+  margin-top: 0.3rem;
 }
 
 .wparty__msg.is-me .wparty__bubble {
@@ -5911,6 +5973,39 @@ body.is-wparty-kb .wparty__compose {
   gap: 0.55rem;
   width: 100%;
   justify-content: center;
+}
+
+/* Watch-together invite — same overlay pattern as incoming calls */
+.wt-invite {
+  z-index: 118;
+}
+
+.wt-invite__poster {
+  width: 5.5rem;
+  aspect-ratio: 2 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.wt-invite__poster[hidden] {
+  display: none !important;
+}
+
+.wt-invite__poster img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wt-invite__title {
+  margin: 0;
+  max-width: 18rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.35;
 }
 
 .vc__active {

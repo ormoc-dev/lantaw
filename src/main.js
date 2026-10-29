@@ -8,6 +8,10 @@ import {
   startCallInbox,
   stopCallInbox,
 } from "./services/callService.js";
+import {
+  startWatchInviteInbox,
+  stopWatchInviteInbox,
+} from "./services/watchInviteService.js";
 import { initPwaInstall } from "./lib/pwaInstall.js";
 
 initPwaInstall();
@@ -47,18 +51,21 @@ async function boot() {
   const app = createApp(root);
   app.mount();
 
-  // Friend online/offline + incoming video-call inbox (while the app is open).
+  // Friend online/offline + call/watch-invite modals (while the app is open).
   if (session) {
     startPresence().catch(() => {});
     startCallInbox().catch(() => {});
+    startWatchInviteInbox().catch(() => {});
   }
   onAuthChange((next) => {
     if (next) {
       startPresence().catch(() => {});
       startCallInbox().catch(() => {});
+      startWatchInviteInbox().catch(() => {});
     } else {
       stopPresence().catch(() => {});
       stopCallInbox().catch(() => {});
+      stopWatchInviteInbox().catch(() => {});
     }
   });
 }

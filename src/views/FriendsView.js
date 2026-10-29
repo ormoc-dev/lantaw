@@ -18,6 +18,7 @@ import {
   editMessage,
   toggleMessageReaction,
   subscribeFriendsRealtime,
+  endWatchParty,
   updateWatchPartyStatus,
   deleteWatchParty,
 } from "../services/friendsService.js";
@@ -1450,7 +1451,8 @@ export async function FriendsView(root) {
 
     if (end) {
       try {
-        await updateWatchPartyStatus(end.dataset.partyEnd, "ended");
+        // Host/guest End removes the room + chat from the lobby.
+        await endWatchParty(end.dataset.partyEnd);
         await refreshData();
         paintPartyList();
         syncTabBadgesOnly();

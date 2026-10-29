@@ -1,10 +1,12 @@
 import { getUser } from "../services/authService.js";
 import { getMovieDetail, getTvDetail } from "../services/movieService.js";
 import {
+  endWatchParty,
   getWatchParty,
   listWatchPartyMessages,
   sendWatchPartyMessage,
   subscribeWatchParty,
+  toggleWatchPartyReaction,
   updateWatchPartyPlayback,
   updateWatchPartyStatus,
 } from "../services/friendsService.js";
@@ -168,7 +170,7 @@ export async function WatchPartyView(root, params = {}) {
       </div>
 
       <p class="wparty__sync-tip" id="wp-sync-tip" hidden>
-        Behind? Ask in chat, then the host can press Sync to jump you to the same spot.
+        Behind? Ask in chat — host presses Sync.
       </p>
 
       <div class="wparty__chat">
@@ -186,6 +188,7 @@ export async function WatchPartyView(root, params = {}) {
           <span class="wparty__typing-dots" aria-hidden="true"></span>
           <span id="wp-typing-label"></span>
         </p>
+        <div class="wparty__compose-spacer" id="wp-compose-spacer" hidden></div>
         <form class="wparty__compose" id="wp-compose" autocomplete="off">
           <input
             type="text"
@@ -368,6 +371,8 @@ export async function WatchPartyView(root, params = {}) {
         skipShield: Boolean(party.isHost),
         shieldLabel: "Host started — tap to play",
         shieldHint: "One tap syncs you with the room",
+        exitCorner: "end",
+        exitLabel: "Close",
         onSafeExit: () => {
           clearStream();
           stripPlayerDom();
@@ -418,6 +423,22 @@ export async function WatchPartyView(root, params = {}) {
     );
   };
 
+  const wipeRoomChat = () => {
+    knownMsgIds.clear();
+    if (comments) {
+      comments.innerHTML = `<p class="muted wparty__chat-empty">Room chat cleared.</p>`;
+    }
+  };
+
+  const finishPartyAndLeave = async () => {
+    soloAfterGuestLeft = false;
+    clearStream();
+    stripPlayerDom();
+    wipeRoomChat();
+    await endWatchParty(partyId);
+    location.hash = linkTo("/friends");
+  };
+
   const paintBanner = () => {
     if (!party) return;
 
@@ -434,9 +455,16 @@ export async function WatchPartyView(root, params = {}) {
         banner.className = "wparty__controls";
         banner.innerHTML = `
           <div class="wparty__playback">
-            <a class="fp-btn" href="${linkTo("/friends")}">Back to Friends</a>
+            <button type="button" class="fp-btn" id="wp-done">Done</button>
           </div>
         `;
+        banner.querySelector("#wp-done")?.addEventListener("click", async () => {
+          try {
+            await finishPartyAndLeave();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
         setSyncTipVisible(false);
         return;
       }
@@ -448,6 +476,7 @@ export async function WatchPartyView(root, params = {}) {
       banner.innerHTML = `<a class="fp-btn" href="${linkTo("/friends")}">Back to Friends</a>`;
       setSyncTipVisible(false);
       clearStream();
+      wipeRoomChat();
       setWaiting("Session ended", "");
       return;
     }
@@ -460,7 +489,7 @@ export async function WatchPartyView(root, params = {}) {
         banner.innerHTML = `<button type="button" class="fp-btn" id="wp-cancel">Cancel</button>`;
         banner.querySelector("#wp-cancel")?.addEventListener("click", async () => {
           try {
-            await updateWatchPartyStatus(partyId, "ended");
+            await finishPartyAndLeave();
           } catch (err) {
             alert(err.message);
           }
@@ -569,11 +598,8 @@ export async function WatchPartyView(root, params = {}) {
       });
       banner.querySelector("#wp-end")?.addEventListener("click", async () => {
         try {
-          // Clear first so paintBanner treats this as a real End (not guest-left solo).
-          soloAfterGuestLeft = false;
-          clearStream();
-          stripPlayerDom();
-          await updateWatchPartyStatus(partyId, "ended");
+          // Deletes the room + chat so it won’t linger in the Friends lobby.
+          await finishPartyAndLeave();
         } catch (err) {
           alert(err.message);
         }
@@ -587,6 +613,7 @@ export async function WatchPartyView(root, params = {}) {
       `;
       banner.querySelector("#wp-leave")?.addEventListener("click", async () => {
         try {
+          // Guest leave: host can keep watching solo; room stays until host Ends.
           await updateWatchPartyStatus(partyId, "ended");
         } catch (err) {
           alert(err.message);
@@ -594,6 +621,36 @@ export async function WatchPartyView(root, params = {}) {
       });
     }
     applyPlayback(party);
+  };
+
+  const REACTIONS = ["👍", "❤️", "😂", "😮", "🔥"];
+
+  const groupReactions = (reactions = []) => {
+    const map = new Map();
+    for (const r of reactions) {
+      const key = r.emoji;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(r.user_id);
+    }
+    return [...map.entries()].map(([emoji, users]) => ({ emoji, users }));
+  };
+
+  const reactionsHtml = (msgId, reactions = []) => {
+    const groups = groupReactions(reactions);
+    if (!groups.length) return "";
+    return `<div class="fp-bubble__reactions" data-react-chips>
+      ${groups
+        .map(
+          (g) => `
+        <button
+          type="button"
+          class="fp-react-chip ${g.users.includes(me.id) ? "is-mine" : ""}"
+          data-react="${escapeHtml(msgId)}"
+          data-emoji="${escapeHtml(g.emoji)}"
+        >${escapeHtml(g.emoji)} <span>${g.users.length}</span></button>`
+        )
+        .join("")}
+    </div>`;
   };
 
   function spawnComment(msg, { mine = false, name = "Friend" } = {}) {
@@ -604,18 +661,34 @@ export async function WatchPartyView(root, params = {}) {
     const av = avatarHtml(profile, mine ? myName : name);
     const el = document.createElement("div");
     el.className = `wparty__msg ${mine ? "is-me" : ""}`;
+    el.dataset.msgId = msg.id;
     el.innerHTML = `
       ${mine ? "" : av}
-      <div class="fp-bubble wparty__bubble ${mine ? "is-me" : ""}">
+      <div class="fp-bubble wparty__bubble ${mine ? "is-me" : ""}" data-msg-id="${escapeHtml(
+        msg.id
+      )}">
         ${mine ? "" : `<span class="wparty__bubble-name">${escapeHtml(name)}</span>`}
         <p class="fp-bubble__text">${escapeHtml(msg.body)}</p>
         <time>${formatTime(msg.created_at)}</time>
+        ${reactionsHtml(msg.id, msg.reactions || [])}
+        <div class="fp-bubble__tools" hidden>
+          <div class="fp-react-bar">
+            ${REACTIONS.map(
+              (e) =>
+                `<button type="button" class="fp-react-pick" data-react="${escapeHtml(
+                  msg.id
+                )}" data-emoji="${escapeHtml(e)}" aria-label="React ${e}">${e}</button>`
+            ).join("")}
+          </div>
+        </div>
       </div>
       ${mine ? av : ""}
     `;
     comments.appendChild(el);
     while (comments.querySelectorAll(".wparty__msg").length > 80) {
-      comments.querySelector(".wparty__msg")?.remove();
+      const first = comments.querySelector(".wparty__msg");
+      if (first?.dataset?.msgId) knownMsgIds.delete(first.dataset.msgId);
+      first?.remove();
     }
     comments.scrollTop = comments.scrollHeight;
   }
@@ -630,6 +703,8 @@ export async function WatchPartyView(root, params = {}) {
 
   async function hydrateComments() {
     try {
+      const stickBottom =
+        comments.scrollHeight - comments.scrollTop - comments.clientHeight < 80;
       const rows = await listWatchPartyMessages(partyId);
       comments.innerHTML = "";
       knownMsgIds.clear();
@@ -643,12 +718,14 @@ export async function WatchPartyView(root, params = {}) {
           name: displayNameFor(m.sender_id),
         });
       }
+      if (stickBottom) comments.scrollTop = comments.scrollHeight;
     } catch (_) {
       comments.innerHTML = `<p class="muted wparty__chat-empty">Chat unavailable.</p>`;
     }
   }
 
   const composeInput = form.querySelector('input[name="body"]');
+  const composeSpacer = root.querySelector("#wp-compose-spacer");
   const wpartyShell = root.querySelector(".wparty");
   let wpartyLockH = 0;
 
@@ -659,7 +736,7 @@ export async function WatchPartyView(root, params = {}) {
     if (root.scrollTop) root.scrollTop = 0;
   };
 
-  // Only the compose form lifts with the keyboard; player + room stay put.
+  // Pin compose to the visible viewport above the keyboard so you can see typing.
   const syncWpartyKb = () => {
     const vv = window.visualViewport;
     const layoutH = window.innerHeight;
@@ -674,8 +751,9 @@ export async function WatchPartyView(root, params = {}) {
       wpartyLockH = 0;
       wpartyShell?.style.removeProperty("height");
       wpartyShell?.style.removeProperty("max-height");
-      wpartyShell?.style.removeProperty("--wparty-kb-lift");
-      wpartyShell?.style.removeProperty("transform");
+      document.documentElement.style.removeProperty("--wparty-kb-bottom");
+      document.documentElement.style.removeProperty("--wparty-compose-h");
+      if (composeSpacer) composeSpacer.hidden = true;
       return;
     }
 
@@ -688,14 +766,19 @@ export async function WatchPartyView(root, params = {}) {
       wpartyShell.style.maxHeight = `${wpartyLockH}px`;
     }
 
-    // Lift compose only — leave the rest of the watch room frozen.
-    wpartyShell?.style.setProperty("--wparty-kb-lift", `${covered}px`);
+    // Sit the input on top of the keyboard (visual viewport bottom).
+    document.documentElement.style.setProperty(
+      "--wparty-kb-bottom",
+      `${covered}px`
+    );
 
-    // Undo iOS visualViewport page shift so the player doesn’t slide away.
-    if (wpartyShell) {
-      wpartyShell.style.transform =
-        offsetTop > 0 ? `translate3d(0, ${offsetTop}px, 0)` : "";
-    }
+    const composeH = Math.ceil(form.getBoundingClientRect().height) || 48;
+    document.documentElement.style.setProperty(
+      "--wparty-compose-h",
+      `${composeH}px`
+    );
+    if (composeSpacer) composeSpacer.hidden = false;
+
     lockPageScroll();
   };
 
@@ -722,6 +805,35 @@ export async function WatchPartyView(root, params = {}) {
     window.clearTimeout(typingPingTimer);
     typingPingTimer = window.setTimeout(stopTypingPing, 1400);
   };
+
+  comments.addEventListener("click", async (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+
+    const reactBtn = t.closest("[data-react]");
+    if (reactBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await toggleWatchPartyReaction(
+          reactBtn.dataset.react,
+          reactBtn.dataset.emoji
+        );
+        await hydrateComments();
+      } catch (err) {
+        alert(err.message || "Could not react");
+      }
+      return;
+    }
+
+    const bubble = t.closest(".fp-bubble[data-msg-id]");
+    if (!bubble || !comments.contains(bubble)) return;
+    comments.querySelectorAll(".fp-bubble__tools").forEach((el) => {
+      if (el.parentElement !== bubble) el.hidden = true;
+    });
+    const tools = bubble.querySelector(".fp-bubble__tools");
+    if (tools) tools.hidden = !tools.hidden;
+  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -774,11 +886,33 @@ export async function WatchPartyView(root, params = {}) {
 
   partySub = subscribeWatchParty(partyId, {
     onParty: async (payload) => {
+      // Host End deletes the party (and cascades room chat).
+      if (payload?.eventType === "DELETE" || (payload?.old && !payload?.new)) {
+        party = {
+          ...party,
+          status: "ended",
+          isHost: party?.host_id === me.id,
+          isGuest: party?.guest_id === me.id,
+        };
+        soloAfterGuestLeft = false;
+        wipeRoomChat();
+        paintBanner();
+        return;
+      }
       const row = payload?.new;
       if (!row) {
         try {
           party = await getWatchParty(partyId);
+          if (!party) {
+            wipeRoomChat();
+            party = { status: "ended", isHost: false, isGuest: true };
+            paintBanner();
+            return;
+          }
         } catch (_) {
+          wipeRoomChat();
+          party = { status: "ended", isHost: false, isGuest: true };
+          paintBanner();
           return;
         }
       } else {
@@ -795,10 +929,16 @@ export async function WatchPartyView(root, params = {}) {
       const msg = payload?.new;
       if (!msg) return;
       comments.querySelector(".wparty__chat-empty")?.remove();
-      spawnComment(msg, {
-        mine: msg.sender_id === me.id,
-        name: displayNameFor(msg.sender_id),
-      });
+      spawnComment(
+        { ...msg, reactions: msg.reactions || [] },
+        {
+          mine: msg.sender_id === me.id,
+          name: displayNameFor(msg.sender_id),
+        }
+      );
+    },
+    onReaction: () => {
+      hydrateComments();
     },
     onTyping: (payload) => {
       if (!payload || payload.userId === me.id) return;
@@ -830,8 +970,9 @@ export async function WatchPartyView(root, params = {}) {
       document.body.classList.remove("is-wparty-kb");
       wpartyShell?.style.removeProperty("height");
       wpartyShell?.style.removeProperty("max-height");
-      wpartyShell?.style.removeProperty("--wparty-kb-lift");
-      wpartyShell?.style.removeProperty("transform");
+      document.documentElement.style.removeProperty("--wparty-kb-bottom");
+      document.documentElement.style.removeProperty("--wparty-compose-h");
+      if (composeSpacer) composeSpacer.hidden = true;
       clearStream();
       teardownChrome();
     },

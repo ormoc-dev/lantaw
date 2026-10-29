@@ -14,6 +14,8 @@ export function attachStreamAdGuard(
     skipShield = false,
     shieldLabel = "Tap to play",
     shieldHint = "Blocks pop-up ads on the first click",
+    exitCorner = "start",
+    exitLabel = "←",
   } = {}
 ) {
   if (!frame) return () => {};
@@ -57,12 +59,16 @@ export function attachStreamAdGuard(
     });
   }
 
-  // Sit on top of the embed's own ← so that click exits our app cleanly.
+  // Detail: cover embed ←. Watch party: compact Close chip on the right.
   const exitBtn = document.createElement("button");
   exitBtn.type = "button";
-  exitBtn.className = "stream-exit";
+  exitBtn.className = `stream-exit${
+    exitCorner === "end" ? " stream-exit--end" : ""
+  }`;
   exitBtn.setAttribute("aria-label", "Close player");
-  exitBtn.innerHTML = `<span aria-hidden="true">←</span>`;
+  exitBtn.innerHTML = `<span aria-hidden="true">${escapeShieldText(
+    exitLabel
+  )}</span>`;
   frame.appendChild(exitBtn);
 
   const safeExit = (e) => {
