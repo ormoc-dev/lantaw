@@ -2,5 +2,9 @@
   "name": "lantaw",
   "private": true,
   "version": "1.0.0",
-  "description": "Lantaw — static movie app"
+  "description": "Lantaw — static movie app",
+  "type": "module",
+  "scripts": {
+    "sync-env": "node scripts/sync-env.mjs"
+  }
 }

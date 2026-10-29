@@ -1,5 +1,6 @@
 .env
 .env.local
+src/config/env.js
 src/config/env.local.js
 .DS_Store
 Thumbs.db
