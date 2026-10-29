@@ -211,6 +211,32 @@ export async function removeFriendship(friendshipId) {
   notifyFriendsBadge();
 }
 
+/**
+ * Latest message per friendship for the Messenger-style inbox.
+ * @param {string[]} friendshipIds
+ * @returns {Promise<Record<string, { id: string, friendship_id: string, sender_id: string, body: string, created_at: string }>>}
+ */
+export async function listChatPreviews(friendshipIds = []) {
+  const ids = [...new Set((friendshipIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+
+  await requireUser();
+  const { data, error } = await getSupabase()
+    .from("friend_messages")
+    .select("id, friendship_id, sender_id, body, created_at")
+    .in("friendship_id", ids)
+    .order("created_at", { ascending: false })
+    .limit(Math.min(500, ids.length * 8));
+
+  if (error) throw error;
+
+  const map = {};
+  for (const m of data || []) {
+    if (!map[m.friendship_id]) map[m.friendship_id] = m;
+  }
+  return map;
+}
+
 export async function listMessages(friendshipId) {
   await requireUser();
   const { data, error } = await getSupabase()

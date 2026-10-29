@@ -4,6 +4,7 @@ import { getSupabase } from "../lib/supabase.js";
 import {
   createWatchParty,
   getFriendsActivityCounts,
+  listChatPreviews,
   listFriendships,
   listMessages,
   listWatchParties,
@@ -40,9 +41,19 @@ export async function FriendsView(root) {
   }
 
   let tab = "chat";
+  try {
+    const fromShorts = sessionStorage.getItem("lantaw-shorts-watch");
+    if (fromShorts) {
+      tab = "watch";
+      sessionStorage.removeItem("lantaw-shorts-watch");
+    }
+  } catch {
+    /* ignore */
+  }
   let friendships = [];
   let parties = [];
   let activity = { requests: 0, chats: 0, invites: 0, chatIds: [] };
+  let chatPreviews = {};
   let activeChatId = null;
   let unsubChat = null;
   let unsubPage = null;
@@ -53,6 +64,8 @@ export async function FriendsView(root) {
   let liveBusy = false;
   let liveQueued = false;
   let chatPaint = null;
+  let lastThreadPaintKey = "";
+  let inboxFetchToken = 0;
 
   startPresence().catch(() => {});
 
@@ -60,10 +73,13 @@ export async function FriendsView(root) {
     page.querySelectorAll("[data-presence-id]").forEach((el) => {
       const on = isUserOnline(el.dataset.presenceId);
       el.classList.toggle("is-online", on);
-      el.setAttribute("title", on ? "Online" : "Offline");
-      el.setAttribute("aria-label", on ? "Online" : "Offline");
+      const inThread = Boolean(el.closest(".fp-chat__head"));
+      const onLabel = inThread ? "Active now" : "Online";
+      const offLabel = "Offline";
+      el.setAttribute("title", on ? onLabel : offLabel);
+      el.setAttribute("aria-label", on ? onLabel : offLabel);
       const label = el.querySelector("[data-presence-label]");
-      if (label) label.textContent = on ? "Online" : "Offline";
+      if (label) label.textContent = on ? onLabel : offLabel;
     });
   };
 
@@ -128,6 +144,157 @@ export async function FriendsView(root) {
       <p class="muted">${escapeHtml(text)}</p>
     </div>
   `;
+
+  const formatConvoTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const now = new Date();
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    if (sameDay) {
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (
+      d.getFullYear() === yesterday.getFullYear() &&
+      d.getMonth() === yesterday.getMonth() &&
+      d.getDate() === yesterday.getDate()
+    ) {
+      return "Yesterday";
+    }
+    const weekAgo = now.getTime() - 6 * 24 * 60 * 60 * 1000;
+    if (d.getTime() >= weekAgo) {
+      return d.toLocaleDateString([], { weekday: "short" });
+    }
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
+  const previewLine = (preview) => {
+    if (!preview?.body) return "Tap to say hi";
+    const mine = preview.sender_id === me.id;
+    const text = String(preview.body).replace(/\s+/g, " ").trim();
+    const clipped = text.length > 64 ? `${text.slice(0, 63)}…` : text;
+    return mine ? `You: ${clipped}` : clipped;
+  };
+
+  const sortedInboxFriends = (accepted, previews = chatPreviews) =>
+    [...accepted].sort((a, b) => {
+      const pa = previews[a.id];
+      const pb = previews[b.id];
+      const ta = pa?.created_at ? new Date(pa.created_at).getTime() : 0;
+      const tb = pb?.created_at ? new Date(pb.created_at).getTime() : 0;
+      if (ta !== tb) return tb - ta;
+      const oa = isUserOnline(a.other?.id) ? 1 : 0;
+      const ob = isUserOnline(b.other?.id) ? 1 : 0;
+      if (oa !== ob) return ob - oa;
+      const na = (a.other?.display_name || a.other?.email || "").toLowerCase();
+      const nb = (b.other?.display_name || b.other?.email || "").toLowerCase();
+      return na.localeCompare(nb);
+    });
+
+  const convoListHtml = (accepted, previews = chatPreviews) =>
+    sortedInboxFriends(accepted, previews)
+      .map((f) => {
+        const on = isUserOnline(f.other?.id);
+        const unread = activity.chatIds?.includes(f.id);
+        const preview = previews[f.id];
+        const hasChat = Boolean(preview);
+        return `
+        <button type="button" class="fp-convo ${
+          unread ? "has-unread" : ""
+        } ${hasChat ? "has-chat" : ""}" data-open-chat="${f.id}" role="listitem">
+          ${presenceAvatarHtml(f.other)}
+          <span class="fp-convo__meta">
+            <span class="fp-convo__top">
+              <strong>${escapeHtml(
+                f.other?.display_name || f.other?.email || "Friend"
+              )}</strong>
+              ${
+                hasChat
+                  ? `<time class="fp-convo__time">${escapeHtml(
+                      formatConvoTime(preview.created_at)
+                    )}</time>`
+                  : ""
+              }
+            </span>
+            <span class="fp-convo__preview ${unread ? "is-unread" : ""}">
+              ${
+                hasChat
+                  ? escapeHtml(previewLine(preview))
+                  : `<em class="fp-presence-label ${
+                      on ? "is-online" : ""
+                    }" data-presence-id="${escapeHtml(
+                      f.other?.id || ""
+                    )}"><span data-presence-label>${
+                      on ? "Active now" : "Offline"
+                    }</span></em>`
+              }
+            </span>
+          </span>
+          ${
+            unread
+              ? `<i class="fp-convo__unread" aria-label="Unread"></i>`
+              : `<span class="fp-convo__chev" aria-hidden="true"></span>`
+          }
+        </button>`;
+      })
+      .join("");
+
+  const inboxPaintKey = (accepted, previews = chatPreviews) =>
+    sortedInboxFriends(accepted, previews)
+      .map((f) => {
+        const p = previews[f.id];
+        const unread = activity.chatIds?.includes(f.id) ? "1" : "0";
+        return `${f.id}:${p?.id || ""}:${p?.created_at || ""}:${unread}:${
+          isUserOnline(f.other?.id) ? "1" : "0"
+        }`;
+      })
+      .join("|");
+
+  /** Soft-update inbox rows in place — avoids remount blink. */
+  const paintInboxList = () => {
+    const list = page.querySelector(".fp-convo-list");
+    if (!list || tab !== "chat" || activeChatId) return;
+    const accepted = friendships.filter((f) => f.status === "accepted");
+    const key = inboxPaintKey(accepted);
+    if (list.dataset.paintKey === key) {
+      syncPresenceUi();
+      return;
+    }
+    list.dataset.paintKey = key;
+    list.innerHTML = convoListHtml(accepted);
+    list.querySelectorAll("[data-open-chat]").forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        activeChatId = btn.dataset.openChat;
+        renderShell();
+        renderPanel();
+      });
+    });
+    syncPresenceUi();
+  };
+
+  const refreshChatPreviews = async () => {
+    const accepted = friendships.filter((f) => f.status === "accepted");
+    if (!accepted.length) {
+      chatPreviews = {};
+      return chatPreviews;
+    }
+    const token = ++inboxFetchToken;
+    try {
+      const next = await listChatPreviews(accepted.map((f) => f.id));
+      if (token !== inboxFetchToken) return chatPreviews;
+      chatPreviews = next;
+      return chatPreviews;
+    } catch (_) {
+      return chatPreviews;
+    }
+  };
 
   const partyListHtml = () => {
     if (!parties.length) {
@@ -531,6 +698,7 @@ export async function FriendsView(root) {
           return;
         }
 
+        // Paint friends immediately (cached previews) — no loading flash
         panel.innerHTML = `
           <div class="fp-inbox">
             ${
@@ -568,31 +736,10 @@ export async function FriendsView(root) {
                     <span><strong>Watch together</strong><em>Invite a friend to a movie or show</em></span>
                   </button>`
             }
-            <div class="fp-convo-list" role="list">
-              ${accepted
-                .map((f) => {
-                  const on = isUserOnline(f.other?.id);
-                  const unread = activity.chatIds?.includes(f.id);
-                  return `
-                  <button type="button" class="fp-convo ${
-                    unread ? "has-unread" : ""
-                  }" data-open-chat="${f.id}" role="listitem">
-                    ${presenceAvatarHtml(f.other)}
-                    <span class="fp-convo__meta">
-                      <strong>${escapeHtml(
-                        f.other?.display_name || f.other?.email || "Friend"
-                      )}</strong>
-                      <em
-                        class="fp-presence-label ${on ? "is-online" : ""}"
-                        data-presence-id="${escapeHtml(f.other?.id || "")}"
-                      ><span data-presence-label>${
-                        on ? "Online" : "Offline"
-                      }</span></em>
-                    </span>
-                    ${unread ? `<i class="fp-chat__dot" aria-label="Unread"></i>` : ""}
-                  </button>`;
-                })
-                .join("")}
+            <div class="fp-convo-list" role="list" data-paint-key="${escapeHtml(
+              inboxPaintKey(accepted)
+            )}">
+              ${convoListHtml(accepted)}
             </div>
           </div>
         `;
@@ -601,13 +748,6 @@ export async function FriendsView(root) {
           btn.addEventListener("click", () => {
             tab = btn.dataset.tab;
             activeChatId = null;
-            renderShell();
-            renderPanel();
-          });
-        });
-        panel.querySelectorAll("[data-open-chat]").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            activeChatId = btn.dataset.openChat;
             renderShell();
             renderPanel();
           });
@@ -623,7 +763,21 @@ export async function FriendsView(root) {
             }
           });
         });
+        panel.querySelectorAll("[data-open-chat]").forEach((btn) => {
+          btn.dataset.bound = "1";
+          btn.addEventListener("click", () => {
+            activeChatId = btn.dataset.openChat;
+            renderShell();
+            renderPanel();
+          });
+        });
         syncPresenceUi();
+
+        // Soft-refresh previews in background; only rewrite list if data changed
+        refreshChatPreviews().then(() => {
+          if (tab !== "chat" || activeChatId) return;
+          paintInboxList();
+        });
         return;
       }
 
@@ -636,37 +790,40 @@ export async function FriendsView(root) {
       }
       activeChatId = current.id;
 
+      const peerOnline = isUserOnline(current.other?.id);
       panel.innerHTML = `
         <div class="fp-chat fp-chat--thread">
           <section class="fp-chat__thread">
             <header class="fp-chat__head">
               <button type="button" class="fp-icon-btn fp-chat__back" data-chat-back aria-label="Back to chats">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
-              ${presenceAvatarHtml(current.other, "fp-avatar--sm")}
-              <div class="fp-chat__head-text">
-                <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
-                <span
-                  class="muted fp-presence-label ${
-                    isUserOnline(current.other?.id) ? "is-online" : ""
-                  }"
-                  data-presence-id="${escapeHtml(current.other?.id || "")}"
-                ><em data-presence-label>${
-                  isUserOnline(current.other?.id) ? "Online" : "Offline"
-                }</em></span>
+              <button type="button" class="fp-chat__peer" data-chat-back aria-label="Back to chats">
+                ${presenceAvatarHtml(current.other, "fp-avatar--md")}
+                <span class="fp-chat__head-text">
+                  <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
+                  <span
+                    class="fp-presence-label ${peerOnline ? "is-online" : ""}"
+                    data-presence-id="${escapeHtml(current.other?.id || "")}"
+                  ><em data-presence-label>${
+                    peerOnline ? "Active now" : "Offline"
+                  }</em></span>
+                </span>
+              </button>
+              <div class="fp-chat__head-actions">
+                <button type="button" class="fp-icon-btn" data-video-call aria-label="Video call" title="Video call">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3.5" y="7" width="11.5" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                    <path d="M15.5 10.2 20 7.8v8.4l-4.5-2.4V10.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <button type="button" class="fp-icon-btn fp-chat__watch-btn" data-tab="watch" aria-label="Watch together" title="Watch together">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                    <path d="M10.2 9.4v5.2L14.8 12l-4.6-2.6Z" fill="currentColor"/>
+                  </svg>
+                </button>
               </div>
-              <button type="button" class="fp-icon-btn" data-video-call aria-label="Video call" title="Video call">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="3.5" y="7" width="11.5" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
-                  <path d="M15.5 10.2 20 7.8v8.4l-4.5-2.4V10.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                </svg>
-              </button>
-              <button type="button" class="fp-icon-btn fp-chat__watch-btn" data-tab="watch" aria-label="Watch together" title="Watch together">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
-                  <path d="M10.2 9.4v5.2L14.8 12l-4.6-2.6Z" fill="currentColor"/>
-                </svg>
-              </button>
             </header>
             <div class="fp-chat__messages" id="chat-messages">${loadingHtml({
               className: "ui-loading--inline",
@@ -678,22 +835,29 @@ export async function FriendsView(root) {
                 type="text"
                 name="body"
                 id="chat-input"
-                placeholder="Write a message"
+                placeholder="Aa"
                 autocomplete="off"
                 enterkeyhint="send"
                 inputmode="text"
+                aria-label="Message"
               />
-              <button class="btn btn--primary" type="button" id="chat-send">Send</button>
+              <button class="fp-chat__send" type="button" id="chat-send" aria-label="Send">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3.4 11.2 20.2 3.8c.7-.3 1.4.4 1.1 1.1L13.9 21.7c-.3.8-1.5.7-1.7-.1l-1.7-7.1-7.1-1.7c-.8-.2-.9-1.4-.1-1.7Z" fill="currentColor"/>
+                </svg>
+              </button>
             </form>
           </section>
         </div>
       `;
 
-      panel.querySelector("[data-chat-back]")?.addEventListener("click", () => {
-        activeChatId = null;
-        unsubChat?.();
-        renderShell();
-        renderPanel();
+      panel.querySelectorAll("[data-chat-back]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          activeChatId = null;
+          unsubChat?.();
+          renderShell();
+          renderPanel();
+        });
       });
       panel.querySelector('[data-tab="watch"]')?.addEventListener("click", () => {
         tab = "watch";
@@ -753,72 +917,158 @@ export async function FriendsView(root) {
 
       const paint = (messages) => {
         if (!box.isConnected) return;
+        const paintKey = (messages || [])
+          .map(
+            (m) =>
+              `${m.id}:${m.body}:${m.edited_at || ""}:${(m.reactions || [])
+                .map((r) => `${r.emoji}:${r.user_id}`)
+                .sort()
+                .join(",")}`
+          )
+          .join("|");
+        if (paintKey && paintKey === lastThreadPaintKey) {
+          const latestSame = messages[messages.length - 1];
+          markChatRead(activeChatId, latestSame?.created_at);
+          return;
+        }
+        lastThreadPaintKey = paintKey;
+
         const stickBottom =
           box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+        const prevScrollTop = box.scrollTop;
         if (!messages.length) {
-          box.innerHTML = `<p class="muted fp-chat__empty">Say hi — or tap Watch to start a party.</p>`;
+          box.innerHTML = `
+            <div class="fp-chat__empty">
+              ${presenceAvatarHtml(current.other, "fp-avatar--md")}
+              <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
+              <p class="muted">You're friends on Cine. Say hi.</p>
+            </div>`;
           markChatRead(activeChatId);
           return;
         }
+
+        const CLUSTER_MS = 2 * 60 * 1000;
         box.innerHTML = messages
-          .map((m) => {
+          .map((m, i) => {
             const mine = m.sender_id === me.id;
+            const prev = messages[i - 1];
+            const next = messages[i + 1];
+            const t = new Date(m.created_at).getTime();
+            const samePrev =
+              prev &&
+              prev.sender_id === m.sender_id &&
+              t - new Date(prev.created_at).getTime() < CLUSTER_MS;
+            const sameNext =
+              next &&
+              next.sender_id === m.sender_id &&
+              new Date(next.created_at).getTime() - t < CLUSTER_MS;
+            const cluster = samePrev && sameNext
+              ? "is-mid"
+              : samePrev
+                ? "is-end"
+                : sameNext
+                  ? "is-start"
+                  : "is-alone";
+            const showAvatar = !mine && !sameNext;
+            const showTime = !sameNext;
             const groups = groupReactions(m.reactions);
+            const timeLabel = new Date(m.created_at).toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            });
+
             return `
           <div
-            class="fp-bubble ${mine ? "is-me" : ""}"
+            class="fp-msg ${mine ? "is-me" : "is-them"} ${cluster}${
+              showAvatar ? " has-avatar" : ""
+            }"
             data-msg-id="${escapeHtml(m.id)}"
             data-msg-mine="${mine ? "1" : "0"}"
           >
-            <p class="fp-bubble__text">${escapeHtml(m.body)}</p>
-            <time>${new Date(m.created_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}${m.edited_at ? " · edited" : ""}</time>
             ${
-              groups.length
-                ? `<div class="fp-bubble__reactions" data-react-chips>
-                    ${groups
-                      .map(
-                        (g) => `
-                      <button
-                        type="button"
-                        class="fp-react-chip ${
-                          g.users.includes(me.id) ? "is-mine" : ""
-                        }"
-                        data-react="${escapeHtml(m.id)}"
-                        data-emoji="${escapeHtml(g.emoji)}"
-                      >${escapeHtml(g.emoji)} <span>${g.users.length}</span></button>`
-                      )
-                      .join("")}
-                  </div>`
+              !mine
+                ? `<div class="fp-msg__aside">${
+                    showAvatar
+                      ? avatarHtml(current.other, "fp-avatar--xs")
+                      : ""
+                  }</div>`
                 : ""
             }
-            <div class="fp-bubble__tools" hidden>
-              <div class="fp-react-bar">
-                ${REACTIONS.map(
-                  (e) =>
-                    `<button type="button" class="fp-react-pick" data-react="${escapeHtml(
-                      m.id
-                    )}" data-emoji="${escapeHtml(e)}" aria-label="React ${e}">${e}</button>`
-                ).join("")}
+            <div class="fp-msg__stack">
+              <div class="fp-bubble ${mine ? "is-me" : ""} ${cluster}">
+                <p class="fp-bubble__text">${escapeHtml(m.body)}</p>
+                ${
+                  groups.length
+                    ? `<div class="fp-bubble__reactions" data-react-chips>
+                        ${groups
+                          .map(
+                            (g) => `
+                          <button
+                            type="button"
+                            class="fp-react-chip ${
+                              g.users.includes(me.id) ? "is-mine" : ""
+                            }"
+                            data-react="${escapeHtml(m.id)}"
+                            data-emoji="${escapeHtml(g.emoji)}"
+                          >${escapeHtml(g.emoji)}${
+                              g.users.length > 1
+                                ? ` <span>${g.users.length}</span>`
+                                : ""
+                            }</button>`
+                          )
+                          .join("")}
+                      </div>`
+                    : ""
+                }
               </div>
               ${
-                mine
-                  ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
-                      m.id
-                    )}">Edit</button>`
+                showTime
+                  ? `<time class="fp-msg__time">${escapeHtml(timeLabel)}${
+                      m.edited_at ? " · Edited" : ""
+                    }</time>`
                   : ""
               }
+              <div class="fp-bubble__tools" hidden>
+                <div class="fp-react-bar">
+                  ${REACTIONS.map(
+                    (e) =>
+                      `<button type="button" class="fp-react-pick" data-react="${escapeHtml(
+                        m.id
+                      )}" data-emoji="${escapeHtml(e)}" aria-label="React ${e}">${e}</button>`
+                  ).join("")}
+                </div>
+                ${
+                  mine
+                    ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
+                        m.id
+                      )}">Edit</button>`
+                    : ""
+                }
+              </div>
             </div>
           </div>`;
           })
           .join("");
         if (stickBottom) box.scrollTop = box.scrollHeight;
+        else box.scrollTop = prevScrollTop;
         const latest = messages[messages.length - 1];
         markChatRead(activeChatId, latest?.created_at);
+        // Keep inbox preview cache warm when viewing a thread
+        if (latest) {
+          chatPreviews = {
+            ...chatPreviews,
+            [chatId]: {
+              id: latest.id,
+              friendship_id: chatId,
+              sender_id: latest.sender_id,
+              body: latest.body,
+              created_at: latest.created_at,
+            },
+          };
+        }
       };
       chatPaint = paint;
+      lastThreadPaintKey = "";
 
       const refreshThread = async () => {
         paint(await listMessages(chatId));
@@ -848,10 +1098,10 @@ export async function FriendsView(root) {
         if (editBtn) {
           e.preventDefault();
           e.stopPropagation();
-          const bubble = editBtn.closest(".fp-bubble");
-          const textEl = bubble?.querySelector(".fp-bubble__text");
-          const current = textEl?.textContent || "";
-          const next = window.prompt("Edit message", current);
+          const row = editBtn.closest(".fp-msg");
+          const textEl = row?.querySelector(".fp-bubble__text");
+          const currentBody = textEl?.textContent || "";
+          const next = window.prompt("Edit message", currentBody);
           if (next == null) return;
           try {
             await editMessage(editBtn.dataset.edit, next);
@@ -862,13 +1112,13 @@ export async function FriendsView(root) {
           return;
         }
 
-        const bubble = t.closest(".fp-bubble[data-msg-id]");
-        if (!bubble || !box.contains(bubble)) return;
-        // Toggle tools on this bubble; close others
+        const row = t.closest(".fp-msg[data-msg-id]");
+        if (!row || !box.contains(row)) return;
+        // Toggle tools on this message; close others
         box.querySelectorAll(".fp-bubble__tools").forEach((el) => {
-          if (el.parentElement !== bubble) el.hidden = true;
+          if (!row.contains(el)) el.hidden = true;
         });
-        const tools = bubble.querySelector(".fp-bubble__tools");
+        const tools = row.querySelector(".fp-bubble__tools");
         if (tools) tools.hidden = !tools.hidden;
       });
 
@@ -1008,6 +1258,15 @@ export async function FriendsView(root) {
       };
 
       let sending = false;
+      const syncSendEnabled = () => {
+        if (!sendBtn) return;
+        const hasText = Boolean(String(input?.value || "").trim());
+        sendBtn.disabled = sending || !hasText;
+        sendBtn.classList.toggle("is-ready", hasText && !sending);
+      };
+      syncSendEnabled();
+      input?.addEventListener("input", syncSendEnabled);
+
       const sendChat = async () => {
         if (sending) return;
         const text = String(input?.value || "").trim();
@@ -1017,7 +1276,7 @@ export async function FriendsView(root) {
         }
         sending = true;
         if (input) input.value = "";
-        if (sendBtn) sendBtn.disabled = true;
+        syncSendEnabled();
         try {
           await sendMessage(chatId, text);
           paint(await listMessages(chatId));
@@ -1026,7 +1285,7 @@ export async function FriendsView(root) {
           alert(err.message);
         } finally {
           sending = false;
-          if (sendBtn) sendBtn.disabled = false;
+          syncSendEnabled();
           input?.focus({ preventScroll: true });
           syncChatViewport();
         }
@@ -1575,19 +1834,25 @@ export async function FriendsView(root) {
       } else if (tab === "friends") {
         paintPeopleLists();
       } else if (tab === "chat") {
-        if (activeChatId && table === "friend_messages") {
-          const row = payload?.new;
-          if (row?.friendship_id && row.friendship_id === activeChatId && chatPaint) {
-            try {
-              chatPaint(await listMessages(activeChatId));
-            } catch (_) {
-              /* ignore */
+        if (activeChatId) {
+          // Only refetch the open thread on real message events (not polls)
+          if (table === "friend_messages" && chatPaint) {
+            const row = payload?.new;
+            const forThis =
+              !row?.friendship_id || row.friendship_id === activeChatId;
+            if (forThis) {
+              try {
+                chatPaint(await listMessages(activeChatId));
+              } catch (_) {
+                /* ignore */
+              }
             }
+            refreshChatPreviews().catch(() => {});
           }
-        } else if (!activeChatId) {
-          // Refresh Messenger inbox (unread + watch invites)
-          await renderPanel();
-          syncPresenceUi();
+        } else {
+          // Soft-update inbox only — never remount (blinks)
+          await refreshChatPreviews();
+          paintInboxList();
         }
       }
     } finally {
@@ -1609,6 +1874,8 @@ export async function FriendsView(root) {
   renderShell();
   try {
     await refreshData();
+    // Warm preview cache before first paint so inbox doesn't flash "loading"
+    await refreshChatPreviews();
     renderShell();
   } catch (err) {
     page.querySelector("#friends-panel").innerHTML = `
