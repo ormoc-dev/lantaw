@@ -1,8 +1,17 @@
 import { createApp } from "./App.js";
-import { recoverSession } from "./services/authService.js";
+import { onAuthChange, recoverSession } from "./services/authService.js";
+import {
+  startPresence,
+  stopPresence,
+} from "./services/presenceService.js";
 import { initPwaInstall } from "./lib/pwaInstall.js";
 
 initPwaInstall();
+
+// Light Halloween dressing in October (pumpkins only — no palette change).
+if (new Date().getMonth() === 9) {
+  document.body.classList.add("is-halloween");
+}
 
 async function boot() {
   let session = null;
@@ -33,6 +42,13 @@ async function boot() {
   const root = document.getElementById("app");
   const app = createApp(root);
   app.mount();
+
+  // Friend online/offline via Realtime Presence (while the app is open).
+  if (session) startPresence().catch(() => {});
+  onAuthChange((next) => {
+    if (next) startPresence().catch(() => {});
+    else stopPresence().catch(() => {});
+  });
 }
 
 boot().catch((err) => {

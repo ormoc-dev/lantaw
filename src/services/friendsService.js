@@ -303,18 +303,25 @@ export async function updateWatchPartyStatus(partyId, status) {
 
 export async function deleteWatchParty(partyId) {
   await requireUser();
-  const { error } = await getSupabase()
+  // `.select()` so RLS-blocked deletes aren't a silent no-op (0 rows, no error).
+  const { data, error } = await getSupabase()
     .from("watch_parties")
     .delete()
-    .eq("id", partyId);
+    .eq("id", partyId)
+    .select("id");
 
   if (error) {
     if (/policy|permission|RLS/i.test(error.message || "")) {
       throw new Error(
-        "Delete needs a DB update — run supabase/migrations/202603260008_watch_party_delete.sql"
+        "Delete needs a DB update — run supabase/migrations/202603260008_watch_party_delete.sql in the Supabase SQL Editor"
       );
     }
     throw error;
+  }
+  if (!data?.length) {
+    throw new Error(
+      "Could not delete this invite. Run supabase/migrations/202603260008_watch_party_delete.sql in the Supabase SQL Editor, then try again."
+    );
   }
   notifyFriendsBadge();
 }

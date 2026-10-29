@@ -19,6 +19,11 @@ import {
   updateWatchPartyStatus,
   deleteWatchParty,
 } from "../services/friendsService.js";
+import {
+  isUserOnline,
+  onPresenceChange,
+  startPresence,
+} from "../services/presenceService.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
 
@@ -38,10 +43,24 @@ export async function FriendsView(root) {
   let unsubPage = null;
   let unsubWatchDoc = null;
   let unsubChatVv = null;
+  let unsubPresence = null;
   let liveTimer = null;
   let liveBusy = false;
   let liveQueued = false;
   let chatPaint = null;
+
+  startPresence().catch(() => {});
+
+  const syncPresenceUi = () => {
+    page.querySelectorAll("[data-presence-id]").forEach((el) => {
+      const on = isUserOnline(el.dataset.presenceId);
+      el.classList.toggle("is-online", on);
+      el.setAttribute("title", on ? "Online" : "Offline");
+      el.setAttribute("aria-label", on ? "Online" : "Offline");
+      const label = el.querySelector("[data-presence-label]");
+      if (label) label.textContent = on ? "Online" : "Offline";
+    });
+  };
 
   const page = document.createElement("div");
   page.className = "page-pad friends-page";
@@ -74,6 +93,22 @@ export async function FriendsView(root) {
     return `<span class="fp-avatar fp-avatar--fallback ${sizeClass}">${escapeHtml(
       initial
     )}</span>`;
+  };
+
+  const presenceAvatarHtml = (p, sizeClass = "") => {
+    if (!p?.id) return avatarHtml(p, sizeClass);
+    const on = isUserOnline(p.id);
+    return `
+      <span
+        class="fp-presence ${on ? "is-online" : ""}"
+        data-presence-id="${escapeHtml(p.id)}"
+        title="${on ? "Online" : "Offline"}"
+        aria-label="${on ? "Online" : "Offline"}"
+      >
+        ${avatarHtml(p, sizeClass)}
+        <i class="fp-presence__dot" aria-hidden="true"></i>
+      </span>
+    `;
   };
 
   const emptyState = (title, text) => `
@@ -205,16 +240,23 @@ export async function FriendsView(root) {
     }
   };
 
-  const personRow = (p, actions = "") => `
+  const personRow = (p, actions = "") => {
+    const on = Boolean(p?.id && isUserOnline(p.id));
+    return `
     <div class="fp-row">
-      ${avatarHtml(p)}
+      ${presenceAvatarHtml(p)}
       <div class="fp-row__meta">
         <strong>${escapeHtml(p?.display_name || "User")}</strong>
-        <span>${escapeHtml(p?.email || "")}</span>
+        <span
+          class="fp-presence-label ${on ? "is-online" : ""}"
+          data-presence-id="${escapeHtml(p?.id || "")}"
+        ><em data-presence-label>${on ? "Online" : "Offline"}</em></span>
+        ${p?.email ? `<span>${escapeHtml(p.email)}</span>` : ""}
       </div>
       <div class="fp-row__actions">${actions}</div>
     </div>
   `;
+  };
 
   const tabBadge = (n) => (n ? `<em>${n > 9 ? "9+" : n}</em>` : "");
 
@@ -457,7 +499,7 @@ export async function FriendsView(root) {
               <button type="button" class="fp-chat__person ${
                 f.id === activeChatId ? "is-active" : ""
               }" data-open-chat="${f.id}">
-                ${avatarHtml(f.other, "fp-avatar--sm")}
+                ${presenceAvatarHtml(f.other, "fp-avatar--sm")}
                 <span>${escapeHtml(f.other?.display_name || f.other?.email || "Friend")}</span>
                 ${
                   activity.chatIds?.includes(f.id) && f.id !== activeChatId
@@ -470,10 +512,17 @@ export async function FriendsView(root) {
           </div>
           <section class="fp-chat__thread">
             <header class="fp-chat__head">
-              ${avatarHtml(current.other, "fp-avatar--sm")}
+              ${presenceAvatarHtml(current.other, "fp-avatar--sm")}
               <div>
                 <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
-                <span class="muted">${escapeHtml(current.other?.email || "")}</span>
+                <span
+                  class="muted fp-presence-label ${
+                    isUserOnline(current.other?.id) ? "is-online" : ""
+                  }"
+                  data-presence-id="${escapeHtml(current.other?.id || "")}"
+                ><em data-presence-label>${
+                  isUserOnline(current.other?.id) ? "Online" : "Offline"
+                }</em></span>
               </div>
             </header>
             <div class="fp-chat__messages" id="chat-messages">${loadingHtml({
@@ -1216,11 +1265,13 @@ export async function FriendsView(root) {
         unsubChat?.();
         unsubPage?.();
         unsubWatchDoc?.();
+        unsubPresence?.();
         clearChatViewport();
       },
     };
   }
   await renderPanel();
+  syncPresenceUi();
 
   // Realtime + light poll (Watch invites). Poll must not remount People.
   unsubPage = subscribeFriendsRealtime(
@@ -1229,6 +1280,8 @@ export async function FriendsView(root) {
     },
     { pollMs: 12000, listenBadgeEvent: true }
   );
+  unsubPresence = onPresenceChange(() => syncPresenceUi());
+  syncPresenceUi();
 
   return {
     unmount() {
@@ -1236,6 +1289,7 @@ export async function FriendsView(root) {
       unsubChat?.();
       unsubPage?.();
       unsubWatchDoc?.();
+      unsubPresence?.();
       clearChatViewport();
       page.classList.remove("friends-page--chat");
       root.classList.remove("view--friends-chat");

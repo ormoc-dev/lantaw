@@ -30,7 +30,6 @@ export function MovieCard(movie) {
     </div>
     <div class="movie-card__meta">
       <strong>${escapeHtml(movie.title)}</strong>
-      <span>${movie.releaseDate?.slice(0, 4) || "—"}</span>
     </div>
   `;
 

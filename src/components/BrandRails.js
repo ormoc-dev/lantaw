@@ -34,22 +34,24 @@ async function hydrateLogos(root, brands, kind) {
           : await tmdb.company(brand.id);
       const src = posterUrl(data?.logo_path, "w154");
       if (!src) continue;
-      const mark = root.querySelector(
+      const marks = root.querySelectorAll(
         `[data-brand-id="${brand.id}"][data-brand-kind="${kind}"] .brand-tile__mark`
       );
-      if (!mark) continue;
-      const img = document.createElement("img");
-      img.src = src;
-      img.alt = "";
-      img.loading = "lazy";
-      img.className = "brand-tile__logo";
-      img.referrerPolicy = "no-referrer";
-      img.onload = () => {
-        mark.classList.add("has-logo");
-        mark.querySelector(".brand-tile__fallback")?.remove();
-      };
-      img.onerror = () => img.remove();
-      mark.appendChild(img);
+      marks.forEach((mark) => {
+        if (mark.querySelector(".brand-tile__logo")) return;
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = "";
+        img.loading = "lazy";
+        img.className = "brand-tile__logo";
+        img.referrerPolicy = "no-referrer";
+        img.onload = () => {
+          mark.classList.add("has-logo");
+          mark.querySelector(".brand-tile__fallback")?.remove();
+        };
+        img.onerror = () => img.remove();
+        mark.appendChild(img);
+      });
     } catch {
       /* keep fallback initials */
     }
@@ -64,10 +66,24 @@ export function BrandRail({ title, brands, kind }) {
     <header class="brand-rail__head">
       <h2>${escapeHtml(title)}</h2>
     </header>
-    <div class="brand-rail__track" role="list"></div>
+    <div class="brand-rail__viewport">
+      <div class="brand-rail__track" role="list"></div>
+    </div>
   `;
   const track = section.querySelector(".brand-rail__track");
   brands.forEach((brand) => track.appendChild(brandTile(brand, kind)));
+  // Duplicate for seamless loop
+  brands.forEach((brand) => {
+    const clone = brandTile(brand, kind);
+    clone.setAttribute("aria-hidden", "true");
+    clone.tabIndex = -1;
+    track.appendChild(clone);
+  });
+  track.classList.add("brand-rail__track--marquee");
+  // Duration scales with brand count so speed stays readable
+  const seconds = Math.max(28, brands.length * 3.2);
+  track.style.setProperty("--brand-marquee-duration", `${seconds}s`);
+
   hydrateLogos(section, brands, kind);
   return section;
 }

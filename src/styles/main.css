@@ -740,6 +740,49 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   height: 32px;
 }
 
+.fp-presence {
+  position: relative;
+  display: inline-grid;
+  flex-shrink: 0;
+}
+
+.fp-presence__dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: #6b5a5e;
+  border: 2px solid var(--bg, #0c0708);
+  box-sizing: border-box;
+}
+
+.fp-presence.is-online .fp-presence__dot {
+  background: var(--ok, #3dcf8e);
+}
+
+.fp-presence:has(.fp-avatar--sm) .fp-presence__dot {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-width: 1.5px;
+}
+
+.fp-presence-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.fp-presence-label em {
+  font-style: normal;
+}
+
+.fp-presence-label.is-online,
+.fp-presence-label.is-online em {
+  color: var(--ok, #3dcf8e);
+}
+
 .fp-avatar--fallback {
   display: grid;
   place-items: center;
@@ -2138,6 +2181,49 @@ body.me-modal-open {
   color: transparent;
 }
 
+/* Halloween — pumpkins only (October via body.is-halloween) */
+body.is-halloween .home-sticky__mark::after {
+  content: " 🎃";
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  background: none;
+  color: initial;
+  font-size: 0.92em;
+  letter-spacing: 0;
+}
+
+body.is-halloween .app-shell::before {
+  content: "🎃";
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  top: max(0.55rem, env(safe-area-inset-top));
+  right: 0.65rem;
+  font-size: 1.35rem;
+  line-height: 1;
+  opacity: 0.72;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+  animation: halloween-bob 3.2s var(--ease) infinite;
+}
+
+@keyframes halloween-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(6deg);
+  }
+}
+
+@media (min-width: 768px) {
+  body.is-halloween .app-shell::before {
+    right: 1.25rem;
+    top: 1rem;
+    font-size: 1.55rem;
+  }
+}
+
 .home-sticky-spacer {
   width: 100%;
   pointer-events: none;
@@ -2759,6 +2845,20 @@ body.me-modal-open {
   letter-spacing: -0.02em;
 }
 
+.brand-rail__viewport {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 1.25rem,
+    #000 calc(100% - 1.25rem),
+    transparent
+  );
+}
+
 .brand-rail__track {
   display: flex;
   gap: 0.7rem;
@@ -2777,6 +2877,42 @@ body.me-modal-open {
 
 .brand-rail__track::-webkit-scrollbar {
   display: none;
+}
+
+.brand-rail__track--marquee {
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+  scroll-snap-type: none;
+  animation: brand-marquee var(--brand-marquee-duration, 36s) linear infinite;
+  will-change: transform;
+}
+
+.brand-rail__viewport:hover .brand-rail__track--marquee,
+.brand-rail__viewport:focus-within .brand-rail__track--marquee {
+  animation-play-state: paused;
+}
+
+@keyframes brand-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-rail__track--marquee {
+    animation: none;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .brand-rail__viewport {
+    mask-image: none;
+  }
 }
 
 .brand-tile {
