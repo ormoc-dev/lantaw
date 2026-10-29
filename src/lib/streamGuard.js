@@ -110,9 +110,18 @@ export function attachStreamAdGuard(
 
   window.addEventListener("blur", reclaimFocus);
 
+  // CineSrc `back=close` → postMessage; treat as our safe exit.
+  const onMessage = (event) => {
+    if (event.origin !== "https://cinesrc.st") return;
+    if (event.data?.type !== "cinesrc:close") return;
+    safeExit(event);
+  };
+  window.addEventListener("message", onMessage);
+
   return () => {
     window.open = nativeOpen;
     window.removeEventListener("blur", reclaimFocus);
+    window.removeEventListener("message", onMessage);
     frame.removeEventListener("pointerdown", onFramePointer);
     shield?.remove();
     exitBtn.remove();

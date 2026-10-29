@@ -1,4 +1,9 @@
-/** Shared zoryva embed helpers for detail + watch-party pages. */
+/** Shared stream embed helpers for detail + watch-party pages.
+ * Movies/TV → CineSrc (cinesrc.st). Anime stays on zoryva.
+ * Docs: https://cinesrc.st/docs
+ */
+
+const ACCENT = "%23ff0a43";
 
 export function getTvDefaults(movie) {
   const firstSeason =
@@ -19,17 +24,33 @@ export function buildStreamUrl({
   episode = 1,
   anilistId,
 }) {
+  const id = encodeURIComponent(tmdbId);
+  const s = encodeURIComponent(Math.max(1, Number(season) || 1));
+  const e = encodeURIComponent(Math.max(1, Number(episode) || 1));
+
   if (mediaType === "tv") {
-    return `https://zoryva.me/embed/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(
-      season
-    )}/${encodeURIComponent(episode)}?color=%23ff0a43`;
+    return `https://cinesrc.st/embed/tv/${id}?s=${s}&e=${e}&color=${ACCENT}&back=close`;
   }
   if (mediaType === "anime") {
     return `https://zoryva.me/embed/anime/${encodeURIComponent(
       anilistId || tmdbId
-    )}/${encodeURIComponent(season)}/${encodeURIComponent(episode)}?color=%23ff0a43`;
+    )}/${s}/${e}?color=${ACCENT}`;
   }
-  return `https://zoryva.me/embed/movie/${encodeURIComponent(tmdbId)}?color=%23ff0a43`;
+  return `https://cinesrc.st/embed/movie/${id}?color=${ACCENT}&back=close`;
+}
+
+function iframeAttrs(streamUrl) {
+  // No allow-popups — block third-party pop-unders. First-click shield in streamGuard.
+  return `
+          id="stream-iframe"
+          src="${streamUrl}"
+          title="Streaming player"
+          frameborder="0"
+          style="border: 0; border-radius: 12px;"
+          allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+          allowfullscreen
+  `.trim();
 }
 
 export function renderStreamPlayer(movie, mediaType, opts = {}) {
@@ -75,15 +96,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
       }
       <div class="detail__player-frame detail__player-frame--embed">
         <iframe
-          id="stream-iframe"
-          src="${streamUrl}"
-          title="Streaming player"
-          frameborder="0"
-          style="border: 0; border-radius: 12px;"
-          allow="autoplay; fullscreen; picture-in-picture"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-          referrerpolicy="no-referrer"
-          allowfullscreen
+          ${iframeAttrs(streamUrl)}
         ></iframe>
       </div>
     `;
@@ -93,15 +106,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
   return `
     <div class="detail__player-frame detail__player-frame--embed">
       <iframe
-        id="stream-iframe"
-        src="${streamUrl}"
-        title="Streaming player"
-        frameborder="0"
-        style="border: 0; border-radius: 12px;"
-        allow="autoplay; fullscreen; picture-in-picture"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-        referrerpolicy="no-referrer"
-        allowfullscreen
+        ${iframeAttrs(streamUrl)}
       ></iframe>
     </div>
   `;
