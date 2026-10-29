@@ -125,6 +125,73 @@ body:has(#view.view--auth) .app-shell {
   overflow: hidden;
 }
 
+/* Friends + Me: lock document scroll; only inner panels scroll */
+html:has(#view.view--friends),
+body:has(#view.view--friends),
+html:has(#view.view--me),
+body:has(#view.view--me) {
+  overflow: hidden;
+  height: 100dvh;
+  max-height: 100dvh;
+  overscroll-behavior: none;
+}
+
+body:has(#view.view--friends) #app,
+body:has(#view.view--friends) .app-shell,
+body:has(#view.view--me) #app,
+body:has(#view.view--me) .app-shell {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+#view.view--friends,
+#view.view--me {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  box-sizing: border-box;
+}
+
+#view.view--friends .friends-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  width: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+}
+
+#view.view--friends .fp-panel {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Thread: panel stays locked; only #chat-messages scrolls */
+#view.view--friends .friends-page--chat .fp-panel {
+  overflow: hidden;
+}
+
+#view.view--me .me-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
 .friends-page {
   display: grid;
   gap: 1rem;
@@ -368,9 +435,15 @@ body.is-friends-chat {
   max-height: 100dvh;
 }
 
-/* Keyboard open: drop nav clearance so the composer sits on the keypad */
+/* Keyboard open: drop nav clearance; pin compose above the keypad */
+body.is-friends-chat-kb {
+  overflow: hidden !important;
+}
+
 body.is-friends-chat-kb #view.view--friends-chat {
-  padding-bottom: 0.25rem !important;
+  padding-bottom: 0 !important;
+  overflow: hidden !important;
+  overscroll-behavior: none;
 }
 
 body.is-friends-chat-kb .bottom-nav {
@@ -386,7 +459,35 @@ body.is-friends-chat-kb .friends-page--chat {
 }
 
 body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
-  padding: 0.3rem 0 0.1rem;
+  position: fixed !important;
+  left: 0;
+  right: 0;
+  bottom: var(--friends-kb-bottom, 0px);
+  z-index: 80;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0.45rem max(0.85rem, env(safe-area-inset-left))
+    max(0.35rem, env(safe-area-inset-bottom))
+    max(0.85rem, env(safe-area-inset-right));
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.4);
+  transform: none;
+}
+
+.fp-chat__compose-spacer {
+  flex: 0 0 auto;
+  height: var(--friends-compose-h, 3.5rem);
+  pointer-events: none;
+}
+
+.fp-chat__compose-spacer[hidden] {
+  display: none !important;
 }
 
 .friends-page--chat {
@@ -1717,7 +1818,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   }
 
   body.has-mobile-nav.is-friends-chat-kb #view.view--friends-chat {
-    padding-bottom: 0.25rem !important;
+    padding-bottom: 0 !important;
   }
 
   .fp-chat__compose {
@@ -1734,6 +1835,12 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
     bottom: auto;
     z-index: 5;
     margin-top: auto;
+  }
+
+  body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
+    position: fixed !important;
+    bottom: var(--friends-kb-bottom, 0px);
+    margin-top: 0;
   }
 }
 

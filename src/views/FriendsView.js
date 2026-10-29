@@ -69,6 +69,7 @@ export async function FriendsView(root) {
 
   const page = document.createElement("div");
   page.className = "page-pad friends-page";
+  root.classList.add("view--friends");
   root.innerHTML = "";
   root.appendChild(page);
 
@@ -76,7 +77,11 @@ export async function FriendsView(root) {
     unsubChatVv?.();
     root.style.removeProperty("--friends-chat-vh");
     root.style.removeProperty("transform");
+    document.documentElement.style.removeProperty("--friends-kb-bottom");
+    document.documentElement.style.removeProperty("--friends-compose-h");
     document.body.classList.remove("is-friends-chat-kb");
+    const spacer = root.querySelector("#chat-compose-spacer");
+    if (spacer) spacer.hidden = true;
   };
 
   const syncChatLock = () => {
@@ -668,7 +673,8 @@ export async function FriendsView(root) {
               className: "ui-loading--inline",
               size: "sm",
             })}</div>
-            <form class="fp-chat__compose" id="chat-form">
+            <div class="fp-chat__compose-spacer" id="chat-compose-spacer" hidden></div>
+            <form class="fp-chat__compose" id="chat-form" autocomplete="off">
               <input
                 type="text"
                 name="body"
@@ -920,31 +926,71 @@ export async function FriendsView(root) {
       const form = panel.querySelector("#chat-form");
       const input = panel.querySelector("#chat-input");
       const sendBtn = panel.querySelector("#chat-send");
+      const composeSpacer = panel.querySelector("#chat-compose-spacer");
+      const chatShell = panel.querySelector(".fp-chat--thread");
+      let chatLockH = 0;
 
-      // Keep thread inside the visible viewport when the mobile keyboard opens.
+      const lockPageScroll = () => {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        if (root.scrollTop) root.scrollTop = 0;
+      };
+
+      // Pin compose above the mobile keyboard so typing stays visible.
       clearChatViewport();
       const syncChatViewport = () => {
         const vv = window.visualViewport;
         const layoutH = window.innerHeight;
         const visibleH = vv ? vv.height : layoutH;
-        const kbOpen = layoutH - visibleH > 80;
+        const offsetTop = vv ? vv.offsetTop : 0;
+        const covered = Math.max(0, Math.round(layoutH - (offsetTop + visibleH)));
+        const kbOpen = covered > 80 || offsetTop > 40;
 
         document.body.classList.toggle("is-friends-chat-kb", kbOpen);
 
-        if (kbOpen) {
-          // Use visible height only — avoid translateY that shoved messages off-screen.
-          root.style.setProperty(
-            "--friends-chat-vh",
-            `${Math.max(240, Math.round(visibleH))}px`
-          );
-          root.style.removeProperty("transform");
-          requestAnimationFrame(() => {
-            box.scrollTop = box.scrollHeight;
-          });
-        } else {
+        if (!kbOpen) {
+          chatLockH = 0;
+          chatShell?.style.removeProperty("height");
+          chatShell?.style.removeProperty("max-height");
           root.style.removeProperty("--friends-chat-vh");
           root.style.removeProperty("transform");
+          document.documentElement.style.removeProperty("--friends-kb-bottom");
+          document.documentElement.style.removeProperty("--friends-compose-h");
+          if (composeSpacer) composeSpacer.hidden = true;
+          return;
         }
+
+        if (!chatLockH && chatShell) {
+          chatLockH =
+            Math.round(chatShell.getBoundingClientRect().height) || layoutH;
+        }
+        if (chatShell && chatLockH) {
+          chatShell.style.height = `${chatLockH}px`;
+          chatShell.style.maxHeight = `${chatLockH}px`;
+        }
+
+        root.style.setProperty(
+          "--friends-chat-vh",
+          `${Math.max(240, Math.round(visibleH))}px`
+        );
+        root.style.removeProperty("transform");
+        document.documentElement.style.setProperty(
+          "--friends-kb-bottom",
+          `${covered}px`
+        );
+
+        const composeH = Math.ceil(form?.getBoundingClientRect().height || 0) || 58;
+        document.documentElement.style.setProperty(
+          "--friends-compose-h",
+          `${composeH}px`
+        );
+        if (composeSpacer) composeSpacer.hidden = false;
+
+        lockPageScroll();
+        requestAnimationFrame(() => {
+          box.scrollTop = box.scrollHeight;
+        });
       };
       syncChatViewport();
       window.visualViewport?.addEventListener("resize", syncChatViewport);
@@ -954,6 +1000,11 @@ export async function FriendsView(root) {
         window.visualViewport?.removeEventListener("resize", syncChatViewport);
         window.visualViewport?.removeEventListener("scroll", syncChatViewport);
         window.removeEventListener("resize", syncChatViewport);
+        chatShell?.style.removeProperty("height");
+        chatShell?.style.removeProperty("max-height");
+        document.documentElement.style.removeProperty("--friends-kb-bottom");
+        document.documentElement.style.removeProperty("--friends-compose-h");
+        if (composeSpacer) composeSpacer.hidden = true;
         unsubChatVv = null;
       };
 
@@ -977,7 +1028,8 @@ export async function FriendsView(root) {
         } finally {
           sending = false;
           if (sendBtn) sendBtn.disabled = false;
-          input?.focus();
+          input?.focus({ preventScroll: true });
+          syncChatViewport();
         }
       };
 
@@ -1001,10 +1053,14 @@ export async function FriendsView(root) {
       });
 
       input?.addEventListener("focus", () => {
-        // Wait for keyboard animation, then snap composer to keypad
-        [50, 180, 350].forEach((ms) => {
+        if (chatShell && !chatLockH) {
+          chatLockH = Math.round(chatShell.getBoundingClientRect().height);
+        }
+        lockPageScroll();
+        [40, 120, 240, 400].forEach((ms) => {
           setTimeout(() => {
             syncChatViewport();
+            lockPageScroll();
             box.scrollTop = box.scrollHeight;
           }, ms);
         });
@@ -1593,7 +1649,7 @@ export async function FriendsView(root) {
       unsubPresence?.();
       clearChatViewport();
       page.classList.remove("friends-page--chat");
-      root.classList.remove("view--friends-chat");
+      root.classList.remove("view--friends", "view--friends-chat");
       document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
     },
   };
