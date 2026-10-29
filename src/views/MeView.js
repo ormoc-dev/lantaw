@@ -15,7 +15,6 @@ const ICONS = {
 };
 
 export async function MeView(root) {
-  root.classList.add("view--me");
   const session = await getSession();
   const user = session?.user;
 
@@ -31,11 +30,7 @@ export async function MeView(root) {
         </div>
       </div>
     `;
-    return {
-      unmount() {
-        root.classList.remove("view--me");
-      },
-    };
+    return { unmount() {} };
   }
 
   const resolved = await resolveUserProfile(user);
@@ -229,12 +224,7 @@ export async function MeView(root) {
     saved.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
   }
 
-  return {
-    unmount() {
-      root.classList.remove("view--me");
-      document.body.classList.remove("me-modal-open");
-    },
-  };
+  return { unmount() {} };
 }
 
 function escapeHtml(str = "") {

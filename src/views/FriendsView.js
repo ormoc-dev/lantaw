@@ -69,7 +69,6 @@ export async function FriendsView(root) {
 
   const page = document.createElement("div");
   page.className = "page-pad friends-page";
-  root.classList.add("view--friends");
   root.innerHTML = "";
   root.appendChild(page);
 
@@ -1649,7 +1648,7 @@ export async function FriendsView(root) {
       unsubPresence?.();
       clearChatViewport();
       page.classList.remove("friends-page--chat");
-      root.classList.remove("view--friends", "view--friends-chat");
+      root.classList.remove("view--friends-chat");
       document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
     },
   };
