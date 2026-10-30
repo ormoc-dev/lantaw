@@ -57,7 +57,10 @@ export async function WatchPartyView(root, params = {}) {
   };
 
   const estimatePositionSec = (row = party) => {
-    if (lastKnownTimeSec > 0) return Math.floor(lastKnownTimeSec);
+    // Host can use live iframe time; watcher always adopts the host clock from the room row
+    if (party?.isHost && lastKnownTimeSec > 0) {
+      return Math.floor(lastKnownTimeSec);
+    }
     const base = Math.max(0, Number(row?.playback_position_sec) || 0);
     if (row?.playback_state === "playing" && row?.playback_started_at) {
       const elapsed =
@@ -188,7 +191,7 @@ export async function WatchPartyView(root, params = {}) {
             title="Watch tip"
           >i</button>
           <p class="wparty__sync-tip" id="wp-sync-tip" hidden role="tooltip">
-            Behind? Ask in chat — host can tap Sync.
+            Only the host Syncs. Watchers follow that moment automatically.
           </p>
         </div>
         <div class="wparty__controls" id="wp-banner"></div>
@@ -426,15 +429,17 @@ export async function WatchPartyView(root, params = {}) {
     waiting.hidden = true;
     setSyncTipVisible(true);
     const startAt = Math.max(0, Number(opts.startAt) || 0);
-    if (startAt <= 0) lastKnownTimeSec = 0;
-    else lastKnownTimeSec = Math.max(lastKnownTimeSec, startAt);
-    // Guests defer the iframe src until they tap Sync — no media fetch before that.
-    const deferSrc = Boolean(opts.deferSrc);
+    if (party.isHost) {
+      if (startAt <= 0) lastKnownTimeSec = 0;
+      else lastKnownTimeSec = Math.max(lastKnownTimeSec, startAt);
+    } else {
+      lastKnownTimeSec = 0;
+    }
     const html = renderStreamPlayer(movie, mediaType, {
       ...opts,
       startAt,
       autoplay: true,
-      deferSrc,
+      deferSrc: false,
       // Episode picker lives in the host toolbar, not above the iframe
       omitControls: true,
       readOnly: !party.isHost,
@@ -443,13 +448,10 @@ export async function WatchPartyView(root, params = {}) {
 
     const frame = playerEl.querySelector(".detail__player-frame--embed");
     if (frame) {
-      // Host Start/Sync is a user gesture → load immediately (no shield).
-      // Guest waits behind a Sync shield; src stays blank until they tap.
+      // Host Start/Sync is the only control. Watcher auto-follows — no tap, no shield.
       cleanupStreamGuard = attachStreamAdGuard(frame, {
-        skipShield: Boolean(party.isHost) && !deferSrc,
+        skipShield: true,
         showExit: false,
-        shieldLabel: "Tap to sync",
-        shieldHint: "Loads the stream when you’re ready — nothing fetches before this",
       });
     }
 
@@ -466,15 +468,14 @@ export async function WatchPartyView(root, params = {}) {
     const key = playbackKey(row);
 
     if (state === "playing") {
-      // Host never auto-fetches from realtime — only Start / Sync / Continue /
-      // episode Load (force) under an explicit click.
+      // Host loads only via Start / Sync / Continue / episode Load (force).
       if (party.isHost && !force) {
         lastAppliedKey = key;
         if (!hasLivePlayer()) {
           setSyncTipVisible(false);
           setWaiting(
             "Tap Sync to load",
-            "Nothing streams until you press it"
+            "Watchers will follow automatically"
           );
         }
         return;
@@ -483,12 +484,11 @@ export async function WatchPartyView(root, params = {}) {
       if (!force && key === lastAppliedKey && hasPlayerShell()) return;
       lastAppliedKey = key;
 
-      // Guest: mount shell + Sync shield, defer media until they tap
+      // Watcher: adopt host position immediately — no Sync button on their side
       mountPlayer({
         season: row.playback_season || undefined,
         episode: row.playback_episode || undefined,
         startAt: estimatePositionSec(row),
-        deferSrc: Boolean(party.isGuest),
       });
       return;
     }
@@ -498,13 +498,17 @@ export async function WatchPartyView(root, params = {}) {
     if (state === "paused") {
       setWaiting(
         "Paused",
-        party.isHost ? "Tap Continue to keep watching together" : "Host will continue soon"
+        party.isHost
+          ? "Tap Continue — watchers will follow"
+          : "Waiting for host to continue"
       );
       return;
     }
     setWaiting(
       party.isHost ? "Tap Start" : "Waiting for host",
-      party.isHost ? `${otherName} will follow you` : ""
+      party.isHost
+        ? `${otherName} will follow automatically`
+        : "You’ll jump to wherever they start"
     );
   };
 
@@ -614,10 +618,10 @@ export async function WatchPartyView(root, params = {}) {
         state === "paused" ? "Continue" : state === "playing" ? "Sync" : "Start";
       const playHint =
         state === "paused"
-          ? "Continue watching together from where you paused"
+          ? "Continue — watchers jump to your spot automatically"
           : state === "playing"
-            ? "Jump both of you to the same moment in the video"
-            : "Start the video for everyone in this room";
+            ? "Sync everyone to your current moment — watchers follow you"
+            : "Start the video — watchers follow automatically";
       banner.innerHTML = `
         <div class="wparty__playback" role="group" aria-label="Watch together controls">
           <button
@@ -656,12 +660,11 @@ export async function WatchPartyView(root, params = {}) {
             ? estimatePositionSec(party)
             : 0;
         try {
-          // Only Start / Sync / Continue fetches media for the host.
+          // Only host Start / Sync / Continue fetches media; watchers adopt via realtime.
           mountPlayer({
             season: pick.season,
             episode: pick.episode,
             startAt: positionSec,
-            deferSrc: false,
           });
           const updated = await updateWatchPartyPlayback(partyId, {
             state: "playing",
@@ -723,7 +726,9 @@ export async function WatchPartyView(root, params = {}) {
         }
       });
     } else {
-      if (metaEl) metaEl.textContent = `Watching · ${otherName} controls`;
+      if (metaEl) {
+        metaEl.textContent = `Watching · following ${otherName}`;
+      }
       banner.innerHTML = `
         <div class="wparty__playback" role="group" aria-label="Watch together controls">
           <button
@@ -1329,14 +1334,12 @@ export async function WatchPartyView(root, params = {}) {
   const resumeAfterBackground = () => {
     if (!party || party.status !== "active") return;
     if ((party.playback_state || "idle") !== "playing") return;
-    // Don't auto-refetch for guest — they must tap Sync again after a long blur.
-    if (party.isGuest && !hasLivePlayer()) return;
+    // Watcher re-adopts the host clock; host resumes their own spot
     const startAt = estimatePositionSec(party);
     mountPlayer({
       season: party.playback_season || undefined,
       episode: party.playback_episode || undefined,
       startAt,
-      deferSrc: Boolean(party.isGuest),
     });
     lastAppliedKey = playbackKey(party);
   };
