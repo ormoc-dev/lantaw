@@ -219,7 +219,11 @@ export async function FriendsView(root) {
       return na.localeCompare(nb);
     });
 
-  const convoListHtml = (accepted, previews = chatPreviews) =>
+  const convoListHtml = (
+    accepted,
+    previews = chatPreviews,
+    { activeId = null } = {}
+  ) =>
     sortedInboxFriends(accepted, previews)
       .map((f) => {
         const on = isUserOnline(f.other?.id);
@@ -228,16 +232,21 @@ export async function FriendsView(root) {
         const hasChat = Boolean(preview);
         const watching = watchingPartyFor(f.id);
         const watchingActive = watching?.status === "active";
+        const isActive = activeId && f.id === activeId;
         return `
         <div
           class="fp-convo-wrap ${watching ? "is-watching" : ""} ${
             watchingActive ? "is-watching-live" : ""
-          }"
+          } ${isActive ? "is-active" : ""}"
           role="listitem"
         >
           <button type="button" class="fp-convo ${
             unread ? "has-unread" : ""
-          } ${hasChat ? "has-chat" : ""}" data-open-chat="${f.id}">
+          } ${hasChat ? "has-chat" : ""} ${
+            isActive ? "is-active" : ""
+          }" data-open-chat="${f.id}" ${
+            isActive ? 'aria-current="page"' : ""
+          }>
             ${presenceAvatarHtml(f.other)}
             <span class="fp-convo__meta">
               <span class="fp-convo__top">
@@ -343,7 +352,9 @@ export async function FriendsView(root) {
   /** Soft-update inbox rows in place — avoids remount blink. */
   const paintInboxList = () => {
     const list = page.querySelector(".fp-convo-list");
-    if (!list || tab !== "chat" || activeChatId) return;
+    if (!list || tab !== "chat") return;
+    // Full inbox, or the desktop/tablet rail while a thread is open
+    if (activeChatId && !list.closest(".fp-chat__rail")) return;
     const accepted = friendships.filter((f) => f.status === "accepted");
     const key = inboxPaintKey(accepted);
     if (list.dataset.paintKey === key) {
@@ -351,7 +362,9 @@ export async function FriendsView(root) {
       return;
     }
     list.dataset.paintKey = key;
-    list.innerHTML = convoListHtml(accepted);
+    list.innerHTML = convoListHtml(accepted, chatPreviews, {
+      activeId: activeChatId,
+    });
     bindInboxListActions(list);
   };
 
@@ -849,7 +862,17 @@ export async function FriendsView(root) {
 
       const peerOnline = isUserOnline(current.other?.id);
       panel.innerHTML = `
-        <div class="fp-chat fp-chat--thread">
+        <div class="fp-chat fp-chat--thread fp-chat--split">
+          <aside class="fp-chat__rail" aria-label="Conversations">
+            <div class="fp-chat__rail-head">
+              <strong>Chats</strong>
+            </div>
+            <div class="fp-convo-list" role="list" data-paint-key="${escapeHtml(
+              inboxPaintKey(accepted)
+            )}">
+              ${convoListHtml(accepted, chatPreviews, { activeId: current.id })}
+            </div>
+          </aside>
           <section class="fp-chat__thread">
             <header class="fp-chat__head">
               <button type="button" class="fp-icon-btn fp-chat__back" data-chat-back aria-label="Back to chats">
@@ -912,6 +935,7 @@ export async function FriendsView(root) {
         </div>
       `;
 
+      bindInboxListActions(panel);
       panel.querySelectorAll("[data-chat-back]").forEach((btn) => {
         btn.addEventListener("click", () => {
           activeChatId = null;
@@ -1413,9 +1437,15 @@ export async function FriendsView(root) {
           root.style.removeProperty("--friends-chat-vh");
           root.style.removeProperty("transform");
           document.documentElement.style.removeProperty("--friends-kb-bottom");
-          document.documentElement.style.removeProperty("--friends-compose-h");
           form?.style.removeProperty("bottom");
           if (composeSpacer) composeSpacer.hidden = true;
+          // Keep compose height var so mobile message padding clears the fixed bar
+          const composeH =
+            Math.ceil(form?.getBoundingClientRect().height || 0) || 58;
+          document.documentElement.style.setProperty(
+            "--friends-compose-h",
+            `${composeH}px`
+          );
           return;
         }
 

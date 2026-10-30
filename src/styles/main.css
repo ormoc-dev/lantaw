@@ -355,16 +355,17 @@ body:has(#view.view--auth) .app-shell {
 #view.view--friends-chat {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   overflow: hidden;
   /* Default fills the screen; --friends-chat-vh only while keyboard is open */
   height: var(--friends-chat-vh, 100dvh);
   max-height: var(--friends-chat-vh, 100dvh);
   min-height: 0;
-  max-width: none;
-  width: 100%;
+  max-width: none !important;
+  width: 100% !important;
   margin: 0;
   /* Flush to top — safe-area lives on the chat header, not empty padding */
-  padding: 0;
+  padding: 0 !important;
   box-sizing: border-box;
 }
 
@@ -373,8 +374,8 @@ body.has-mobile-nav #view.view--friends-chat:has(.friends-page) {
   padding-top: 0 !important;
   padding-left: 0;
   padding-right: 0;
-  /* Composer sits on this edge — keep clearance tight to the real nav height */
-  padding-bottom: calc(3.85rem + env(safe-area-inset-bottom, 0px));
+  /* Must clear the bottom nav or the compose bar is covered/clipped */
+  padding-bottom: var(--bottom-nav-clearance) !important;
 }
 
 body.is-friends-chat {
@@ -414,6 +415,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   width: 100%;
   max-width: none;
   margin: 0;
+  transform: none !important;
   /* No safe-area bottom while keyboard is up — inset already clears the keys */
   padding: 0.45rem max(0.75rem, env(safe-area-inset-left)) 0.45rem
     max(0.75rem, env(safe-area-inset-right));
@@ -424,7 +426,20 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px 16px 0 0;
   box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.4);
-  transform: none !important;
+}
+
+@media (min-width: 768px) {
+  body.is-friends-chat-kb .friends-page--chat .fp-chat--split .fp-chat__compose {
+    /* Align compose with the thread column (after the rail) */
+    left: min(300px, 36vw);
+    width: auto;
+  }
+}
+
+@media (min-width: 1100px) {
+  body.is-friends-chat-kb .friends-page--chat .fp-chat--split .fp-chat__compose {
+    left: min(320px, 32vw);
+  }
 }
 
 .fp-chat__compose-spacer {
@@ -437,11 +452,30 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   display: none !important;
 }
 
+/* Beat .friends-page { max-width: 760px } so chat can use the full screen */
+#view.view--friends-chat .friends-page.friends-page--chat {
+  flex: 1 1 auto;
+  align-self: stretch;
+  width: 100% !important;
+  max-width: none !important;
+  /* Override .friends-page min-height: 70vh — that clipped the composer */
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  justify-items: stretch;
+  align-content: stretch;
+  gap: 0;
+  overflow: hidden;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 .friends-page--chat {
   flex: 1 1 auto;
   width: 100%;
   max-width: none;
-  /* Override .friends-page min-height: 70vh — that clipped the composer */
   min-height: 0;
   height: 100%;
   max-height: 100%;
@@ -454,27 +488,35 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 }
 
 .friends-page--chat.page-pad {
-  padding: 0;
+  padding: 0 !important;
 }
 
-.friends-page--chat .fp-panel {
+.friends-page--chat .fp-panel,
+#friends-panel.fp-panel {
   min-height: 0;
+  width: 100%;
+  max-width: none;
   height: 100%;
   max-height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0;
 }
 
 .friends-page--chat .fp-chat,
 .friends-page--chat .fp-chat--thread {
   flex: 1 1 auto;
+  align-self: stretch;
+  width: 100% !important;
+  max-width: none !important;
   height: 100%;
   max-height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0;
   overflow: hidden;
 }
@@ -483,40 +525,67 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   flex-shrink: 0;
 }
 
+/* Hidden on phones — shown beside the thread on tablet/desktop */
+.fp-chat__rail {
+  display: none;
+}
+
+.fp-chat__rail-head {
+  flex: 0 0 auto;
+  padding: 0.85rem 1rem 0.55rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.fp-chat__rail-head strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .friends-page--chat .fp-chat__thread {
   flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   height: 100%;
   max-height: 100%;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0;
   overflow: hidden;
   border-top: 0;
-  padding-top: 0;
+  border-left: 0;
+  padding: 0;
   /* Kill non-chat grid rows that capped messages at 42vh */
   grid-template-rows: none;
 }
 
 .friends-page--chat .fp-chat__head {
   flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
   min-height: 3rem;
   position: relative;
   top: auto;
   margin: 0;
-  padding: max(0.35rem, env(safe-area-inset-top, 0px)) 0.55rem 0.4rem;
+  padding: max(0.35rem, env(safe-area-inset-top, 0px)) 0.75rem 0.4rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .friends-page--chat .fp-chat__messages {
   flex: 1 1 auto;
+  width: 100%;
+  box-sizing: border-box;
   min-height: 0;
   height: auto;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: 0.25rem 0.55rem 0.5rem;
+  padding: 0.35rem 0.75rem 0.55rem;
   justify-content: flex-start;
   align-content: flex-start;
   align-items: stretch;
@@ -524,8 +593,10 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 
 .friends-page--chat .fp-chat__typing {
   flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
   margin: 0;
-  padding: 0.15rem 0.75rem 0.35rem;
+  padding: 0.15rem 0.85rem 0.35rem;
 }
 
 .friends-page--chat .fp-chat__compose {
@@ -533,8 +604,11 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   bottom: auto;
   z-index: 5;
   flex: 0 0 auto;
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
   margin: 0;
-  padding: 0.4rem 0.55rem 0.45rem;
+  padding: 0.45rem 0.75rem 0.5rem;
   background: color-mix(in srgb, var(--bg) 96%, transparent);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -544,6 +618,232 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 
 .friends-page--chat .fp-chat__compose input {
   font-size: 16px; /* avoid iOS focus zoom pushing layout */
+}
+
+/* Phones: single-column thread; compose pinned above the bottom nav */
+@media (max-width: 767px) {
+  /* Size the chat viewport ABOVE the nav — padding alone still let flex kids overflow under it */
+  body.has-mobile-nav #view.view--friends-chat,
+  body.has-mobile-nav #view.view--friends-chat:has(.friends-page) {
+    height: calc(100dvh - var(--bottom-nav-clearance)) !important;
+    max-height: calc(100dvh - var(--bottom-nav-clearance)) !important;
+    padding-bottom: 0 !important;
+  }
+
+  body.has-mobile-nav.is-friends-chat-kb #view.view--friends-chat {
+    height: var(--friends-chat-vh, 100dvh) !important;
+    max-height: var(--friends-chat-vh, 100dvh) !important;
+    padding-bottom: 0 !important;
+  }
+
+  .friends-page--chat .fp-chat__rail {
+    display: none !important;
+  }
+
+  .friends-page--chat .fp-chat,
+  .friends-page--chat .fp-chat--thread,
+  .friends-page--chat .fp-chat--split {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  .friends-page--chat .fp-chat--split > .fp-chat__thread {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    display: flex !important;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100% !important;
+    min-width: 0;
+    min-height: 0;
+    height: auto !important;
+    max-height: none !important;
+    overflow: hidden;
+  }
+
+  .friends-page--chat .fp-chat__messages {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    /* Room for the fixed compose bar */
+    padding-bottom: calc(0.55rem + var(--friends-compose-h, 3.6rem)) !important;
+  }
+
+  .friends-page--chat .fp-chat__typing,
+  .friends-page--chat .fp-chat__compose-spacer {
+    flex: 0 0 auto;
+  }
+
+  /* Always reserve spacer height on phones (form is position:fixed) */
+  .friends-page--chat .fp-chat__compose-spacer,
+  .friends-page--chat .fp-chat__compose-spacer[hidden] {
+    display: none !important;
+  }
+
+  body.has-mobile-nav:not(.is-friends-chat-kb) .friends-page--chat .fp-chat__compose {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: var(--bottom-nav-clearance) !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    transform: none !important;
+    z-index: 55;
+    flex: 0 0 auto !important;
+    background: color-mix(in srgb, var(--bg) 98%, transparent);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.45rem max(0.75rem, env(safe-area-inset-left)) 0.5rem
+      max(0.75rem, env(safe-area-inset-right));
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .friends-page--chat .fp-chat__back {
+    display: grid !important;
+  }
+}
+
+/* Tablet + desktop: conversation list + thread side by side */
+@media (min-width: 768px) {
+  #view.view--friends-chat {
+    width: 100%;
+    max-width: none !important;
+    margin: 0;
+  }
+
+  .friends-page--chat .fp-chat--split {
+    display: grid !important;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    justify-items: stretch;
+    gap: 0;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .friends-page--chat .fp-chat__rail {
+    display: flex;
+    flex-direction: column;
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 0;
+    width: auto;
+    height: 100%;
+    overflow: hidden;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--bg) 92%, #1a1012);
+    box-sizing: border-box;
+  }
+
+  .friends-page--chat .fp-chat__rail .fp-convo-list {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0; /* kill .fp-convo-list negative margins that shift left:-2px */
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 0.4rem 0.5rem 0.85rem;
+    gap: 0.2rem;
+    box-sizing: border-box;
+  }
+
+  .friends-page--chat .fp-chat__rail .fp-convo-wrap {
+    padding: 0;
+    margin: 0;
+    border-radius: 12px;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .friends-page--chat .fp-chat__rail .fp-convo {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 0.55rem 0.6rem;
+    border-radius: 12px;
+  }
+
+  .friends-page--chat .fp-chat__rail .fp-convo__meta,
+  .friends-page--chat .fp-chat__rail .fp-convo__preview,
+  .friends-page--chat .fp-chat__rail .fp-convo__top strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .friends-page--chat .fp-chat__rail .fp-convo__watching {
+    margin-top: 0.25rem;
+    max-width: 100%;
+  }
+
+  .friends-page--chat .fp-chat__rail .fp-convo.is-active {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+
+  .friends-page--chat .fp-chat--split > .fp-chat__thread {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    min-width: 0;
+    justify-self: stretch;
+  }
+
+  /* Back is redundant next to the rail */
+  .friends-page--chat .fp-chat--split .fp-chat__back {
+    display: none !important;
+  }
+
+  .friends-page--chat .fp-chat__head,
+  .friends-page--chat .fp-chat__messages,
+  .friends-page--chat .fp-chat__typing,
+  .friends-page--chat .fp-chat__compose {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+  }
+
+  .friends-page--chat .fp-chat__head {
+    padding-inline: 1rem;
+  }
+
+  .friends-page--chat .fp-chat__messages {
+    padding-inline: 1.1rem;
+  }
+
+  .friends-page--chat .fp-chat__compose {
+    position: relative !important;
+    bottom: auto !important;
+    padding-inline: 1rem;
+  }
+
+  .friends-page--chat .fp-msg .fp-bubble {
+    max-width: min(72%, 28rem);
+  }
+}
+
+@media (min-width: 1100px) {
+  .friends-page--chat .fp-chat--split {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) !important;
+  }
+
+  .friends-page--chat .fp-chat__messages {
+    padding-inline: 1.35rem;
+  }
 }
 
 
@@ -2154,9 +2454,15 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
 }
 
 @media (min-width: 768px) {
-  .fp-chat {
+  .fp-chat:not(.fp-chat--thread) {
     grid-template-columns: 200px minmax(0, 1fr);
     align-items: start;
+  }
+
+  /* Don't collapse the open-thread split back to one column */
+  .fp-chat--thread:not(.fp-chat--split) {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
 
   .fp-chat__people {
@@ -2168,7 +2474,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
     width: 100%;
   }
 
-  .fp-chat__thread {
+  .fp-chat:not(.fp-chat--thread) .fp-chat__thread {
     border-top: 0;
     border-left: 1px solid rgba(255, 255, 255, 0.06);
     padding-top: 0;
