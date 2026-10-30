@@ -17,6 +17,44 @@ export function getTvDefaults(movie) {
   };
 }
 
+/** Identity of what's playing — ignore sync token / start time. */
+export function streamContentKey({
+  mediaType,
+  tmdbId,
+  season = 1,
+  episode = 1,
+}) {
+  if (mediaType === "tv" || mediaType === "anime") {
+    return `${mediaType}:${tmdbId}:${Math.max(1, Number(season) || 1)}:${Math.max(
+      1,
+      Number(episode) || 1
+    )}`;
+  }
+  return `${mediaType || "movie"}:${tmdbId}`;
+}
+
+/** CineSrc postMessage API — seek/play without tearing down the iframe. */
+export function sendCineSrcCommand(iframe, command, args = []) {
+  if (!iframe?.contentWindow || typeof command !== "string") return false;
+  try {
+    iframe.contentWindow.postMessage(
+      { type: "cinesrc:command", command, args },
+      "https://cinesrc.st"
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Jump an already-loaded CineSrc player — avoids full media refetch. */
+export function seekCineSrcPlayer(iframe, timeSec = 0) {
+  const t = Math.max(0, Math.floor(Number(timeSec) || 0));
+  const okSeek = sendCineSrcCommand(iframe, "seek", [t]);
+  sendCineSrcCommand(iframe, "play");
+  return okSeek;
+}
+
 export function buildStreamUrl({
   mediaType,
   tmdbId,
@@ -31,7 +69,8 @@ export function buildStreamUrl({
   const e = encodeURIComponent(Math.max(1, Number(episode) || 1));
   const play = autoplay ? "&autoplay=true" : "";
   const t = Math.max(0, Math.floor(Number(startAt) || 0));
-  // CineSrc: jump both watchers to the same timestamp (skip Continue prompt)
+  // Prefer postMessage seek when the iframe is already up. URL `t=` is only for
+  // the first load (guest join mid-stream) — remounting with a new `t=` refetches.
   const seek =
     t > 0 && mediaType !== "anime"
       ? `&t=${encodeURIComponent(t)}&continueprompt=false`

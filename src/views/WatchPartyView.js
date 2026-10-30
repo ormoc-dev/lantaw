@@ -17,6 +17,8 @@ import {
   getTvDefaults,
   renderStreamPlayer,
   renderTvEpisodeControls,
+  seekCineSrcPlayer,
+  streamContentKey,
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
 import { showConfirm, showNotice } from "../lib/appModal.js";
@@ -45,6 +47,8 @@ export async function WatchPartyView(root, params = {}) {
   /** Last sync token the watcher already loaded — ignore heartbeats / UI noise */
   let lastFollowedToken = -1;
   let mountInFlightKey = "";
+  /** Movie/episode currently in the iframe — seek in place when this matches */
+  let lastContentKey = "";
   let lastKnownTimeSec = 0;
   let soloAfterGuestLeft = false;
   let typingHideTimer = null;
@@ -384,6 +388,7 @@ export async function WatchPartyView(root, params = {}) {
             lastAppliedKey = "";
             lastMountedKey = "";
             mountInFlightKey = "";
+            lastContentKey = "";
             lastFollowedToken = -1;
             applyPlayback(party, { force: true });
           } catch (err) {
@@ -399,11 +404,50 @@ export async function WatchPartyView(root, params = {}) {
     playerEl.querySelector(".wparty__paused")?.remove();
   };
 
+  const contentKeyFor = (row = party, pick = null) =>
+    streamContentKey({
+      mediaType,
+      tmdbId: movie.id,
+      season:
+        pick?.season ??
+        row?.playback_season ??
+        (mediaType === "tv" ? getTvDefaults(movie).season : 1),
+      episode:
+        pick?.episode ??
+        row?.playback_episode ??
+        (mediaType === "tv" ? getTvDefaults(movie).episode : 1),
+    });
+
+  /** Same title already loaded → seek/play in place (no CineSrc remount / refetch). */
+  const syncInPlace = (timeSec, { syncKey, contentKey } = {}) => {
+    if (mediaType === "anime") return false;
+    if (!hasLivePlayer()) return false;
+    if (contentKey && lastContentKey && contentKey !== lastContentKey) {
+      return false;
+    }
+    const iframe = playerEl.querySelector("#stream-iframe");
+    if (!seekCineSrcPlayer(iframe, timeSec)) return false;
+    if (syncKey) {
+      lastMountedKey = syncKey;
+      lastAppliedKey = syncKey;
+      mountInFlightKey = "";
+    }
+    if (contentKey) lastContentKey = contentKey;
+    if (party.isGuest) lastFollowedToken = syncTokenOf(party);
+    if (party.isHost) {
+      lastKnownTimeSec = Math.max(0, Math.floor(Number(timeSec) || 0));
+    }
+    waiting.hidden = true;
+    setSyncTipVisible(true);
+    return true;
+  };
+
   const setWaiting = (title, copy) => {
     clearStream();
     stripPlayerDom();
     lastMountedKey = "";
     mountInFlightKey = "";
+    lastContentKey = "";
     waiting.hidden = false;
     waitingTitle.textContent = title;
     waitingCopy.textContent = copy ? ` · ${copy}` : "";
@@ -436,6 +480,12 @@ export async function WatchPartyView(root, params = {}) {
 
   const mountPlayer = (opts = {}) => {
     const key = opts.syncKey || playbackKey(party);
+    const nextContent = contentKeyFor(party, {
+      season: opts.season,
+      episode: opts.episode,
+    });
+    const startAt = Math.max(0, Number(opts.startAt) || 0);
+
     // Same sync identity already loaded (or loading) → never tear down / refetch
     if (
       !opts.force &&
@@ -447,10 +497,22 @@ export async function WatchPartyView(root, params = {}) {
       return;
     }
 
+    // Same movie/episode already up → seek instead of remount (stops media refetch)
+    if (
+      !opts.forceRemount &&
+      hasLivePlayer() &&
+      nextContent &&
+      nextContent === lastContentKey &&
+      syncInPlace(startAt, { syncKey: key, contentKey: nextContent })
+    ) {
+      return;
+    }
+
     // Claim before DOM work so overlapping realtime events can't double-fetch
     mountInFlightKey = key;
     lastMountedKey = key;
     lastAppliedKey = key;
+    lastContentKey = nextContent;
     if (party.isGuest) {
       lastFollowedToken = syncTokenOf(party);
     }
@@ -459,7 +521,6 @@ export async function WatchPartyView(root, params = {}) {
     stripPlayerDom();
     waiting.hidden = true;
     setSyncTipVisible(true);
-    const startAt = Math.max(0, Number(opts.startAt) || 0);
     if (party.isHost) {
       if (startAt <= 0) lastKnownTimeSec = 0;
       else lastKnownTimeSec = Math.max(lastKnownTimeSec, startAt);
@@ -499,6 +560,8 @@ export async function WatchPartyView(root, params = {}) {
     const state = row.playback_state || "idle";
     const key = playbackKey(row);
     const token = syncTokenOf(row);
+    const contentKey = contentKeyFor(row);
+    const startAt = estimatePositionSec(row);
 
     if (state === "playing") {
       // Host loads only via Start / Sync / Continue / episode Load (force).
@@ -527,17 +590,30 @@ export async function WatchPartyView(root, params = {}) {
           lastMountedKey = key;
           return;
         }
+        // New Sync on the same title → seek only (do not remount / refetch media)
+        if (
+          syncInPlace(startAt, { syncKey: key, contentKey })
+        ) {
+          return;
+        }
       } else if (!force && (key === lastMountedKey || key === mountInFlightKey)) {
         lastAppliedKey = key;
+        return;
+      } else if (
+        force &&
+        syncInPlace(startAt, { syncKey: key, contentKey })
+      ) {
         return;
       }
 
       mountPlayer({
         season: row.playback_season || undefined,
         episode: row.playback_episode || undefined,
-        startAt: estimatePositionSec(row),
+        startAt,
         syncKey: key,
         force: Boolean(force),
+        // Episode changes must rebuild the iframe
+        forceRemount: contentKey !== lastContentKey,
       });
       return;
     }
@@ -545,6 +621,7 @@ export async function WatchPartyView(root, params = {}) {
     lastAppliedKey = key;
     lastMountedKey = "";
     mountInFlightKey = "";
+    lastContentKey = "";
     if (party.isGuest) lastFollowedToken = -1;
     setSyncTipVisible(false);
     if (state === "paused") {
@@ -711,14 +788,30 @@ export async function WatchPartyView(root, params = {}) {
           state === "playing" || state === "paused"
             ? estimatePositionSec(party)
             : 0;
+        const nextContent = contentKeyFor(party, pick);
         try {
-          // Only host Start / Sync / Continue fetches media; watchers adopt via realtime.
-          mountPlayer({
-            season: pick.season,
-            episode: pick.episode,
-            startAt: positionSec,
-            force: true,
-          });
+          // Sync while already playing → seek in place (no media refetch).
+          // Start / Continue after pause still mounts once.
+          const seeked =
+            state === "playing" &&
+            syncInPlace(positionSec, {
+              syncKey: playbackKey({
+                ...party,
+                playback_state: "playing",
+                playback_season: pick.season,
+                playback_episode: pick.episode,
+              }),
+              contentKey: nextContent,
+            });
+          if (!seeked) {
+            mountPlayer({
+              season: pick.season,
+              episode: pick.episode,
+              startAt: positionSec,
+              force: true,
+              forceRemount: nextContent !== lastContentKey || !hasLivePlayer(),
+            });
+          }
           const updated = await updateWatchPartyPlayback(partyId, {
             state: "playing",
             bumpSync: true,
@@ -734,6 +827,7 @@ export async function WatchPartyView(root, params = {}) {
           };
           lastAppliedKey = playbackKey(party);
           lastMountedKey = lastAppliedKey;
+          lastContentKey = nextContent;
           mountInFlightKey = "";
           paintBanner();
         } catch (err) {
@@ -760,6 +854,7 @@ export async function WatchPartyView(root, params = {}) {
           };
           lastMountedKey = "";
           mountInFlightKey = "";
+          lastContentKey = "";
           lastFollowedToken = -1;
           paintBanner();
           applyPlayback(party);
