@@ -339,6 +339,41 @@ export async function resolveUserProfile(user) {
 }
 
 /**
+ * Update the signed-in user's display name (profiles + auth metadata).
+ * Email is not editable here.
+ */
+export async function updateDisplayName(rawName) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in to edit your profile");
+
+  const displayName = String(rawName || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!displayName) throw new Error("Enter a name");
+  if (displayName.length < 2) throw new Error("Name must be at least 2 characters");
+  if (displayName.length > 40) throw new Error("Keep names under 40 characters");
+
+  const sb = getSupabase();
+  const { error } = await sb
+    .from("profiles")
+    .update({ display_name: displayName })
+    .eq("id", user.id);
+
+  if (error) throw error;
+
+  // Keep auth metadata in sync for places that read user_metadata
+  try {
+    await sb.auth.updateUser({
+      data: { display_name: displayName, full_name: displayName },
+    });
+  } catch (_) {
+    /* profiles row is source of truth */
+  }
+
+  return displayName;
+}
+
+/**
  * Upload a profile photo to Storage and save URL on profiles.avatar_url.
  * Requires migration 202603260009_profile_avatars.sql
  */

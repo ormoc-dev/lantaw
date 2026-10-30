@@ -1,5 +1,5 @@
 import { getUser } from "../services/authService.js";
-import { getRecentMovies } from "../services/recentService.js";
+import { addRecentMovie, getRecentMovies } from "../services/recentService.js";
 import { getSupabase } from "../lib/supabase.js";
 import {
   createWatchParty,
@@ -17,6 +17,8 @@ import {
   sendFriendRequest,
   sendMessage,
   editMessage,
+  deleteMessageForMe,
+  deleteMessageForEveryone,
   toggleMessageReaction,
   subscribeFriendsRealtime,
   endWatchParty,
@@ -49,10 +51,16 @@ export async function FriendsView(root) {
   }
 
   let tab = "chat";
+  let pendingWatchMedia = null;
   try {
     const fromShorts = sessionStorage.getItem("lantaw-shorts-watch");
     if (fromShorts) {
       tab = "watch";
+      try {
+        pendingWatchMedia = JSON.parse(fromShorts);
+      } catch {
+        pendingWatchMedia = null;
+      }
       sessionStorage.removeItem("lantaw-shorts-watch");
     }
   } catch {
@@ -193,12 +201,16 @@ export async function FriendsView(root) {
   };
 
   const previewLine = (preview) => {
-    if (!preview?.body) return "Tap to say hi";
+    if (!preview?.body && !preview?.deleted_at) return "Tap to say hi";
     const mine = preview.sender_id === me.id;
+    if (preview.deleted_at) {
+      return mine ? "You deleted a message" : "Message deleted";
+    }
     if (parseGifMessage(preview.body)) {
       return mine ? "You: GIF" : "GIF";
     }
     const text = String(preview.body).replace(/\s+/g, " ").trim();
+    if (!text) return "Tap to say hi";
     const clipped = text.length > 64 ? `${text.slice(0, 63)}…` : text;
     return mine ? `You: ${clipped}` : clipped;
   };
@@ -890,7 +902,6 @@ export async function FriendsView(root) {
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
               <button type="button" class="fp-chat__peer" data-chat-back aria-label="Back to chats">
-                ${presenceAvatarHtml(current.other, "fp-avatar--md")}
                 <span class="fp-chat__head-text">
                   <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
                   <span
@@ -1092,7 +1103,8 @@ export async function FriendsView(root) {
             const showAvatar = !mine && !sameNext;
             const showTime = !sameNext;
             const groups = groupReactions(m.reactions);
-            const gifUrl = parseGifMessage(m.body);
+            const deleted = Boolean(m.deleted_at);
+            const gifUrl = deleted ? null : parseGifMessage(m.body);
             const timeLabel = new Date(m.created_at).toLocaleTimeString([], {
               hour: "numeric",
               minute: "2-digit",
@@ -1102,7 +1114,7 @@ export async function FriendsView(root) {
           <div
             class="fp-msg ${mine ? "is-me" : "is-them"} ${cluster}${
               showAvatar ? " has-avatar" : ""
-            }"
+            }${deleted ? " is-deleted" : ""}"
             data-msg-id="${escapeHtml(m.id)}"
             data-msg-mine="${mine ? "1" : "0"}"
           >
@@ -1118,16 +1130,18 @@ export async function FriendsView(root) {
             <div class="fp-msg__stack">
               <div class="fp-bubble ${mine ? "is-me" : ""} ${cluster}${
                 gifUrl ? " is-gif" : ""
-              }">
+              }${deleted ? " is-deleted" : ""}">
                 ${
-                  gifUrl
-                    ? `<img class="fp-bubble__gif" src="${escapeHtml(
-                        gifUrl
-                      )}" alt="GIF" loading="lazy" decoding="async" />`
-                    : `<p class="fp-bubble__text">${escapeHtml(m.body)}</p>`
+                  deleted
+                    ? `<p class="fp-bubble__text fp-bubble__deleted">This message was deleted</p>`
+                    : gifUrl
+                      ? `<img class="fp-bubble__gif" src="${escapeHtml(
+                          gifUrl
+                        )}" alt="GIF" loading="lazy" decoding="async" />`
+                      : `<p class="fp-bubble__text">${escapeHtml(m.body)}</p>`
                 }
                 ${
-                  groups.length
+                  !deleted && groups.length
                     ? `<div class="fp-bubble__reactions" data-react-chips>
                         ${groups
                           .map(
@@ -1153,11 +1167,14 @@ export async function FriendsView(root) {
               ${
                 showTime
                   ? `<time class="fp-msg__time">${escapeHtml(timeLabel)}${
-                      m.edited_at ? " · Edited" : ""
+                      !deleted && m.edited_at ? " · Edited" : ""
                     }</time>`
                   : ""
               }
-              <div class="fp-bubble__tools" hidden>
+              ${
+                deleted
+                  ? ""
+                  : `<div class="fp-bubble__tools" hidden>
                 <div class="fp-react-bar">
                   ${REACTIONS.map(
                     (e) =>
@@ -1166,14 +1183,27 @@ export async function FriendsView(root) {
                       )}" data-emoji="${escapeHtml(e)}" aria-label="React ${e}">${e}</button>`
                   ).join("")}
                 </div>
-                ${
-                  mine && !gifUrl
-                    ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
-                        m.id
-                      )}">Edit</button>`
-                    : ""
-                }
-              </div>
+                <div class="fp-bubble__actions">
+                  ${
+                    mine && !gifUrl
+                      ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
+                          m.id
+                        )}">Edit</button>`
+                      : ""
+                  }
+                  <button type="button" class="fp-bubble__del" data-del-me="${escapeHtml(
+                    m.id
+                  )}">Delete for me</button>
+                  ${
+                    mine
+                      ? `<button type="button" class="fp-bubble__del is-danger" data-del-everyone="${escapeHtml(
+                          m.id
+                        )}">Delete for everyone</button>`
+                      : ""
+                  }
+                </div>
+              </div>`
+              }
             </div>
           </div>`;
           })
@@ -1192,6 +1222,7 @@ export async function FriendsView(root) {
               sender_id: latest.sender_id,
               body: latest.body,
               created_at: latest.created_at,
+              deleted_at: latest.deleted_at || null,
             },
           };
         }
@@ -1267,7 +1298,7 @@ export async function FriendsView(root) {
           e.preventDefault();
           e.stopPropagation();
           const row = editBtn.closest(".fp-msg");
-          const textEl = row?.querySelector(".fp-bubble__text");
+          const textEl = row?.querySelector(".fp-bubble__text:not(.fp-bubble__deleted)");
           const currentBody = textEl?.textContent || "";
           const next = window.prompt("Edit message", currentBody);
           if (next == null) return;
@@ -1280,8 +1311,50 @@ export async function FriendsView(root) {
           return;
         }
 
+        const delMeBtn = t.closest("[data-del-me]");
+        if (delMeBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const ok = await showConfirm({
+            title: "Delete for you?",
+            message: "This removes the message from your chat only. Your friend can still see it.",
+            confirmLabel: "Delete for me",
+            cancelLabel: "Cancel",
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await deleteMessageForMe(delMeBtn.dataset.delMe);
+            await refreshThread();
+          } catch (err) {
+            alert(err.message || "Could not delete");
+          }
+          return;
+        }
+
+        const delAllBtn = t.closest("[data-del-everyone]");
+        if (delAllBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const ok = await showConfirm({
+            title: "Delete for everyone?",
+            message: "This message will be removed for you and your friend.",
+            confirmLabel: "Delete for everyone",
+            cancelLabel: "Cancel",
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await deleteMessageForEveryone(delAllBtn.dataset.delEveryone);
+            await refreshThread();
+          } catch (err) {
+            alert(err.message || "Could not delete");
+          }
+          return;
+        }
+
         const row = t.closest(".fp-msg[data-msg-id]");
-        if (!row || !box.contains(row)) return;
+        if (!row || !box.contains(row) || row.classList.contains("is-deleted")) return;
         // Toggle tools on this message; close others
         box.querySelectorAll(".fp-bubble__tools").forEach((el) => {
           if (!row.contains(el)) el.hidden = true;
@@ -1485,14 +1558,8 @@ export async function FriendsView(root) {
         gifOpen = true;
         gifBtn?.setAttribute("aria-pressed", "true");
         gifBtn?.classList.add("is-on");
-        // Re-measure fixed composer height for message padding
-        const composeH =
-          Math.ceil(composer?.getBoundingClientRect().height || form?.getBoundingClientRect().height || 0) ||
-          58;
-        document.documentElement.style.setProperty(
-          "--friends-compose-h",
-          `${composeH}px`
-        );
+        // Re-pin above keyboard after height change
+        requestAnimationFrame(() => syncChatViewport());
       };
 
       const loadGifs = async (query) => {
@@ -1568,31 +1635,40 @@ export async function FriendsView(root) {
         /* unsupported */
       }
 
-      // Pin compose above the mobile keyboard so typing stays visible.
+      // Pin composer above the mobile keyboard (overlays-content).
       clearChatViewport();
+      const clearComposerPin = () => {
+        chatLockH = 0;
+        chatShell?.style.removeProperty("height");
+        chatShell?.style.removeProperty("max-height");
+        root.style.removeProperty("--friends-chat-vh");
+        root.style.removeProperty("transform");
+        document.documentElement.style.removeProperty("--friends-kb-bottom");
+        form?.style.removeProperty("bottom");
+        composer?.style.removeProperty("bottom");
+        composer?.style.removeProperty("top");
+        composer?.style.removeProperty("transform");
+        if (composeSpacer) composeSpacer.hidden = true;
+      };
+
       const syncChatViewport = () => {
         const vv = window.visualViewport;
         const layoutH = window.innerHeight;
         const visibleH = vv ? vv.height : layoutH;
         const inset = keyboardInset();
         const shrunk = vv ? layoutH - vv.height > 50 : false;
+        // Keep kb mode for the whole focus session — don't drop it while the
+        // keyboard is still animating (inset can be 0 for a few frames).
         const kbOpen =
-          inset > 40 ||
+          inputFocused ||
+          inset > 24 ||
           shrunk ||
-          (inputFocused && vv && vv.height / layoutH < 0.9);
+          (vv && vv.height / layoutH < 0.92);
 
         document.body.classList.toggle("is-friends-chat-kb", kbOpen);
 
         if (!kbOpen) {
-          chatLockH = 0;
-          chatShell?.style.removeProperty("height");
-          chatShell?.style.removeProperty("max-height");
-          root.style.removeProperty("--friends-chat-vh");
-          root.style.removeProperty("transform");
-          document.documentElement.style.removeProperty("--friends-kb-bottom");
-          form?.style.removeProperty("bottom");
-          if (composeSpacer) composeSpacer.hidden = true;
-          // Keep compose height var so mobile message padding clears the fixed bar
+          clearComposerPin();
           const composeH =
             Math.ceil(
               composer?.getBoundingClientRect().height ||
@@ -1611,7 +1687,13 @@ export async function FriendsView(root) {
             Math.round(chatShell.getBoundingClientRect().height) || layoutH;
         }
 
-        // Prefer visual viewport height so the thread fits above the keyboard
+        // Thread fills the visible viewport above the keyboard
+        const composeH =
+          Math.ceil(
+            composer?.getBoundingClientRect().height ||
+              form?.getBoundingClientRect().height ||
+              0
+          ) || 58;
         const chatVh = Math.max(220, Math.round(visibleH));
         root.style.setProperty("--friends-chat-vh", `${chatVh}px`);
         if (chatShell) {
@@ -1623,19 +1705,25 @@ export async function FriendsView(root) {
           "--friends-kb-bottom",
           `${inset}px`
         );
-        // Inline bottom as a hard fallback (some WebViews ignore the CSS var)
-        if (form) form.style.bottom = `${inset}px`;
-
-        const composeH =
-          Math.ceil(
-            composer?.getBoundingClientRect().height ||
-              form?.getBoundingClientRect().height ||
-              0
-          ) || 58;
         document.documentElement.style.setProperty(
           "--friends-compose-h",
           `${composeH}px`
         );
+        // Pin composer so its bottom edge sits on the visual viewport bottom
+        // (works with interactive-widget=overlays-content on Android/iOS).
+        if (composer) {
+          const h = composer.offsetHeight || composeH;
+          if (vv) {
+            const top = Math.round(vv.offsetTop + vv.height - h);
+            composer.style.setProperty("top", `${Math.max(0, top)}px`, "important");
+            composer.style.setProperty("bottom", "auto", "important");
+          } else {
+            composer.style.setProperty("bottom", `${inset}px`, "important");
+            composer.style.setProperty("top", "auto", "important");
+          }
+          composer.style.transform = "none";
+        }
+
         if (composeSpacer) composeSpacer.hidden = false;
 
         lockPageScroll();
@@ -1650,7 +1738,8 @@ export async function FriendsView(root) {
         kbPollTimer = setInterval(() => {
           syncChatViewport();
           ticks += 1;
-          if (ticks >= 16 || (!inputFocused && keyboardInset() < 40)) {
+          // Poll longer — Android keyboards often animate > 800ms
+          if (ticks >= 40 || (!inputFocused && keyboardInset() < 24)) {
             clearInterval(kbPollTimer);
             kbPollTimer = null;
           }
@@ -1667,12 +1756,8 @@ export async function FriendsView(root) {
         window.visualViewport?.removeEventListener("resize", syncChatViewport);
         window.visualViewport?.removeEventListener("scroll", syncChatViewport);
         window.removeEventListener("resize", syncChatViewport);
-        chatShell?.style.removeProperty("height");
-        chatShell?.style.removeProperty("max-height");
-        form?.style.removeProperty("bottom");
-        document.documentElement.style.removeProperty("--friends-kb-bottom");
+        clearComposerPin();
         document.documentElement.style.removeProperty("--friends-compose-h");
-        if (composeSpacer) composeSpacer.hidden = true;
         unsubChatVv = null;
       };
 
@@ -1975,6 +2060,27 @@ export async function FriendsView(root) {
       closeMenus();
       syncSubmit();
     };
+
+    // Pre-fill title when arriving from detail / Shorts “Watch together”
+    if (pendingWatchMedia?.id) {
+      const item = {
+        id: Number(pendingWatchMedia.id),
+        mediaType: pendingWatchMedia.mediaType || "movie",
+        title: pendingWatchMedia.title || "Untitled",
+        poster: pendingWatchMedia.poster || null,
+      };
+      pendingWatchMedia = null;
+      addRecentMovie(item);
+      setMedia(item);
+      if (mediaInput && !recent.length) {
+        mediaInput.disabled = false;
+        mediaInput.placeholder = "Search recent titles";
+      }
+      const msg = panel.querySelector("#watch-msg");
+      if (msg && accepted.length) {
+        msg.textContent = "Title ready — pick a friend to invite.";
+      }
+    }
 
     const renderFriendMenu = (query = "") => {
       const q = query.trim().toLowerCase();

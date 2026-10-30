@@ -44,22 +44,34 @@ export async function getTrendingMovies() {
   return mapList(await tmdb.trending("week"), "movie");
 }
 
+const trailerKeyCache = new Map();
+
 /** Best YouTube trailer/teaser key for Shorts autoplay. */
 export async function getTrailerKey(id, mediaType = "movie") {
   if (!id) return null;
-  try {
-    const data =
-      mediaType === "tv" ? await tmdb.tvVideos(id) : await tmdb.videos(id);
-    const yt = (data.results || []).filter((v) => v.site === "YouTube" && v.key);
-    const pick =
-      yt.find((v) => v.type === "Trailer") ||
-      yt.find((v) => v.type === "Teaser") ||
-      yt.find((v) => v.type === "Clip") ||
-      yt[0];
-    return pick?.key || null;
-  } catch {
-    return null;
-  }
+  const cacheKey = `${mediaType}:${id}`;
+  if (trailerKeyCache.has(cacheKey)) return trailerKeyCache.get(cacheKey);
+
+  const pending = (async () => {
+    try {
+      const data =
+        mediaType === "tv" ? await tmdb.tvVideos(id) : await tmdb.videos(id);
+      const yt = (data.results || []).filter((v) => v.site === "YouTube" && v.key);
+      const pick =
+        yt.find((v) => v.type === "Trailer") ||
+        yt.find((v) => v.type === "Teaser") ||
+        yt.find((v) => v.type === "Clip") ||
+        yt[0];
+      return pick?.key || null;
+    } catch {
+      return null;
+    }
+  })();
+
+  trailerKeyCache.set(cacheKey, pending);
+  const key = await pending;
+  trailerKeyCache.set(cacheKey, Promise.resolve(key));
+  return key;
 }
 
 export async function getTopRatedMovies(page = 1) {

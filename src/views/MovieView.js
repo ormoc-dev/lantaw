@@ -1,5 +1,6 @@
 import { getMovieDetail, getTvDetail } from "../services/movieService.js";
 import { addRecentMovie } from "../services/recentService.js";
+import { getUser } from "../services/authService.js";
 import { linkTo } from "../router/index.js";
 import {
   addToWatchlist,
@@ -314,6 +315,32 @@ async function renderMediaDetail(root, params, mediaType) {
       });
       tools.appendChild(trailerBtn);
     }
+
+    const togetherBtn = document.createElement("button");
+    togetherBtn.type = "button";
+    togetherBtn.className = "detail__chip detail__chip--together";
+    togetherBtn.innerHTML = `<span aria-hidden="true">◎</span><span>Watch together</span>`;
+    togetherBtn.addEventListener("click", async () => {
+      const user = await getUser();
+      if (!user) {
+        location.hash = linkTo("/login");
+        return;
+      }
+      const item = {
+        id: Number(id),
+        mediaType,
+        title: movie.title || "Untitled",
+        poster: movie.poster || null,
+      };
+      addRecentMovie(item);
+      try {
+        sessionStorage.setItem("lantaw-shorts-watch", JSON.stringify(item));
+      } catch {
+        /* ignore */
+      }
+      location.hash = linkTo("/friends");
+    });
+    tools.appendChild(togetherBtn);
 
     const watchBtn = document.createElement("button");
     watchBtn.type = "button";

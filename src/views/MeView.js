@@ -2,6 +2,7 @@ import {
   getSession,
   resolveUserProfile,
   signOut,
+  updateDisplayName,
   uploadProfileAvatar,
 } from "../services/authService.js";
 import { listWatchlist } from "../services/watchlistService.js";
@@ -12,6 +13,7 @@ const ICONS = {
   watchlist: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H17a2 2 0 0 1 2 2v13.2l-6.2-3.4a2 2 0 0 0-1.9 0L5 19.2V5.5z"/></svg>`,
   friends: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 11a3.5 3.5 0 1 0-3.4-4.2M8.5 13A3.5 3.5 0 1 0 8.5 6M4 19c.4-2.6 2.4-4 4.5-4s4.1 1.4 4.5 4M13 15c1.8 0 3.6 1 4 3"/></svg>`,
   recent: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.2l2.8 1.6"/></svg>`,
+  pen: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 5.5 18 11M4 20l1.2-5.3L16.4 3.5a2 2 0 0 1 2.8 0l1.3 1.3a2 2 0 0 1 0 2.8L9.3 18.8 4 20Z"/></svg>`,
 };
 
 export async function MeView(root) {
@@ -53,11 +55,22 @@ export async function MeView(root) {
                     initial
                   )}</span>`
             }
-            <span class="me-identity__avatar-edit">Photo</span>
+            <span class="me-identity__avatar-edit" aria-hidden="true">${ICONS.pen}</span>
           </button>
           <input type="file" id="me-avatar-file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
           <div class="me-identity__copy">
-            <h2>${escapeHtml(name || "Account")}</h2>
+            <div class="me-identity__name-row">
+              <h2 id="me-display-name">${escapeHtml(name || "Account")}</h2>
+              <button
+                type="button"
+                class="me-identity__edit"
+                id="me-edit-profile"
+                aria-label="Edit profile name"
+                title="Edit name"
+              >
+                ${ICONS.pen}
+              </button>
+            </div>
             ${email ? `<p class="me-identity__email">${escapeHtml(email)}</p>` : ""}
           </div>
         </header>
@@ -101,6 +114,36 @@ export async function MeView(root) {
         </div>
       </section>
 
+      <div class="me-modal" id="edit-profile-modal" hidden>
+        <div class="me-modal__backdrop" data-close-edit-profile></div>
+        <div
+          class="me-modal__dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-profile-title"
+        >
+          <h2 id="edit-profile-title">Edit profile</h2>
+          <p class="me-modal__lead">Change how your name appears to friends. Email can’t be edited.</p>
+          <label class="me-modal__label" for="me-name-input">Display name</label>
+          <input
+            class="me-modal__input"
+            id="me-name-input"
+            type="text"
+            maxlength="40"
+            autocomplete="nickname"
+            enterkeyhint="done"
+            value="${escapeHtml(name || "")}"
+          />
+          <p class="me-modal__error" id="me-name-error" hidden></p>
+          <div class="me-modal__actions">
+            <button type="button" class="me-modal__btn" data-close-edit-profile>Cancel</button>
+            <button type="button" class="me-modal__btn me-modal__btn--accent" id="me-name-save">
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="me-modal" id="signout-modal" hidden>
         <div class="me-modal__backdrop" data-close-signout></div>
         <div
@@ -124,14 +167,88 @@ export async function MeView(root) {
     </div>
   `;
 
+  const editProfileModal = root.querySelector("#edit-profile-modal");
   const signOutModal = root.querySelector("#signout-modal");
+  const nameInput = root.querySelector("#me-name-input");
+  const nameError = root.querySelector("#me-name-error");
+  const nameSave = root.querySelector("#me-name-save");
+  const nameHeading = root.querySelector("#me-display-name");
+
+  const anyMeModalOpen = () =>
+    Boolean(
+      (editProfileModal && !editProfileModal.hidden) ||
+        (signOutModal && !signOutModal.hidden)
+    );
+
+  const openEditProfile = () => {
+    if (nameError) {
+      nameError.hidden = true;
+      nameError.textContent = "";
+    }
+    if (nameInput) {
+      nameInput.value = nameHeading?.textContent?.trim() || name || "";
+    }
+    editProfileModal.hidden = false;
+    document.body.classList.add("me-modal-open");
+    requestAnimationFrame(() => {
+      nameInput?.focus();
+      nameInput?.select();
+    });
+  };
+
+  const closeEditProfile = () => {
+    editProfileModal.hidden = true;
+    if (!anyMeModalOpen()) document.body.classList.remove("me-modal-open");
+  };
+
+  const saveDisplayName = async () => {
+    if (!nameSave || !nameInput) return;
+    if (nameError) {
+      nameError.hidden = true;
+      nameError.textContent = "";
+    }
+    nameSave.disabled = true;
+    nameSave.textContent = "Saving…";
+    try {
+      const next = await updateDisplayName(nameInput.value);
+      if (nameHeading) nameHeading.textContent = next;
+      const avatarFallback = root.querySelector(
+        "#me-avatar-img.me-identity__avatar--fallback"
+      );
+      if (avatarFallback) {
+        avatarFallback.textContent = next.slice(0, 1).toUpperCase();
+      }
+      closeEditProfile();
+    } catch (err) {
+      if (nameError) {
+        nameError.hidden = false;
+        nameError.textContent = err.message || "Could not update name";
+      }
+    } finally {
+      nameSave.disabled = false;
+      nameSave.textContent = "Save";
+    }
+  };
+
+  root.querySelector("#me-edit-profile")?.addEventListener("click", openEditProfile);
+  editProfileModal?.querySelectorAll("[data-close-edit-profile]").forEach((el) => {
+    el.addEventListener("click", closeEditProfile);
+  });
+  nameSave?.addEventListener("click", saveDisplayName);
+  nameInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveDisplayName();
+    }
+  });
+
   const openSignOutModal = () => {
     signOutModal.hidden = false;
     document.body.classList.add("me-modal-open");
   };
   const closeSignOutModal = () => {
     signOutModal.hidden = true;
-    document.body.classList.remove("me-modal-open");
+    if (!anyMeModalOpen()) document.body.classList.remove("me-modal-open");
   };
 
   root.querySelector("#sign-out")?.addEventListener("click", openSignOutModal);

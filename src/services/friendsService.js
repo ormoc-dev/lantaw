@@ -220,52 +220,106 @@ export async function listChatPreviews(friendshipIds = []) {
   const ids = [...new Set((friendshipIds || []).filter(Boolean))];
   if (!ids.length) return {};
 
-  await requireUser();
+  const user = await requireUser();
   const { data, error } = await getSupabase()
     .from("friend_messages")
-    .select("id, friendship_id, sender_id, body, created_at")
+    .select(
+      "id, friendship_id, sender_id, body, created_at, deleted_at, hides:friend_message_hides(user_id)"
+    )
     .in("friendship_id", ids)
     .order("created_at", { ascending: false })
     .limit(Math.min(500, ids.length * 8));
 
-  if (error) throw error;
+  if (error) {
+    if (/deleted_at|friend_message_hides|column|schema cache/i.test(error.message || "")) {
+      const { data: basic, error: basicErr } = await getSupabase()
+        .from("friend_messages")
+        .select("id, friendship_id, sender_id, body, created_at")
+        .in("friendship_id", ids)
+        .order("created_at", { ascending: false })
+        .limit(Math.min(500, ids.length * 8));
+      if (basicErr) throw basicErr;
+      const map = {};
+      for (const m of basic || []) {
+        if (!map[m.friendship_id]) map[m.friendship_id] = m;
+      }
+      return map;
+    }
+    throw error;
+  }
 
   const map = {};
   for (const m of data || []) {
-    if (!map[m.friendship_id]) map[m.friendship_id] = m;
+    const hides = Array.isArray(m.hides) ? m.hides : [];
+    if (hides.some((h) => h.user_id === user.id)) continue;
+    if (map[m.friendship_id]) continue;
+    const { hides: _h, ...rest } = m;
+    map[m.friendship_id] = rest;
   }
   return map;
 }
 
 export async function listMessages(friendshipId) {
-  await requireUser();
+  const user = await requireUser();
   const { data, error } = await getSupabase()
     .from("friend_messages")
     .select(
-      "id, friendship_id, sender_id, body, created_at, edited_at, reactions:friend_message_reactions(id, user_id, emoji)"
+      "id, friendship_id, sender_id, body, created_at, edited_at, deleted_at, reactions:friend_message_reactions(id, user_id, emoji), hides:friend_message_hides(user_id)"
     )
     .eq("friendship_id", friendshipId)
     .order("created_at", { ascending: true })
     .limit(200);
 
   if (error) {
-    // Fallback if migration 011 not applied yet
-    if (/edited_at|friend_message_reactions|column|schema cache/i.test(error.message || "")) {
+    // Fallback if newer migrations not applied yet
+    if (
+      /edited_at|deleted_at|friend_message_reactions|friend_message_hides|column|schema cache/i.test(
+        error.message || ""
+      )
+    ) {
       const { data: basic, error: basicErr } = await getSupabase()
         .from("friend_messages")
-        .select("id, friendship_id, sender_id, body, created_at")
+        .select(
+          "id, friendship_id, sender_id, body, created_at, edited_at, reactions:friend_message_reactions(id, user_id, emoji)"
+        )
         .eq("friendship_id", friendshipId)
         .order("created_at", { ascending: true })
         .limit(200);
-      if (basicErr) throw basicErr;
-      return (basic || []).map((m) => ({ ...m, edited_at: null, reactions: [] }));
+      if (basicErr) {
+        const { data: bare, error: bareErr } = await getSupabase()
+          .from("friend_messages")
+          .select("id, friendship_id, sender_id, body, created_at")
+          .eq("friendship_id", friendshipId)
+          .order("created_at", { ascending: true })
+          .limit(200);
+        if (bareErr) throw bareErr;
+        return (bare || []).map((m) => ({
+          ...m,
+          edited_at: null,
+          deleted_at: null,
+          reactions: [],
+        }));
+      }
+      return (basic || []).map((m) => ({
+        ...m,
+        deleted_at: null,
+        reactions: Array.isArray(m.reactions) ? m.reactions : [],
+      }));
     }
     throw error;
   }
-  return (data || []).map((m) => ({
-    ...m,
-    reactions: Array.isArray(m.reactions) ? m.reactions : [],
-  }));
+  return (data || [])
+    .filter((m) => {
+      const hides = Array.isArray(m.hides) ? m.hides : [];
+      return !hides.some((h) => h.user_id === user.id);
+    })
+    .map((m) => {
+      const { hides, ...rest } = m;
+      return {
+        ...rest,
+        reactions: Array.isArray(m.reactions) ? m.reactions : [],
+      };
+    });
 }
 
 export async function sendMessage(friendshipId, body) {
@@ -298,7 +352,8 @@ export async function editMessage(messageId, body) {
     .update({ body: text, edited_at: new Date().toISOString() })
     .eq("id", messageId)
     .eq("sender_id", user.id)
-    .select("id, friendship_id, sender_id, body, created_at, edited_at")
+    .is("deleted_at", null)
+    .select("id, friendship_id, sender_id, body, created_at, edited_at, deleted_at")
     .maybeSingle();
 
   if (error) {
@@ -310,6 +365,52 @@ export async function editMessage(messageId, body) {
     throw error;
   }
   if (!data) throw new Error("Could not edit this message");
+  return data;
+}
+
+/** Hide a message only for the current user. */
+export async function deleteMessageForMe(messageId) {
+  const user = await requireUser();
+  const { error } = await getSupabase().from("friend_message_hides").upsert(
+    { message_id: messageId, user_id: user.id },
+    { onConflict: "message_id,user_id" }
+  );
+  if (error) {
+    if (/friend_message_hides|schema cache|does not exist/i.test(error.message || "")) {
+      throw new Error(
+        "Delete needs a DB update — run supabase/migrations/202603300002_friend_message_delete.sql"
+      );
+    }
+    throw error;
+  }
+  return true;
+}
+
+/** Soft-delete a message for everyone (sender only). */
+export async function deleteMessageForEveryone(messageId) {
+  const user = await requireUser();
+  const { data, error } = await getSupabase()
+    .from("friend_messages")
+    .update({
+      deleted_at: new Date().toISOString(),
+      body: "",
+      edited_at: null,
+    })
+    .eq("id", messageId)
+    .eq("sender_id", user.id)
+    .is("deleted_at", null)
+    .select("id, friendship_id, sender_id, body, created_at, edited_at, deleted_at")
+    .maybeSingle();
+
+  if (error) {
+    if (/deleted_at|policy|permission|RLS|column|check/i.test(error.message || "")) {
+      throw new Error(
+        "Delete needs a DB update — run supabase/migrations/202603300002_friend_message_delete.sql"
+      );
+    }
+    throw error;
+  }
+  if (!data) throw new Error("Could not delete this message");
   return data;
 }
 
