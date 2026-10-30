@@ -58,6 +58,9 @@ export async function WatchPartyView(root, params = {}) {
 
   root.classList.add("view--watch-party");
   document.body.classList.add("is-watch-party");
+  // Bottom nav must not cover the room chat compose bar on phones
+  document.body.classList.remove("has-mobile-nav");
+  document.querySelector(".bottom-nav")?.setAttribute("hidden", "");
 
   const teardownChrome = () => {
     root.classList.remove("view--watch-party");
@@ -69,16 +72,21 @@ export async function WatchPartyView(root, params = {}) {
     if (party?.isHost && lastKnownTimeSec > 0) {
       return Math.floor(lastKnownTimeSec);
     }
+    // playback_position_sec = playhead at playback_started_at (see updateWatchPartyPlayback)
     const base = Math.max(0, Number(row?.playback_position_sec) || 0);
     if (row?.playback_state === "playing" && row?.playback_started_at) {
       const elapsed =
         (Date.now() - new Date(row.playback_started_at).getTime()) / 1000;
-      if (Number.isFinite(elapsed) && elapsed > 0) {
+      if (Number.isFinite(elapsed) && elapsed > 0 && elapsed < 12 * 3600) {
         return Math.floor(base + elapsed);
       }
     }
     return Math.floor(base);
   };
+
+  /** Host Sync checkpoint only — do not coast ahead (avoids watcher scrub/FF). */
+  const syncCheckpointSec = (row = party) =>
+    Math.max(0, Math.floor(Number(row?.playback_position_sec) || 0));
 
   root.innerHTML = `
     <section class="wparty">
@@ -577,8 +585,8 @@ export async function WatchPartyView(root, params = {}) {
         return;
       }
 
-      // Watcher: fetch ONLY when host bumps Sync (new token) or episode changes.
-      // Never gate on hasLivePlayer() — it flickers and re-fetched on every heartbeat.
+      // Watcher: act ONLY when host bumps Sync (new token) or episode changes.
+      // Heartbeats must never seek/remount — that scrubbed the watcher forward ("FF").
       if (party.isGuest && !force) {
         if (key === lastMountedKey || key === mountInFlightKey) {
           lastAppliedKey = key;
@@ -590,9 +598,12 @@ export async function WatchPartyView(root, params = {}) {
           lastMountedKey = key;
           return;
         }
-        // New Sync on the same title → seek only (do not remount / refetch media)
+        // New Sync, same title → jump to host checkpoint only (no coast / no remount)
         if (
-          syncInPlace(startAt, { syncKey: key, contentKey })
+          syncInPlace(syncCheckpointSec(row), {
+            syncKey: key,
+            contentKey,
+          })
         ) {
           return;
         }
@@ -601,6 +612,7 @@ export async function WatchPartyView(root, params = {}) {
         return;
       } else if (
         force &&
+        party.isHost &&
         syncInPlace(startAt, { syncKey: key, contentKey })
       ) {
         return;
@@ -609,6 +621,7 @@ export async function WatchPartyView(root, params = {}) {
       mountPlayer({
         season: row.playback_season || undefined,
         episode: row.playback_episode || undefined,
+        // First join: coast from host clock. Later Syncs seek via syncInPlace above.
         startAt,
         syncKey: key,
         force: Boolean(force),

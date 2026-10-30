@@ -583,11 +583,10 @@ export async function updateWatchPartyPlayback(
     playback_by: user.id,
   };
 
-  // Only reset the play clock on a real Start/Sync/resume — not on position heartbeats
-  if (
-    state === "playing" &&
-    (bumpSync || current.playback_state !== "playing")
-  ) {
+  // position_sec is always "playhead at playback_started_at".
+  // Reset the clock on Start/Sync/resume AND on position heartbeats — otherwise
+  // estimate = position + elapsed double-counts and watchers jump ahead / "FF".
+  if (state === "playing") {
     patch.playback_started_at = new Date().toISOString();
   }
   if (season != null) patch.playback_season = Math.max(1, Number(season) || 1);

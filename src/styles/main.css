@@ -6928,6 +6928,13 @@ body.is-watch-party {
   max-height: 100dvh;
 }
 
+/* Room chat must stay tappable — never leave the bottom nav over the compose bar */
+body.is-watch-party .bottom-nav {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
 .wparty {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -6937,7 +6944,7 @@ body.is-watch-party {
   height: 100dvh;
   max-height: 100dvh;
   margin: 0;
-  padding: 0 0 max(0.55rem, env(safe-area-inset-bottom));
+  padding: 0 0 max(0.85rem, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -6949,8 +6956,9 @@ body.is-watch-party {
   box-sizing: border-box;
 }
 
-body.has-mobile-nav .wparty {
-  padding-bottom: var(--bottom-nav-clearance);
+/* Nav is hidden in this room — only clear the home-indicator, not nav height */
+body.has-mobile-nav.is-watch-party .wparty {
+  padding-bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
   height: 100dvh;
   max-height: 100dvh;
 }
@@ -7692,7 +7700,23 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.35rem;
   align-items: center;
-  padding: 0.2rem 0.1rem 0.1rem;
+  padding: 0.35rem 0.1rem 0.45rem;
+}
+
+@media (max-width: 767px) {
+  body.is-watch-party:not(.is-wparty-kb) .wparty__composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    margin-top: auto;
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  body.is-watch-party:not(.is-wparty-kb) .wparty__compose {
+    padding: 0.45rem 0.15rem 0.55rem;
+  }
 }
 
 .wparty__compose input {
