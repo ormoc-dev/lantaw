@@ -48,11 +48,15 @@ export function buildStreamUrl({
   return `https://cinesrc.st/embed/movie/${id}?color=${ACCENT}&back=close${play}${seek}`;
 }
 
-function iframeAttrs(streamUrl) {
+function iframeAttrs(streamUrl, { deferSrc = false } = {}) {
   // No allow-popups — block third-party pop-unders. First-click shield in streamGuard.
+  // deferSrc: keep about:blank until the user taps Sync / unlock (no media fetch yet).
+  const srcAttr = deferSrc
+    ? `src="about:blank" data-src="${streamUrl}"`
+    : `src="${streamUrl}"`;
   return `
           id="stream-iframe"
-          src="${streamUrl}"
+          ${srcAttr}
           title="Streaming player"
           frameborder="0"
           style="border: 0; border-radius: 12px;"
@@ -102,6 +106,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
   const readOnly = Boolean(opts.readOnly);
   const autoplay = Boolean(opts.autoplay);
   const omitControls = Boolean(opts.omitControls);
+  const deferSrc = Boolean(opts.deferSrc);
   const startAt = Math.max(0, Number(opts.startAt) || 0);
 
   if (mediaType === "tv") {
@@ -129,7 +134,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
       }
       <div class="detail__player-frame detail__player-frame--embed">
         <iframe
-          ${iframeAttrs(streamUrl)}
+          ${iframeAttrs(streamUrl, { deferSrc })}
         ></iframe>
       </div>
     `;
@@ -144,7 +149,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
   return `
     <div class="detail__player-frame detail__player-frame--embed">
       <iframe
-        ${iframeAttrs(streamUrl)}
+        ${iframeAttrs(streamUrl, { deferSrc })}
       ></iframe>
     </div>
   `;

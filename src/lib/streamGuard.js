@@ -49,6 +49,11 @@ export function attachStreamAdGuard(
       if (unlocked) return;
       unlocked = true;
       lastInteract = Date.now();
+      // Load the embed only on Sync / tap — never prefetch behind the shield
+      if (iframe?.dataset?.src) {
+        iframe.src = iframe.dataset.src;
+        delete iframe.dataset.src;
+      }
       shield.classList.add("is-leaving");
       window.setTimeout(() => shield.remove(), 280);
       iframe?.classList.remove("is-guarded");
@@ -59,6 +64,10 @@ export function attachStreamAdGuard(
       e.stopPropagation();
       unlock();
     });
+  } else if (iframe?.dataset?.src) {
+    // Host path with deferSrc (rare): still honor data-src without a shield
+    iframe.src = iframe.dataset.src;
+    delete iframe.dataset.src;
   }
 
   const safeExit = (e) => {

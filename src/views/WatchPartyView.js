@@ -273,6 +273,9 @@ export async function WatchPartyView(root, params = {}) {
     typingEl.hidden = false;
   };
 
+  const hasPlayerShell = () =>
+    Boolean(playerEl.querySelector("#stream-iframe"));
+
   const hasLivePlayer = () => {
     const iframe = playerEl.querySelector("#stream-iframe");
     const src = iframe?.getAttribute("src") || "";
@@ -425,10 +428,13 @@ export async function WatchPartyView(root, params = {}) {
     const startAt = Math.max(0, Number(opts.startAt) || 0);
     if (startAt <= 0) lastKnownTimeSec = 0;
     else lastKnownTimeSec = Math.max(lastKnownTimeSec, startAt);
+    // Guests defer the iframe src until they tap Sync — no media fetch before that.
+    const deferSrc = Boolean(opts.deferSrc);
     const html = renderStreamPlayer(movie, mediaType, {
       ...opts,
       startAt,
       autoplay: true,
+      deferSrc,
       // Episode picker lives in the host toolbar, not above the iframe
       omitControls: true,
       readOnly: !party.isHost,
@@ -437,13 +443,13 @@ export async function WatchPartyView(root, params = {}) {
 
     const frame = playerEl.querySelector(".detail__player-frame--embed");
     if (frame) {
-      // Host Play is a user gesture → skip shield so stream starts immediately.
-      // Guest loads from realtime (no gesture) → one tap unlocks + starts playback.
+      // Host Start/Sync is a user gesture → load immediately (no shield).
+      // Guest waits behind a Sync shield; src stays blank until they tap.
       cleanupStreamGuard = attachStreamAdGuard(frame, {
-        skipShield: Boolean(party.isHost),
+        skipShield: Boolean(party.isHost) && !deferSrc,
         showExit: false,
-        shieldLabel: "Host started — tap to play",
-        shieldHint: "One tap syncs you with the room",
+        shieldLabel: "Tap to sync",
+        shieldHint: "Loads the stream when you’re ready — nothing fetches before this",
       });
     }
 
@@ -458,18 +464,36 @@ export async function WatchPartyView(root, params = {}) {
     if (!row || row.status !== "active") return;
     const state = row.playback_state || "idle";
     const key = playbackKey(row);
-    if (!force && key === lastAppliedKey) return;
-    lastAppliedKey = key;
 
     if (state === "playing") {
-      // Use elapsed estimate — raw playback_position_sec is often still 0
+      // Host never auto-fetches from realtime — only Start / Sync / Continue /
+      // episode Load (force) under an explicit click.
+      if (party.isHost && !force) {
+        lastAppliedKey = key;
+        if (!hasLivePlayer()) {
+          setSyncTipVisible(false);
+          setWaiting(
+            "Tap Sync to load",
+            "Nothing streams until you press it"
+          );
+        }
+        return;
+      }
+
+      if (!force && key === lastAppliedKey && hasPlayerShell()) return;
+      lastAppliedKey = key;
+
+      // Guest: mount shell + Sync shield, defer media until they tap
       mountPlayer({
         season: row.playback_season || undefined,
         episode: row.playback_episode || undefined,
         startAt: estimatePositionSec(row),
+        deferSrc: Boolean(party.isGuest),
       });
       return;
     }
+
+    lastAppliedKey = key;
     setSyncTipVisible(false);
     if (state === "paused") {
       setWaiting(
@@ -632,11 +656,12 @@ export async function WatchPartyView(root, params = {}) {
             ? estimatePositionSec(party)
             : 0;
         try {
-          // Start under the Play click gesture so the host stream begins immediately.
+          // Only Start / Sync / Continue fetches media for the host.
           mountPlayer({
             season: pick.season,
             episode: pick.episode,
             startAt: positionSec,
+            deferSrc: false,
           });
           const updated = await updateWatchPartyPlayback(partyId, {
             state: "playing",
@@ -1304,11 +1329,14 @@ export async function WatchPartyView(root, params = {}) {
   const resumeAfterBackground = () => {
     if (!party || party.status !== "active") return;
     if ((party.playback_state || "idle") !== "playing") return;
+    // Don't auto-refetch for guest — they must tap Sync again after a long blur.
+    if (party.isGuest && !hasLivePlayer()) return;
     const startAt = estimatePositionSec(party);
     mountPlayer({
       season: party.playback_season || undefined,
       episode: party.playback_episode || undefined,
       startAt,
+      deferSrc: Boolean(party.isGuest),
     });
     lastAppliedKey = playbackKey(party);
   };

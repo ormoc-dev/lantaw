@@ -1498,8 +1498,8 @@ export async function FriendsView(root) {
       const composer = panel.querySelector("#chat-composer");
       const composeSpacer = panel.querySelector("#chat-compose-spacer");
       const chatShell = panel.querySelector(".fp-chat--thread");
-      let chatLockH = 0;
       let inputFocused = false;
+      let focusBaselineH = 0;
       let kbPollTimer = null;
       let gifOpen = false;
       let gifTimer = 0;
@@ -1619,14 +1619,13 @@ export async function FriendsView(root) {
       const keyboardInset = () => {
         const vv = window.visualViewport;
         if (!vv) return 0;
-        // Space covered by the keyboard (layout bottom → visual bottom)
+        // Layout bottom → visual bottom (keyboard / browser chrome overlay)
         return Math.max(
           0,
           Math.round(window.innerHeight - vv.height - vv.offsetTop)
         );
       };
 
-      // Prefer overlay keyboard so visualViewport reports the real inset
       try {
         if (navigator.virtualKeyboard) {
           navigator.virtualKeyboard.overlaysContent = true;
@@ -1635,10 +1634,16 @@ export async function FriendsView(root) {
         /* unsupported */
       }
 
-      // Pin composer above the mobile keyboard (overlays-content).
       clearChatViewport();
+
+      const measureComposeH = () =>
+        Math.ceil(
+          composer?.getBoundingClientRect().height ||
+            form?.getBoundingClientRect().height ||
+            0
+        ) || 58;
+
       const clearComposerPin = () => {
-        chatLockH = 0;
         chatShell?.style.removeProperty("height");
         chatShell?.style.removeProperty("max-height");
         root.style.removeProperty("--friends-chat-vh");
@@ -1654,74 +1659,54 @@ export async function FriendsView(root) {
       const syncChatViewport = () => {
         const vv = window.visualViewport;
         const layoutH = window.innerHeight;
-        const visibleH = vv ? vv.height : layoutH;
         const inset = keyboardInset();
-        const shrunk = vv ? layoutH - vv.height > 50 : false;
-        // Keep kb mode for the whole focus session — don't drop it while the
-        // keyboard is still animating (inset can be 0 for a few frames).
-        const kbOpen =
-          inputFocused ||
-          inset > 24 ||
-          shrunk ||
-          (vv && vv.height / layoutH < 0.92);
+        const baseline = focusBaselineH || layoutH;
+        const shrinkFromFocus = vv
+          ? Math.max(0, Math.round(baseline - vv.height))
+          : 0;
+        // Real keyboard only — never treat URL-bar chrome as the keypad
+        const kbVisible = inset > 48 || shrinkFromFocus > 120;
+        const kbMode = inputFocused || kbVisible;
 
-        document.body.classList.toggle("is-friends-chat-kb", kbOpen);
+        document.body.classList.toggle("is-friends-chat-kb", kbMode);
 
-        if (!kbOpen) {
-          clearComposerPin();
-          const composeH =
-            Math.ceil(
-              composer?.getBoundingClientRect().height ||
-                form?.getBoundingClientRect().height ||
-                0
-            ) || 58;
-          document.documentElement.style.setProperty(
-            "--friends-compose-h",
-            `${composeH}px`
-          );
-          return;
-        }
-
-        if (!chatLockH && chatShell) {
-          chatLockH =
-            Math.round(chatShell.getBoundingClientRect().height) || layoutH;
-        }
-
-        // Thread fills the visible viewport above the keyboard
-        const composeH =
-          Math.ceil(
-            composer?.getBoundingClientRect().height ||
-              form?.getBoundingClientRect().height ||
-              0
-          ) || 58;
-        const chatVh = Math.max(220, Math.round(visibleH));
-        root.style.setProperty("--friends-chat-vh", `${chatVh}px`);
-        if (chatShell) {
-          chatShell.style.height = `${chatVh}px`;
-          chatShell.style.maxHeight = `${chatVh}px`;
-        }
-
-        document.documentElement.style.setProperty(
-          "--friends-kb-bottom",
-          `${inset}px`
-        );
+        const composeH = measureComposeH();
         document.documentElement.style.setProperty(
           "--friends-compose-h",
           `${composeH}px`
         );
-        // Pin composer so its bottom edge sits on the visual viewport bottom
-        // (works with interactive-widget=overlays-content on Android/iOS).
+
+        if (!kbMode) {
+          clearComposerPin();
+          return;
+        }
+
+        // Ride the keyboard: bottom = inset. While focused but keypad still
+        // rising, sit at 0 (nav is hidden) so the bar isn't left mid-screen.
+        const bottom = kbVisible ? inset : 0;
+        document.documentElement.style.setProperty(
+          "--friends-kb-bottom",
+          `${bottom}px`
+        );
+
         if (composer) {
-          const h = composer.offsetHeight || composeH;
-          if (vv) {
-            const top = Math.round(vv.offsetTop + vv.height - h);
-            composer.style.setProperty("top", `${Math.max(0, top)}px`, "important");
-            composer.style.setProperty("bottom", "auto", "important");
-          } else {
-            composer.style.setProperty("bottom", `${inset}px`, "important");
-            composer.style.setProperty("top", "auto", "important");
-          }
+          composer.style.setProperty("bottom", `${bottom}px`, "important");
+          composer.style.setProperty("top", "auto", "important");
           composer.style.transform = "none";
+        }
+
+        // Only shrink the chat shell once the keyboard is actually up
+        if (kbVisible && vv) {
+          const chatVh = Math.max(220, Math.round(vv.height));
+          root.style.setProperty("--friends-chat-vh", `${chatVh}px`);
+          if (chatShell) {
+            chatShell.style.height = `${chatVh}px`;
+            chatShell.style.maxHeight = `${chatVh}px`;
+          }
+        } else {
+          root.style.removeProperty("--friends-chat-vh");
+          chatShell?.style.removeProperty("height");
+          chatShell?.style.removeProperty("max-height");
         }
 
         if (composeSpacer) composeSpacer.hidden = false;
@@ -1738,8 +1723,7 @@ export async function FriendsView(root) {
         kbPollTimer = setInterval(() => {
           syncChatViewport();
           ticks += 1;
-          // Poll longer — Android keyboards often animate > 800ms
-          if (ticks >= 40 || (!inputFocused && keyboardInset() < 24)) {
+          if (ticks >= 50 || (!inputFocused && keyboardInset() < 24)) {
             clearInterval(kbPollTimer);
             kbPollTimer = null;
           }
@@ -1758,6 +1742,7 @@ export async function FriendsView(root) {
         window.removeEventListener("resize", syncChatViewport);
         clearComposerPin();
         document.documentElement.style.removeProperty("--friends-compose-h");
+        document.body.classList.remove("is-friends-chat-kb");
         unsubChatVv = null;
       };
 
@@ -1875,15 +1860,13 @@ export async function FriendsView(root) {
 
       input?.addEventListener("focus", () => {
         inputFocused = true;
-        // Lift immediately so the bar isn’t trapped under the rising keyboard
+        const vv = window.visualViewport;
+        focusBaselineH = Math.round(vv?.height || window.innerHeight);
         document.body.classList.add("is-friends-chat-kb");
-        if (chatShell && !chatLockH) {
-          chatLockH = Math.round(chatShell.getBoundingClientRect().height);
-        }
         lockPageScroll();
         syncChatViewport();
         startKbPoll();
-        [80, 160, 280, 450, 700].forEach((ms) => {
+        [60, 140, 260, 420, 650, 900].forEach((ms) => {
           setTimeout(() => {
             if (!inputFocused) return;
             syncChatViewport();
@@ -1895,11 +1878,12 @@ export async function FriendsView(root) {
 
       input?.addEventListener("blur", () => {
         inputFocused = false;
+        focusBaselineH = 0;
         stopTypingPing();
         setTimeout(() => {
           if (inputFocused) return;
           syncChatViewport();
-        }, 120);
+        }, 160);
       });
 
       return;
