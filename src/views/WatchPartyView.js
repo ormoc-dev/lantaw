@@ -19,6 +19,7 @@ import {
   renderTvEpisodeControls,
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
+import { showConfirm } from "../lib/appModal.js";
 
 /**
  * Dedicated watch-together room.
@@ -152,26 +153,38 @@ export async function WatchPartyView(root, params = {}) {
 
   root.innerHTML = `
     <section class="wparty">
-      <header class="wparty__bar">
+      <div class="wparty__stage">
         <a class="wparty__back" href="${linkTo("/friends")}" aria-label="Back to Friends">←</a>
-        <div class="wparty__titles">
-          <h1>${escapeHtml(party.title || movie.title || "Room")}</h1>
-          <p class="muted wparty__meta" id="wp-meta"></p>
+        <div class="wparty__player" id="wp-player">
+          <p class="muted wparty__waiting" id="wp-waiting">
+            <span id="wp-waiting-title">Waiting…</span>
+            <span id="wp-waiting-copy"></span>
+          </p>
         </div>
-      </header>
-
-      <div class="wparty__controls" id="wp-banner"></div>
-
-      <div class="wparty__player" id="wp-player">
-        <p class="muted wparty__waiting" id="wp-waiting">
-          <span id="wp-waiting-title">Waiting…</span>
-          <span id="wp-waiting-copy"></span>
-        </p>
       </div>
 
-      <p class="wparty__sync-tip" id="wp-sync-tip" hidden>
-        Behind? Ask in chat — host presses Sync.
-      </p>
+      <div class="wparty__info">
+        <div class="wparty__titles">
+          <div class="wparty__titles-main">
+            <h1>${escapeHtml(party.title || movie.title || "Room")}</h1>
+            <p class="muted wparty__meta" id="wp-meta"></p>
+          </div>
+          <button
+            type="button"
+            class="wparty__hint"
+            id="wp-sync-hint"
+            hidden
+            aria-label="Watch tip"
+            aria-expanded="false"
+            aria-controls="wp-sync-tip"
+            title="Watch tip"
+          >i</button>
+          <p class="wparty__sync-tip" id="wp-sync-tip" hidden role="tooltip">
+            Behind? Ask in chat — host can tap Sync.
+          </p>
+        </div>
+        <div class="wparty__controls" id="wp-banner"></div>
+      </div>
 
       <div class="wparty__chat">
         <header class="wparty__chat-head">
@@ -194,12 +207,17 @@ export async function WatchPartyView(root, params = {}) {
             type="text"
             name="body"
             maxlength="280"
-            placeholder="Type a message…"
+            placeholder="Aa"
             aria-label="Type a message"
             enterkeyhint="send"
             inputmode="text"
+            autocomplete="off"
           />
-          <button type="submit" class="btn btn--primary">Send</button>
+          <button type="submit" class="wparty__send" id="wp-send" aria-label="Send">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.4 11.2 20.2 3.8c.7-.3 1.4.4 1.1 1.1L13.9 21.7c-.3.8-1.5.7-1.7-.1l-1.7-7.1-7.1-1.7c-.8-.2-.9-1.4-.1-1.7Z" fill="currentColor"/>
+            </svg>
+          </button>
         </form>
       </div>
     </section>
@@ -213,6 +231,7 @@ export async function WatchPartyView(root, params = {}) {
   const waitingTitle = root.querySelector("#wp-waiting-title");
   const waitingCopy = root.querySelector("#wp-waiting-copy");
   const syncTip = root.querySelector("#wp-sync-tip");
+  const syncHint = root.querySelector("#wp-sync-hint");
   const comments = root.querySelector("#wp-comments");
   const typingEl = root.querySelector("#wp-typing");
   const typingLabel = root.querySelector("#wp-typing-label");
@@ -235,9 +254,36 @@ export async function WatchPartyView(root, params = {}) {
     return Boolean(src && src !== "about:blank");
   };
 
-  const setSyncTipVisible = (visible) => {
-    if (syncTip) syncTip.hidden = !visible;
+  const closeSyncTip = () => {
+    if (syncTip) syncTip.hidden = true;
+    syncHint?.setAttribute("aria-expanded", "false");
+    syncHint?.classList.remove("is-open");
   };
+
+  const setSyncTipVisible = (visible) => {
+    // Only show the info icon while playing — tip opens on tap
+    if (syncHint) syncHint.hidden = !visible;
+    if (!visible) closeSyncTip();
+  };
+
+  syncHint?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!syncTip || syncHint.hidden) return;
+    const open = syncTip.hidden;
+    syncTip.hidden = !open;
+    syncHint.setAttribute("aria-expanded", open ? "true" : "false");
+    syncHint.classList.toggle("is-open", open);
+  });
+
+  const onDocClickCloseTip = (e) => {
+    if (!syncTip || syncTip.hidden) return;
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.closest("#wp-sync-hint") || t.closest("#wp-sync-tip")) return;
+    closeSyncTip();
+  };
+  document.addEventListener("click", onDocClickCloseTip);
 
   const playbackKey = (row) =>
     `${row.playback_state || "idle"}:${Number(row.playback_sync_token || 0)}:${
@@ -353,6 +399,7 @@ export async function WatchPartyView(root, params = {}) {
     setSyncTipVisible(true);
     const startAt = Math.max(0, Number(opts.startAt) || 0);
     if (startAt <= 0) lastKnownTimeSec = 0;
+    else lastKnownTimeSec = Math.max(lastKnownTimeSec, startAt);
     const html = renderStreamPlayer(movie, mediaType, {
       ...opts,
       startAt,
@@ -369,21 +416,9 @@ export async function WatchPartyView(root, params = {}) {
       // Guest loads from realtime (no gesture) → one tap unlocks + starts playback.
       cleanupStreamGuard = attachStreamAdGuard(frame, {
         skipShield: Boolean(party.isHost),
+        showExit: false,
         shieldLabel: "Host started — tap to play",
         shieldHint: "One tap syncs you with the room",
-        exitCorner: "end",
-        exitLabel: "Close",
-        onSafeExit: () => {
-          clearStream();
-          stripPlayerDom();
-          setSyncTipVisible(false);
-          setWaiting(
-            "Player closed",
-            party.isHost
-              ? "Press Play when you’re ready again."
-              : "Waiting for the host to press Play."
-          );
-        },
       });
     }
 
@@ -402,10 +437,11 @@ export async function WatchPartyView(root, params = {}) {
     lastAppliedKey = key;
 
     if (state === "playing") {
+      // Use elapsed estimate — raw playback_position_sec is often still 0
       mountPlayer({
         season: row.playback_season || undefined,
         episode: row.playback_episode || undefined,
-        startAt: Number(row.playback_position_sec) || 0,
+        startAt: estimatePositionSec(row),
       });
       return;
     }
@@ -413,13 +449,13 @@ export async function WatchPartyView(root, params = {}) {
     if (state === "paused") {
       setWaiting(
         "Paused",
-        party.isHost ? "Press Play to resume" : "Host will resume"
+        party.isHost ? "Tap Continue to keep watching together" : "Host will continue soon"
       );
       return;
     }
     setWaiting(
-      party.isHost ? "Press Play to start" : "Waiting for host",
-      party.isHost ? `${otherName} follows you` : ""
+      party.isHost ? "Tap Start" : "Waiting for host",
+      party.isHost ? `${otherName} will follow you` : ""
     );
   };
 
@@ -494,7 +530,7 @@ export async function WatchPartyView(root, params = {}) {
             alert(err.message);
           }
         });
-        setWaiting("Waiting for guest", "then press Play");
+        setWaiting("Waiting for guest", "then tap Start");
       } else {
         if (metaEl) metaEl.textContent = `${otherName} invited you`;
         banner.innerHTML = `
@@ -525,15 +561,38 @@ export async function WatchPartyView(root, params = {}) {
     if (party.isHost) {
       const state = party.playback_state || "idle";
       if (metaEl) metaEl.textContent = `Host · ${otherName} follows`;
+      const playLabel =
+        state === "paused" ? "Continue" : state === "playing" ? "Sync" : "Start";
+      const playHint =
+        state === "paused"
+          ? "Continue watching together from where you paused"
+          : state === "playing"
+            ? "Jump both of you to the same moment in the video"
+            : "Start the video for everyone in this room";
       banner.innerHTML = `
-        <div class="wparty__playback" role="group" aria-label="Playback">
-          <button type="button" class="btn btn--primary" id="wp-play">${
-            state === "paused" ? "Resume" : state === "playing" ? "Sync" : "Play"
-          }</button>
-          <button type="button" class="fp-btn" id="wp-pause" ${
-            state === "playing" ? "" : "hidden"
-          }>Pause</button>
-          <button type="button" class="fp-btn" id="wp-end">End</button>
+        <div class="wparty__playback" role="group" aria-label="Watch together controls">
+          <button
+            type="button"
+            class="btn btn--primary"
+            id="wp-play"
+            title="${escapeHtml(playHint)}"
+            aria-label="${escapeHtml(playHint)}"
+          >${escapeHtml(playLabel)}</button>
+          <button
+            type="button"
+            class="fp-btn"
+            id="wp-pause"
+            title="Pause the video for everyone"
+            aria-label="Pause for everyone"
+            ${state === "playing" ? "" : "hidden"}
+          >Pause</button>
+          <button
+            type="button"
+            class="fp-btn"
+            id="wp-end"
+            title="Close this watch party for everyone"
+            aria-label="End watch party"
+          >End</button>
         </div>
         <div class="wparty__episode" id="wp-episode" hidden></div>
       `;
@@ -573,7 +632,7 @@ export async function WatchPartyView(root, params = {}) {
           setSyncTipVisible(false);
           setWaiting(
             "Couldn’t start",
-            err.message || "Try Play again"
+            err.message || "Try Start again"
           );
           if (playBtn) playBtn.disabled = false;
         }
@@ -597,6 +656,15 @@ export async function WatchPartyView(root, params = {}) {
         }
       });
       banner.querySelector("#wp-end")?.addEventListener("click", async () => {
+        const ok = await showConfirm({
+          title: "End watch party?",
+          message:
+            "This closes the room for everyone and clears the chat. You can’t undo this.",
+          confirmLabel: "End party",
+          cancelLabel: "Keep watching",
+          danger: true,
+        });
+        if (!ok) return;
         try {
           // Deletes the room + chat so it won’t linger in the Friends lobby.
           await finishPartyAndLeave();
@@ -607,8 +675,14 @@ export async function WatchPartyView(root, params = {}) {
     } else {
       if (metaEl) metaEl.textContent = `Watching · ${otherName} controls`;
       banner.innerHTML = `
-        <div class="wparty__playback">
-          <button type="button" class="fp-btn" id="wp-leave">Leave</button>
+        <div class="wparty__playback" role="group" aria-label="Watch together controls">
+          <button
+            type="button"
+            class="fp-btn"
+            id="wp-leave"
+            title="Leave this watch party"
+            aria-label="Leave watch party"
+          >Leave</button>
         </div>
       `;
       banner.querySelector("#wp-leave")?.addEventListener("click", async () => {
@@ -776,9 +850,12 @@ export async function WatchPartyView(root, params = {}) {
   }
 
   const composeInput = form.querySelector('input[name="body"]');
+  const composeSend = form.querySelector("#wp-send");
   const composeSpacer = root.querySelector("#wp-compose-spacer");
   const wpartyShell = root.querySelector(".wparty");
   let wpartyLockH = 0;
+  let inputFocused = false;
+  let kbPollTimer = null;
 
   const lockPageScroll = () => {
     window.scrollTo(0, 0);
@@ -787,23 +864,55 @@ export async function WatchPartyView(root, params = {}) {
     if (root.scrollTop) root.scrollTop = 0;
   };
 
-  // Pin compose to the visible viewport above the keyboard so you can see typing.
+  const keyboardInset = () => {
+    const vv = window.visualViewport;
+    if (!vv) return 0;
+    // Space covered by the keyboard (layout bottom → visual bottom)
+    return Math.max(
+      0,
+      Math.round(window.innerHeight - vv.height - vv.offsetTop)
+    );
+  };
+
+  // Prefer overlay keyboard so visualViewport reports the real inset
+  try {
+    if (navigator.virtualKeyboard) {
+      navigator.virtualKeyboard.overlaysContent = true;
+    }
+  } catch {
+    /* unsupported */
+  }
+
+  const syncSendReady = () => {
+    if (!composeSend) return;
+    const hasText = Boolean(String(composeInput?.value || "").trim());
+    composeSend.disabled = !hasText;
+    composeSend.classList.toggle("is-ready", hasText);
+  };
+  syncSendReady();
+
+  // Pin compose above the mobile keyboard so typing stays visible.
   const syncWpartyKb = () => {
     const vv = window.visualViewport;
     const layoutH = window.innerHeight;
     const visibleH = vv ? vv.height : layoutH;
-    const offsetTop = vv ? vv.offsetTop : 0;
-    const covered = Math.max(0, Math.round(layoutH - (offsetTop + visibleH)));
-    const kbOpen = covered > 80 || offsetTop > 40;
+    const inset = keyboardInset();
+    const shrunk = vv ? layoutH - vv.height > 50 : false;
+    const kbOpen =
+      inset > 40 ||
+      shrunk ||
+      (inputFocused && vv && vv.height / layoutH < 0.92) ||
+      (inputFocused && inset > 0);
 
-    document.body.classList.toggle("is-wparty-kb", kbOpen);
+    document.body.classList.toggle("is-wparty-kb", kbOpen || inputFocused);
 
-    if (!kbOpen) {
+    if (!kbOpen && !inputFocused) {
       wpartyLockH = 0;
       wpartyShell?.style.removeProperty("height");
       wpartyShell?.style.removeProperty("max-height");
       document.documentElement.style.removeProperty("--wparty-kb-bottom");
       document.documentElement.style.removeProperty("--wparty-compose-h");
+      form?.style.removeProperty("bottom");
       if (composeSpacer) composeSpacer.hidden = true;
       return;
     }
@@ -812,18 +921,23 @@ export async function WatchPartyView(root, params = {}) {
       wpartyLockH =
         Math.round(wpartyShell.getBoundingClientRect().height) || layoutH;
     }
-    if (wpartyShell && wpartyLockH) {
-      wpartyShell.style.height = `${wpartyLockH}px`;
-      wpartyShell.style.maxHeight = `${wpartyLockH}px`;
+
+    // Fit the room to the visible viewport so chat isn't trapped under the keyboard
+    const roomH = Math.max(260, Math.round(visibleH));
+    if (wpartyShell) {
+      wpartyShell.style.height = `${roomH}px`;
+      wpartyShell.style.maxHeight = `${roomH}px`;
     }
 
-    // Sit the input on top of the keyboard (visual viewport bottom).
+    const bottom = Math.max(inset, inputFocused && inset < 40 ? 0 : inset);
     document.documentElement.style.setProperty(
       "--wparty-kb-bottom",
-      `${covered}px`
+      `${bottom}px`
     );
+    // Inline bottom as a hard fallback (some WebViews ignore the CSS var)
+    form.style.bottom = `${bottom}px`;
 
-    const composeH = Math.ceil(form.getBoundingClientRect().height) || 48;
+    const composeH = Math.ceil(form.getBoundingClientRect().height) || 52;
     document.documentElement.style.setProperty(
       "--wparty-compose-h",
       `${composeH}px`
@@ -831,6 +945,22 @@ export async function WatchPartyView(root, params = {}) {
     if (composeSpacer) composeSpacer.hidden = false;
 
     lockPageScroll();
+    requestAnimationFrame(() => {
+      comments.scrollTop = comments.scrollHeight;
+    });
+  };
+
+  const startKbPoll = () => {
+    clearInterval(kbPollTimer);
+    let ticks = 0;
+    kbPollTimer = setInterval(() => {
+      syncWpartyKb();
+      ticks += 1;
+      if (ticks >= 20 || (!inputFocused && keyboardInset() < 40)) {
+        clearInterval(kbPollTimer);
+        kbPollTimer = null;
+      }
+    }, 50);
   };
 
   const stopTypingPing = () => {
@@ -894,6 +1024,7 @@ export async function WatchPartyView(root, params = {}) {
     if (party.status !== "active" && party.status !== "invited") return;
     stopTypingPing();
     form.body.value = "";
+    syncSendReady();
     comments.querySelector(".wparty__chat-empty")?.remove();
     try {
       const msg = await sendWatchPartyMessage(partyId, text);
@@ -906,32 +1037,104 @@ export async function WatchPartyView(root, params = {}) {
   });
 
   composeInput?.addEventListener("input", () => {
+    syncSendReady();
     if (String(composeInput.value || "").trim()) pulseTyping();
     else stopTypingPing();
   });
 
   composeInput?.addEventListener("focus", () => {
-    // Freeze height before the keyboard animation resizes the viewport.
+    inputFocused = true;
+    // Lift immediately so the bar isn’t trapped under the rising keyboard
+    document.body.classList.add("is-wparty-kb");
     if (wpartyShell && !wpartyLockH) {
       wpartyLockH = Math.round(wpartyShell.getBoundingClientRect().height);
     }
     lockPageScroll();
-    [40, 120, 240, 400].forEach((ms) => {
+    syncWpartyKb();
+    startKbPoll();
+    [80, 160, 280, 450, 700].forEach((ms) => {
       window.setTimeout(() => {
+        if (!inputFocused) return;
         syncWpartyKb();
         lockPageScroll();
+        comments.scrollTop = comments.scrollHeight;
       }, ms);
     });
   });
 
   composeInput?.addEventListener("blur", () => {
+    inputFocused = false;
     stopTypingPing();
-    window.setTimeout(syncWpartyKb, 80);
+    window.setTimeout(() => {
+      if (inputFocused) return;
+      syncWpartyKb();
+    }, 120);
   });
 
   window.visualViewport?.addEventListener("resize", syncWpartyKb);
   window.visualViewport?.addEventListener("scroll", syncWpartyKb);
   window.addEventListener("resize", syncWpartyKb);
+
+  // Mobile freezes/reloads embeds when switching apps. We can't keep the
+  // iframe playing in the background, but we can resume at the right time.
+  let backgroundedAt = 0;
+  const persistHostPosition = () => {
+    if (!party?.isHost || party.status !== "active") return;
+    if ((party.playback_state || "idle") !== "playing") return;
+    const pos = estimatePositionSec(party);
+    if (pos <= 0) return;
+    lastKnownTimeSec = pos;
+    updateWatchPartyPlayback(partyId, {
+      state: "playing",
+      bumpSync: false,
+      positionSec: pos,
+      season: party.playback_season,
+      episode: party.playback_episode,
+    })
+      .then((updated) => {
+        if (!updated) return;
+        party = {
+          ...party,
+          ...updated,
+          isHost: true,
+          isGuest: false,
+        };
+      })
+      .catch(() => {});
+  };
+
+  const resumeAfterBackground = () => {
+    if (!party || party.status !== "active") return;
+    if ((party.playback_state || "idle") !== "playing") return;
+    const startAt = estimatePositionSec(party);
+    mountPlayer({
+      season: party.playback_season || undefined,
+      episode: party.playback_episode || undefined,
+      startAt,
+    });
+    lastAppliedKey = playbackKey(party);
+  };
+
+  const onVisibility = () => {
+    if (document.visibilityState === "hidden") {
+      backgroundedAt = Date.now();
+      persistHostPosition();
+      return;
+    }
+    const awayMs = backgroundedAt ? Date.now() - backgroundedAt : 0;
+    backgroundedAt = 0;
+    // Brief blurs (notification shade) — leave the player alone
+    if (awayMs < 1200) return;
+    resumeAfterBackground();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pagehide", persistHostPosition);
+
+  // Soft heartbeat so a return-from-background seek has a fresher checkpoint
+  const positionHeartbeat = window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    persistHostPosition();
+  }, 45000);
 
   paintBanner();
   await hydrateComments();
@@ -1014,6 +1217,12 @@ export async function WatchPartyView(root, params = {}) {
     unmount() {
       stopTypingPing();
       window.clearTimeout(typingHideTimer);
+      clearInterval(kbPollTimer);
+      kbPollTimer = null;
+      clearInterval(positionHeartbeat);
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("click", onDocClickCloseTip);
+      window.removeEventListener("pagehide", persistHostPosition);
       partySub?.stop?.();
       unsubTime?.();
       window.visualViewport?.removeEventListener("resize", syncWpartyKb);
@@ -1022,6 +1231,7 @@ export async function WatchPartyView(root, params = {}) {
       document.body.classList.remove("is-wparty-kb");
       wpartyShell?.style.removeProperty("height");
       wpartyShell?.style.removeProperty("max-height");
+      form?.style.removeProperty("bottom");
       document.documentElement.style.removeProperty("--wparty-kb-bottom");
       document.documentElement.style.removeProperty("--wparty-compose-h");
       if (composeSpacer) composeSpacer.hidden = true;

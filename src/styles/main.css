@@ -6237,17 +6237,23 @@ body.is-watch-party {
 
 .wparty {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
-  gap: 0.45rem;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0.35rem;
   width: 100%;
-  max-width: 920px;
+  max-width: none;
   height: 100dvh;
   max-height: 100dvh;
-  margin: 0 auto;
-  padding: max(0.5rem, env(safe-area-inset-top)) 0.85rem
-    max(0.55rem, env(safe-area-inset-bottom));
+  margin: 0;
+  padding: 0 0 max(0.55rem, env(safe-area-inset-bottom));
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.wparty__info,
+.wparty__chat {
+  padding-inline: max(0.85rem, env(safe-area-inset-left))
+    max(0.85rem, env(safe-area-inset-right));
+  box-sizing: border-box;
 }
 
 body.has-mobile-nav .wparty {
@@ -6275,23 +6281,28 @@ body.is-wparty-kb .wparty {
 
 body.is-wparty-kb .wparty__compose {
   position: fixed;
-  left: 50%;
-  right: auto;
+  left: 0;
+  right: 0;
   bottom: var(--wparty-kb-bottom, 0px);
   z-index: 80;
-  width: min(920px, 100%);
-  max-width: 920px;
-  transform: translateX(-50%);
+  width: 100%;
+  max-width: none;
+  transform: none;
   margin: 0;
-  padding: 0.45rem max(0.85rem, env(safe-area-inset-left))
-    max(0.45rem, env(safe-area-inset-bottom))
+  padding: 0.4rem max(0.85rem, env(safe-area-inset-left))
+    max(0.4rem, env(safe-area-inset-bottom))
     max(0.85rem, env(safe-area-inset-right));
   box-sizing: border-box;
   background: color-mix(in srgb, var(--bg) 96%, transparent);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px 14px 0 0;
   box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.4);
+}
+
+body.is-wparty-kb.has-mobile-nav .wparty {
+  padding-bottom: 0;
 }
 
 .wparty__compose-spacer {
@@ -6308,25 +6319,68 @@ body.is-wparty-kb .wparty__compose {
   margin: 2rem 0.5rem;
 }
 
-.wparty__bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.55rem;
-  align-items: center;
+.wparty__stage {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  background: #000;
 }
 
 .wparty__back {
-  color: var(--text);
-  text-decoration: none;
-  font-size: 1.25rem;
+  position: absolute;
+  top: max(0.35rem, env(safe-area-inset-top));
+  left: max(0.35rem, env(safe-area-inset-left));
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(8, 4, 6, 0.7);
+  color: #fff;
+  font-size: 0.85rem;
   line-height: 1;
-  padding: 0.25rem 0.15rem;
+  text-decoration: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.wparty__back:hover,
+.wparty__back:focus-visible {
+  background: color-mix(in srgb, var(--accent) 55%, rgba(8, 4, 6, 0.85));
+  outline: none;
+}
+
+.wparty__info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem 0.75rem;
+  align-items: center;
+  min-width: 0;
+  padding-top: 0.35rem;
+}
+
+.wparty__titles {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.wparty__titles-main {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .wparty__titles h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.1rem, 4vw, 1.4rem);
+  font-size: clamp(0.95rem, 3.4vw, 1.2rem);
   letter-spacing: -0.03em;
   line-height: 1.2;
   overflow: hidden;
@@ -6335,37 +6389,120 @@ body.is-wparty-kb .wparty__compose {
 }
 
 .wparty__meta {
-  margin: 0.1rem 0 0;
-  font-size: 0.78rem;
+  margin: 0.12rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wparty__hint {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 0.1rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wparty__hint:hover,
+.wparty__hint:focus-visible,
+.wparty__hint.is-open {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
+  outline: none;
+}
+
+.wparty__hint[hidden] {
+  display: none !important;
 }
 
 .wparty__controls {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.35rem;
   min-width: 0;
+  justify-items: end;
+}
+
+@media (max-width: 639px) {
+  .wparty__info {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    align-items: stretch;
+  }
+
+  .wparty__controls {
+    justify-items: stretch;
+  }
 }
 
 .wparty__playback {
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
-  gap: 0.35rem;
+  gap: 0.3rem;
   min-width: 0;
 }
 
 .wparty__playback .btn,
 .wparty__playback .fp-btn {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
-  min-height: 2.35rem;
-  padding-inline: 0.55rem;
-  font-size: 0.88rem;
+  min-height: 2.1rem;
+  padding-inline: 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.1;
   text-align: center;
   justify-content: center;
+  white-space: nowrap;
 }
 
 .wparty__playback .btn--primary {
-  flex: 1.15 1 0;
+  flex: 0 1 auto;
+}
+
+@media (max-width: 639px) {
+  .wparty__info {
+    padding-top: 0.2rem;
+    gap: 0.3rem;
+  }
+
+  .wparty__playback {
+    flex-wrap: nowrap;
+    width: 100%;
+    gap: 0.25rem;
+  }
+
+  .wparty__playback .btn,
+  .wparty__playback .fp-btn {
+    flex: 1 1 0;
+    min-height: 1.9rem;
+    height: 1.9rem;
+    padding-block: 0;
+    padding-inline: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 650;
+    border-radius: 9px;
+    white-space: nowrap;
+  }
+
+  .wparty__playback .btn--primary {
+    flex: 1.15 1 0;
+  }
 }
 
 .wparty__playback .fp-btn[hidden] {
@@ -6415,17 +6552,6 @@ body.is-wparty-kb .wparty__compose {
 }
 
 @media (max-width: 380px) {
-  .wparty__playback {
-    gap: 0.3rem;
-  }
-
-  .wparty__playback .btn,
-  .wparty__playback .fp-btn {
-    min-height: 2.2rem;
-    font-size: 0.82rem;
-    padding-inline: 0.4rem;
-  }
-
   .wparty__episode .stream-controls {
     grid-template-columns: minmax(0, 1fr) minmax(3.25rem, 4rem) auto;
     gap: 0.3rem;
@@ -6456,22 +6582,54 @@ body.is-wparty-kb .wparty__compose {
 
 .wparty__player {
   display: grid;
-  gap: 0.35rem;
+  gap: 0;
+  min-width: 0;
   min-height: 0;
+  width: 100%;
+  margin: 0;
 }
 
+.wparty__player .detail__player-frame,
 .wparty__player .detail__player-frame--embed {
+  width: 100%;
+  max-width: none;
   aspect-ratio: 16 / 9;
-  max-height: min(40vh, 340px);
-  border-radius: 10px;
+  max-height: min(36vh, 420px);
+  border-radius: 0 !important;
   overflow: hidden;
   background: #000;
 }
 
+.wparty__player .detail__player-frame iframe,
+.wparty__player iframe {
+  border-radius: 0 !important;
+}
+
+@media (max-width: 639px) {
+  .wparty__player .detail__player-frame,
+  .wparty__player .detail__player-frame--embed {
+    max-height: min(28vh, 220px);
+  }
+}
+
+@media (min-width: 900px) {
+  .wparty__player .detail__player-frame,
+  .wparty__player .detail__player-frame--embed {
+    max-height: min(42vh, 520px);
+  }
+}
+
 .wparty__waiting {
-  margin: 0.35rem 0;
+  margin: 0;
+  padding: 1.25rem 0.85rem;
+  min-height: min(28vh, 180px);
+  display: grid;
+  place-content: center;
+  gap: 0.2rem;
+  text-align: center;
   font-size: 0.85rem;
   line-height: 1.35;
+  background: #0a0608;
 }
 
 .wparty__waiting[hidden] {
@@ -6479,14 +6637,20 @@ body.is-wparty-kb .wparty__compose {
 }
 
 .wparty__sync-tip {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  z-index: 8;
   margin: 0;
-  padding: 0.28rem 0.45rem;
-  border-radius: 8px;
+  width: min(16.5rem, calc(100vw - 2rem));
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
   border: 1px solid rgba(255, 10, 67, 0.22);
-  background: rgba(255, 10, 67, 0.08);
+  background: color-mix(in srgb, var(--bg) 94%, #2a1016);
   color: var(--muted, #b9a8ad);
   font-size: 0.7rem;
-  line-height: 1.25;
+  line-height: 1.3;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
 }
 
 .wparty__sync-tip[hidden] {
@@ -6540,7 +6704,7 @@ body.is-wparty-kb .wparty__compose {
 
 .wparty__messages {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.28rem;
   align-content: start;
   min-height: 0;
   height: 100%;
@@ -6553,13 +6717,13 @@ body.is-wparty-kb .wparty__compose {
 
 .wparty__chat-empty {
   margin: 0.65rem 0.15rem;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .wparty__msg {
   display: flex;
   align-items: flex-end;
-  gap: 0.35rem;
+  gap: 0.28rem;
   max-width: 100%;
   min-width: 0;
 }
@@ -6572,51 +6736,65 @@ body.is-wparty-kb .wparty__compose {
   flex: 0 0 auto;
 }
 
+.wparty__msg .fp-avatar,
+.wparty__msg .wparty__msg-avatar {
+  width: 1.35rem;
+  height: 1.35rem;
+  font-size: 0.58rem;
+}
+
 .wparty__bubble {
   cursor: pointer;
-  max-width: min(78%, 15.5rem);
-  padding: 0.35rem 0.55rem 0.3rem;
-  border-radius: 12px 12px 12px 4px;
+  max-width: min(72%, 12.5rem);
+  padding: 0.22rem 0.45rem 0.2rem !important;
+  border-radius: 10px 10px 10px 3px;
+  box-shadow: none;
+}
+
+.wparty__bubble.is-me {
+  box-shadow: none;
 }
 
 .wparty__bubble .fp-bubble__reactions {
-  margin-top: 0.25rem;
+  margin-top: 0.15rem;
+  bottom: -0.55rem;
 }
 
 .wparty__bubble .fp-react-chip {
-  min-height: 1.25rem;
-  padding: 0.05rem 0.32rem;
-  font-size: 0.68rem;
+  min-height: 1.1rem;
+  padding: 0.02rem 0.28rem;
+  font-size: 0.62rem;
 }
 
 .wparty__bubble .fp-react-pick {
-  width: 1.7rem;
-  height: 1.7rem;
-  font-size: 0.9rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  font-size: 0.78rem;
 }
 
 .wparty__bubble .fp-bubble__tools {
-  margin-top: 0.3rem;
+  margin-top: 0.2rem;
 }
 
 .wparty__msg.is-me .wparty__bubble {
-  border-radius: 12px 12px 4px 12px;
+  border-radius: 10px 10px 3px 10px;
 }
 
 .wparty__bubble .fp-bubble__text {
-  font-size: 0.82rem;
-  line-height: 1.35;
+  font-size: 0.74rem !important;
+  line-height: 1.25;
 }
 
 .wparty__bubble time {
-  margin-top: 0.12rem;
-  font-size: 0.62rem;
+  margin-top: 0.06rem;
+  font-size: 0.56rem;
+  opacity: 0.85;
 }
 
 .wparty__bubble-name {
   display: block;
-  margin-bottom: 0.08rem;
-  font-size: 0.65rem;
+  margin-bottom: 0.04rem;
+  font-size: 0.58rem;
   font-weight: 700;
   color: var(--accent-strong);
 }
@@ -6679,10 +6857,10 @@ body.is-wparty-kb .wparty__compose {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
-  border-radius: 12px;
-  padding: 0.5rem 0.8rem;
+  border-radius: 999px;
+  padding: 0.5rem 0.9rem;
   font: inherit;
-  font-size: 16px;
+  font-size: 16px; /* avoid iOS focus zoom */
 }
 
 .wparty__compose input:focus {
@@ -6690,12 +6868,54 @@ body.is-wparty-kb .wparty__compose {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-.wparty__compose .btn--primary {
-  border-radius: 12px;
-  min-height: 2.35rem;
-  padding-inline: 0.9rem;
-  font-weight: 700;
-  font-size: 0.88rem;
+.wparty__send {
+  appearance: none;
+  width: 2.45rem;
+  height: 2.45rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 88%, #ff5a7a),
+    var(--accent)
+  );
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent);
+  transition: transform 0.15s var(--ease), opacity 0.15s ease;
+}
+
+.wparty__send:hover {
+  transform: scale(1.04);
+}
+
+.wparty__send:active {
+  transform: scale(0.96);
+}
+
+.wparty__send:disabled {
+  opacity: 0.38;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+}
+
+.wparty__send.is-ready:not(:disabled) {
+  opacity: 1;
+}
+
+.wparty__send svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  display: block;
+  margin-left: 0.1rem;
 }
 
 /* —— Video call overlay (WebRTC) —— */

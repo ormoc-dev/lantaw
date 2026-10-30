@@ -12,6 +12,7 @@ export function attachStreamAdGuard(
   {
     onSafeExit,
     skipShield = false,
+    showExit = true,
     shieldLabel = "Tap to play",
     shieldHint = "Blocks pop-up ads on the first click",
     exitCorner = "start",
@@ -24,6 +25,7 @@ export function attachStreamAdGuard(
   let unlocked = Boolean(skipShield);
   let lastInteract = 0;
   let shield = null;
+  let exitBtn = null;
 
   // Solo watch / guest sync — host Play already starts under a user gesture.
   if (!skipShield) {
@@ -59,21 +61,9 @@ export function attachStreamAdGuard(
     });
   }
 
-  // Detail: cover embed ←. Watch party: compact Close chip on the right.
-  const exitBtn = document.createElement("button");
-  exitBtn.type = "button";
-  exitBtn.className = `stream-exit${
-    exitCorner === "end" ? " stream-exit--end" : ""
-  }`;
-  exitBtn.setAttribute("aria-label", "Close player");
-  exitBtn.innerHTML = `<span aria-hidden="true">${escapeShieldText(
-    exitLabel
-  )}</span>`;
-  frame.appendChild(exitBtn);
-
   const safeExit = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     lastInteract = Date.now();
     if (typeof onSafeExit === "function") {
       onSafeExit();
@@ -83,12 +73,26 @@ export function attachStreamAdGuard(
     if (iframe) iframe.src = "about:blank";
   };
 
-  exitBtn.addEventListener("pointerdown", (e) => {
-    // Beat the iframe to the punch on touch devices.
-    e.preventDefault();
-    e.stopPropagation();
-  });
-  exitBtn.addEventListener("click", safeExit);
+  // Detail: cover embed ←. Watch party can omit this (room has Back / End).
+  if (showExit) {
+    exitBtn = document.createElement("button");
+    exitBtn.type = "button";
+    exitBtn.className = `stream-exit${
+      exitCorner === "end" ? " stream-exit--end" : ""
+    }`;
+    exitBtn.setAttribute("aria-label", "Close player");
+    exitBtn.innerHTML = `<span aria-hidden="true">${escapeShieldText(
+      exitLabel
+    )}</span>`;
+    frame.appendChild(exitBtn);
+
+    exitBtn.addEventListener("pointerdown", (e) => {
+      // Beat the iframe to the punch on touch devices.
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    exitBtn.addEventListener("click", safeExit);
+  }
 
   const onFramePointer = () => {
     lastInteract = Date.now();
@@ -135,7 +139,7 @@ export function attachStreamAdGuard(
     window.removeEventListener("message", onMessage);
     frame.removeEventListener("pointerdown", onFramePointer);
     shield?.remove();
-    exitBtn.remove();
+    exitBtn?.remove();
     iframe?.classList.remove("is-guarded");
   };
 }
