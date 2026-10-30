@@ -19,7 +19,15 @@ import {
   renderTvEpisodeControls,
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
-import { showConfirm } from "../lib/appModal.js";
+import { showConfirm, showNotice } from "../lib/appModal.js";
+import {
+  featuredGifs,
+  gifMessageBody,
+  hasGifApi,
+  parseGifMessage,
+  registerGifShare,
+  searchGifs,
+} from "../lib/giphy.js";
 
 /**
  * Dedicated watch-together room.
@@ -202,23 +210,40 @@ export async function WatchPartyView(root, params = {}) {
           <span id="wp-typing-label"></span>
         </p>
         <div class="wparty__compose-spacer" id="wp-compose-spacer" hidden></div>
-        <form class="wparty__compose" id="wp-compose" autocomplete="off">
-          <input
-            type="text"
-            name="body"
-            maxlength="280"
-            placeholder="Aa"
-            aria-label="Type a message"
-            enterkeyhint="send"
-            inputmode="text"
-            autocomplete="off"
-          />
-          <button type="submit" class="wparty__send" id="wp-send" aria-label="Send">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3.4 11.2 20.2 3.8c.7-.3 1.4.4 1.1 1.1L13.9 21.7c-.3.8-1.5.7-1.7-.1l-1.7-7.1-7.1-1.7c-.8-.2-.9-1.4-.1-1.7Z" fill="currentColor"/>
-            </svg>
-          </button>
-        </form>
+        <div class="wparty__composer" id="wp-composer">
+          <div
+            class="wparty__gifs"
+            id="wp-gifs"
+            hidden
+            role="listbox"
+            aria-label="GIF suggestions"
+          ></div>
+          <form class="wparty__compose" id="wp-compose" autocomplete="off">
+            <button
+              type="button"
+              class="wparty__gif-btn"
+              id="wp-gif-btn"
+              aria-label="GIFs"
+              aria-pressed="false"
+              title="GIFs"
+            >GIF</button>
+            <input
+              type="text"
+              name="body"
+              maxlength="280"
+              placeholder="Aa"
+              aria-label="Type a message"
+              enterkeyhint="send"
+              inputmode="text"
+              autocomplete="off"
+            />
+            <button type="submit" class="wparty__send" id="wp-send" aria-label="Send">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3.4 11.2 20.2 3.8c.7-.3 1.4.4 1.1 1.1L13.9 21.7c-.3.8-1.5.7-1.7-.1l-1.7-7.1-7.1-1.7c-.8-.2-.9-1.4-.1-1.7Z" fill="currentColor"/>
+              </svg>
+            </button>
+          </form>
+        </div>
       </div>
     </section>
   `;
@@ -739,13 +764,24 @@ export async function WatchPartyView(root, params = {}) {
     const el = document.createElement("div");
     el.className = `wparty__msg ${mine ? "is-me" : ""}`;
     el.dataset.msgId = msg.id;
+    const gifUrl = parseGifMessage(msg.body);
     el.innerHTML = `
       ${mine ? "" : av}
-      <div class="fp-bubble wparty__bubble ${mine ? "is-me" : ""}" data-msg-id="${escapeHtml(
-        msg.id
-      )}">
-        ${mine ? "" : `<span class="wparty__bubble-name">${escapeHtml(name)}</span>`}
-        <p class="fp-bubble__text">${escapeHtml(msg.body)}</p>
+      <div class="fp-bubble wparty__bubble ${mine ? "is-me" : ""}${
+        gifUrl ? " is-gif" : ""
+      }" data-msg-id="${escapeHtml(msg.id)}">
+        ${
+          mine
+            ? ""
+            : `<span class="wparty__bubble-name">${escapeHtml(name)}</span>`
+        }
+        ${
+          gifUrl
+            ? `<img class="fp-bubble__gif wparty__gif" src="${escapeHtml(
+                gifUrl
+              )}" alt="GIF" loading="lazy" decoding="async" />`
+            : `<p class="fp-bubble__text">${escapeHtml(msg.body)}</p>`
+        }
         <time>${formatTime(msg.created_at)}</time>
         ${reactionsHtml(msg.id, msg.reactions || [])}
         <div class="fp-bubble__tools" hidden>
@@ -852,10 +888,117 @@ export async function WatchPartyView(root, params = {}) {
   const composeInput = form.querySelector('input[name="body"]');
   const composeSend = form.querySelector("#wp-send");
   const composeSpacer = root.querySelector("#wp-compose-spacer");
+  const composer = root.querySelector("#wp-composer");
+  const gifBtn = root.querySelector("#wp-gif-btn");
+  const gifStrip = root.querySelector("#wp-gifs");
   const wpartyShell = root.querySelector(".wparty");
   let wpartyLockH = 0;
   let inputFocused = false;
   let kbPollTimer = null;
+  let gifOpen = false;
+  let gifTimer = 0;
+  let gifReq = 0;
+  let sendingGif = false;
+
+  const hideGifStrip = () => {
+    gifOpen = false;
+    gifBtn?.setAttribute("aria-pressed", "false");
+    gifBtn?.classList.remove("is-on");
+    if (gifStrip) {
+      gifStrip.hidden = true;
+      gifStrip.innerHTML = "";
+    }
+  };
+
+  const paintGifStrip = (items, query = "") => {
+    if (!gifStrip) return;
+    const label = String(query || "").trim()
+      ? `Results for “${String(query).trim()}”`
+      : "Trending GIFs";
+    if (!items?.length) {
+      gifStrip.innerHTML = `
+        <div class="wparty__gifs-head">
+          <strong>${escapeHtml(label)}</strong>
+          <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+        </div>
+        <p class="wparty__gifs-empty">No GIFs found</p>`;
+      gifStrip.hidden = false;
+      return;
+    }
+    gifStrip.innerHTML = `
+      <div class="wparty__gifs-head">
+        <strong>${escapeHtml(label)}</strong>
+        <span class="wparty__gifs-via">GIPHY</span>
+        <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+      </div>
+      <div class="wparty__gifs-rail" role="presentation">
+        ${items
+          .map(
+            (g) => `
+          <button
+            type="button"
+            class="wparty__gif-pick"
+            role="option"
+            data-gif-url="${escapeHtml(g.url)}"
+            data-gif-id="${escapeHtml(g.id)}"
+            title="${escapeHtml(g.title)}"
+            aria-label="${escapeHtml(g.title)}"
+          >
+            <img src="${escapeHtml(g.preview)}" alt="" loading="lazy" decoding="async" />
+          </button>`
+          )
+          .join("")}
+      </div>`;
+    gifStrip.hidden = false;
+    gifOpen = true;
+    gifBtn?.setAttribute("aria-pressed", "true");
+    gifBtn?.classList.add("is-on");
+  };
+
+  const loadGifs = async (query) => {
+    if (!hasGifApi() || !gifStrip) return;
+    const req = ++gifReq;
+    const q = String(query || "").trim();
+    gifStrip.hidden = false;
+    gifStrip.innerHTML = `
+      <div class="wparty__gifs-head">
+        <strong>${q ? `Results for “${escapeHtml(q)}”` : "Trending GIFs"}</strong>
+        <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+      </div>
+      <p class="wparty__gifs-empty">Searching…</p>`;
+    gifOpen = true;
+    gifBtn?.setAttribute("aria-pressed", "true");
+    gifBtn?.classList.add("is-on");
+    try {
+      const items = await searchGifs(q);
+      if (req !== gifReq) return;
+      paintGifStrip(items, q);
+    } catch {
+      if (req !== gifReq) return;
+      gifStrip.innerHTML = `
+        <div class="wparty__gifs-head">
+          <strong>GIFs</strong>
+          <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+        </div>
+        <p class="wparty__gifs-empty">Couldn’t load GIFs</p>`;
+    }
+  };
+
+  const scheduleGifSuggest = () => {
+    if (!hasGifApi()) return;
+    clearTimeout(gifTimer);
+    const q = String(composeInput?.value || "").trim();
+    if (!q) {
+      if (gifOpen) loadGifs("");
+      else hideGifStrip();
+      return;
+    }
+    if (q.length < 2 || q.length > 40 || /\s{2,}/.test(q) || q.split(/\s+/).length > 4) {
+      if (gifOpen) hideGifStrip();
+      return;
+    }
+    gifTimer = setTimeout(() => loadGifs(q), 320);
+  };
 
   const lockPageScroll = () => {
     window.scrollTo(0, 0);
@@ -913,6 +1056,7 @@ export async function WatchPartyView(root, params = {}) {
       document.documentElement.style.removeProperty("--wparty-kb-bottom");
       document.documentElement.style.removeProperty("--wparty-compose-h");
       form?.style.removeProperty("bottom");
+      composer?.style.removeProperty("bottom");
       if (composeSpacer) composeSpacer.hidden = true;
       return;
     }
@@ -935,9 +1079,15 @@ export async function WatchPartyView(root, params = {}) {
       `${bottom}px`
     );
     // Inline bottom as a hard fallback (some WebViews ignore the CSS var)
-    form.style.bottom = `${bottom}px`;
+    if (composer) composer.style.bottom = `${bottom}px`;
+    else if (form) form.style.bottom = `${bottom}px`;
 
-    const composeH = Math.ceil(form.getBoundingClientRect().height) || 52;
+    const composeH =
+      Math.ceil(
+        composer?.getBoundingClientRect().height ||
+          form?.getBoundingClientRect().height ||
+          0
+      ) || 52;
     document.documentElement.style.setProperty(
       "--wparty-compose-h",
       `${composeH}px`
@@ -1017,29 +1167,77 @@ export async function WatchPartyView(root, params = {}) {
     if (tools) tools.hidden = !tools.hidden;
   });
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const text = String(form.body.value || "").trim();
+  const sendWpChat = async (rawBody) => {
+    if (sendingGif) return;
+    const text = String(rawBody ?? form.body?.value ?? "").trim();
     if (!text) return;
     if (party.status !== "active" && party.status !== "invited") return;
+    sendingGif = true;
     stopTypingPing();
-    form.body.value = "";
+    clearTimeout(gifTimer);
+    hideGifStrip();
+    if (form.body) form.body.value = "";
     syncSendReady();
     comments.querySelector(".wparty__chat-empty")?.remove();
     try {
       const msg = await sendWatchPartyMessage(partyId, text);
       spawnComment(msg, { mine: true, name: "You" });
     } catch (err) {
+      if (!parseGifMessage(text) && form.body) form.body.value = text;
       alert(err.message || "Could not send");
+    } finally {
+      sendingGif = false;
+      syncSendReady();
+      composeInput?.focus({ preventScroll: true });
+      syncWpartyKb();
     }
-    composeInput?.focus({ preventScroll: true });
-    syncWpartyKb();
+  };
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await sendWpChat();
+  });
+
+  gifBtn?.addEventListener("click", async () => {
+    if (!hasGifApi()) {
+      showNotice({
+        title: "GIFs",
+        message:
+          "Add VITE_GIPHY_API_KEY to your .env — create a free key at https://developers.giphy.com/dashboard/ then run npm run sync-env.",
+      });
+      return;
+    }
+    if (gifOpen) {
+      hideGifStrip();
+      return;
+    }
+    const q = String(composeInput?.value || "").trim();
+    await loadGifs(q.length >= 2 ? q : "");
+  });
+
+  gifStrip?.addEventListener("click", (e) => {
+    if (e.target.closest("[data-gif-close]")) {
+      e.preventDefault();
+      hideGifStrip();
+      return;
+    }
+    const pick = e.target.closest("[data-gif-url]");
+    if (!pick) return;
+    e.preventDefault();
+    const url = pick.getAttribute("data-gif-url");
+    if (!url) return;
+    registerGifShare(
+      pick.getAttribute("data-gif-id") || "",
+      String(composeInput?.value || "").trim()
+    );
+    sendWpChat(gifMessageBody(url));
   });
 
   composeInput?.addEventListener("input", () => {
     syncSendReady();
     if (String(composeInput.value || "").trim()) pulseTyping();
     else stopTypingPing();
+    scheduleGifSuggest();
   });
 
   composeInput?.addEventListener("focus", () => {

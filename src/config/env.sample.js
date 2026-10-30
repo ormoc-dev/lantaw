@@ -11,6 +11,8 @@ export const env = {
   tmdbBaseUrl: "https://api.themoviedb.org/3",
   tmdbImageBase: "https://image.tmdb.org/t/p",
   omdbApiKey: "YOUR_OMDB_API_KEY",
+  // https://developers.giphy.com/dashboard/
+  giphyApiKey: "YOUR_GIPHY_API_KEY",
 };
 
 export function assertEnv() {

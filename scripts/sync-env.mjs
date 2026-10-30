@@ -42,6 +42,10 @@ const tmdbApiKey = get("VITE_TMDB_API_KEY");
 const tmdbBaseUrl = get("VITE_TMDB_BASE_URL", "https://api.themoviedb.org/3");
 const tmdbImageBase = get("VITE_TMDB_IMAGE_BASE", "https://image.tmdb.org/t/p");
 const omdbApiKey = get("VITE_OMDB_API_KEY");
+const giphyApiKey = get("VITE_GIPHY_API_KEY");
+// Legacy alias if someone still has the old name
+const tenorApiKey = get("VITE_TENOR_API_KEY");
+const resolvedGiphyKey = giphyApiKey || tenorApiKey;
 
 const missing = [];
 if (!supabaseUrl || supabaseUrl.includes("YOUR_PROJECT")) missing.push("VITE_SUPABASE_URL");
@@ -75,6 +79,7 @@ export const env = {
   tmdbBaseUrl: ${esc(tmdbBaseUrl)},
   tmdbImageBase: ${esc(tmdbImageBase)},
   omdbApiKey: ${esc(omdbApiKey)},
+  giphyApiKey: ${esc(resolvedGiphyKey)},
 };
 
 export function assertEnv() {

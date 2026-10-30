@@ -574,7 +574,12 @@ export async function sendWatchPartyMessage(partyId, body) {
   const user = await requireUser();
   const text = String(body || "").trim();
   if (!text) throw new Error("Message can’t be empty");
-  if (text.length > 280) throw new Error("Keep comments under 280 characters");
+  // GIFs use [gif]url — allow longer bodies; plain chat stays short
+  const isGif = /^\[gif\]https?:\/\//i.test(text);
+  if (!isGif && text.length > 280) {
+    throw new Error("Keep comments under 280 characters");
+  }
+  if (text.length > 1000) throw new Error("Message is too long");
 
   const { data, error } = await getSupabase()
     .from("watch_party_messages")

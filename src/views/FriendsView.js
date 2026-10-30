@@ -32,6 +32,14 @@ import { startVideoCall } from "../services/callService.js";
 import { showConfirm, showNotice } from "../lib/appModal.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
+import {
+  featuredGifs,
+  gifMessageBody,
+  hasGifApi,
+  parseGifMessage,
+  registerGifShare,
+  searchGifs,
+} from "../lib/giphy.js";
 
 export async function FriendsView(root) {
   const me = await getUser();
@@ -187,6 +195,9 @@ export async function FriendsView(root) {
   const previewLine = (preview) => {
     if (!preview?.body) return "Tap to say hi";
     const mine = preview.sender_id === me.id;
+    if (parseGifMessage(preview.body)) {
+      return mine ? "You: GIF" : "GIF";
+    }
     const text = String(preview.body).replace(/\s+/g, " ").trim();
     const clipped = text.length > 64 ? `${text.slice(0, 63)}…` : text;
     return mine ? `You: ${clipped}` : clipped;
@@ -914,23 +925,40 @@ export async function FriendsView(root) {
               <span id="chat-typing-label"></span>
             </p>
             <div class="fp-chat__compose-spacer" id="chat-compose-spacer" hidden></div>
-            <form class="fp-chat__compose" id="chat-form" autocomplete="off">
-              <input
-                type="text"
-                name="body"
-                id="chat-input"
-                placeholder="Aa"
-                autocomplete="off"
-                enterkeyhint="send"
-                inputmode="text"
-                aria-label="Message"
-              />
-              <button class="fp-chat__send" type="button" id="chat-send" aria-label="Send">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M3.4 11.2 20.2 3.8c.7-.3 1.4.4 1.1 1.1L13.9 21.7c-.3.8-1.5.7-1.7-.1l-1.7-7.1-7.1-1.7c-.8-.2-.9-1.4-.1-1.7Z" fill="currentColor"/>
-                </svg>
-              </button>
-            </form>
+            <div class="fp-chat__composer" id="chat-composer">
+              <div
+                class="fp-chat__gifs"
+                id="chat-gifs"
+                hidden
+                role="listbox"
+                aria-label="GIF suggestions"
+              ></div>
+              <form class="fp-chat__compose" id="chat-form" autocomplete="off">
+                <button
+                  type="button"
+                  class="fp-chat__gif-btn"
+                  id="chat-gif-btn"
+                  aria-label="GIFs"
+                  aria-pressed="false"
+                  title="GIFs"
+                >GIF</button>
+                <input
+                  type="text"
+                  name="body"
+                  id="chat-input"
+                  placeholder="Aa"
+                  autocomplete="off"
+                  enterkeyhint="send"
+                  inputmode="text"
+                  aria-label="Message"
+                />
+                <button class="fp-chat__send" type="button" id="chat-send" aria-label="Send">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3.4 11.2 20.2 3.8c.7-.3 1.4.4 1.1 1.1L13.9 21.7c-.3.8-1.5.7-1.7-.1l-1.7-7.1-7.1-1.7c-.8-.2-.9-1.4-.1-1.7Z" fill="currentColor"/>
+                  </svg>
+                </button>
+              </form>
+            </div>
           </section>
         </div>
       `;
@@ -1064,6 +1092,7 @@ export async function FriendsView(root) {
             const showAvatar = !mine && !sameNext;
             const showTime = !sameNext;
             const groups = groupReactions(m.reactions);
+            const gifUrl = parseGifMessage(m.body);
             const timeLabel = new Date(m.created_at).toLocaleTimeString([], {
               hour: "numeric",
               minute: "2-digit",
@@ -1087,8 +1116,16 @@ export async function FriendsView(root) {
                 : ""
             }
             <div class="fp-msg__stack">
-              <div class="fp-bubble ${mine ? "is-me" : ""} ${cluster}">
-                <p class="fp-bubble__text">${escapeHtml(m.body)}</p>
+              <div class="fp-bubble ${mine ? "is-me" : ""} ${cluster}${
+                gifUrl ? " is-gif" : ""
+              }">
+                ${
+                  gifUrl
+                    ? `<img class="fp-bubble__gif" src="${escapeHtml(
+                        gifUrl
+                      )}" alt="GIF" loading="lazy" decoding="async" />`
+                    : `<p class="fp-bubble__text">${escapeHtml(m.body)}</p>`
+                }
                 ${
                   groups.length
                     ? `<div class="fp-bubble__reactions" data-react-chips>
@@ -1130,7 +1167,7 @@ export async function FriendsView(root) {
                   ).join("")}
                 </div>
                 ${
-                  mine
+                  mine && !gifUrl
                     ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
                         m.id
                       )}">Edit</button>`
@@ -1383,11 +1420,127 @@ export async function FriendsView(root) {
       const form = panel.querySelector("#chat-form");
       const input = panel.querySelector("#chat-input");
       const sendBtn = panel.querySelector("#chat-send");
+      const gifBtn = panel.querySelector("#chat-gif-btn");
+      const gifStrip = panel.querySelector("#chat-gifs");
+      const composer = panel.querySelector("#chat-composer");
       const composeSpacer = panel.querySelector("#chat-compose-spacer");
       const chatShell = panel.querySelector(".fp-chat--thread");
       let chatLockH = 0;
       let inputFocused = false;
       let kbPollTimer = null;
+      let gifOpen = false;
+      let gifTimer = 0;
+      let gifReq = 0;
+
+      const hideGifStrip = () => {
+        gifOpen = false;
+        gifBtn?.setAttribute("aria-pressed", "false");
+        gifBtn?.classList.remove("is-on");
+        if (gifStrip) {
+          gifStrip.hidden = true;
+          gifStrip.innerHTML = "";
+        }
+      };
+
+      const paintGifStrip = (items, query = "") => {
+        if (!gifStrip) return;
+        const label = String(query || "").trim()
+          ? `Results for “${String(query).trim()}”`
+          : "Trending GIFs";
+        if (!items?.length) {
+          gifStrip.innerHTML = `
+            <div class="fp-chat__gifs-head">
+              <strong>${escapeHtml(label)}</strong>
+              <button type="button" class="fp-chat__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+            </div>
+            <p class="fp-chat__gifs-empty">No GIFs found</p>`;
+          gifStrip.hidden = false;
+          return;
+        }
+        gifStrip.innerHTML = `
+          <div class="fp-chat__gifs-head">
+            <strong>${escapeHtml(label)}</strong>
+            <span class="fp-chat__gifs-via">GIPHY</span>
+            <button type="button" class="fp-chat__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+          </div>
+          <div class="fp-chat__gifs-rail" role="presentation">
+            ${items
+              .map(
+                (g) => `
+              <button
+                type="button"
+                class="fp-chat__gif-pick"
+                role="option"
+                data-gif-url="${escapeHtml(g.url)}"
+                data-gif-id="${escapeHtml(g.id)}"
+                title="${escapeHtml(g.title)}"
+                aria-label="${escapeHtml(g.title)}"
+              >
+                <img src="${escapeHtml(g.preview)}" alt="" loading="lazy" decoding="async" />
+              </button>`
+              )
+              .join("")}
+          </div>`;
+        gifStrip.hidden = false;
+        gifOpen = true;
+        gifBtn?.setAttribute("aria-pressed", "true");
+        gifBtn?.classList.add("is-on");
+        // Re-measure fixed composer height for message padding
+        const composeH =
+          Math.ceil(composer?.getBoundingClientRect().height || form?.getBoundingClientRect().height || 0) ||
+          58;
+        document.documentElement.style.setProperty(
+          "--friends-compose-h",
+          `${composeH}px`
+        );
+      };
+
+      const loadGifs = async (query) => {
+        if (!hasGifApi() || !gifStrip) return;
+        const req = ++gifReq;
+        const q = String(query || "").trim();
+        gifStrip.hidden = false;
+        gifStrip.innerHTML = `
+          <div class="fp-chat__gifs-head">
+            <strong>${q ? `Results for “${escapeHtml(q)}”` : "Trending GIFs"}</strong>
+            <button type="button" class="fp-chat__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+          </div>
+          <p class="fp-chat__gifs-empty">Searching…</p>`;
+        gifOpen = true;
+        gifBtn?.setAttribute("aria-pressed", "true");
+        gifBtn?.classList.add("is-on");
+        try {
+          const items = await searchGifs(q);
+          if (req !== gifReq) return;
+          paintGifStrip(items, q);
+        } catch {
+          if (req !== gifReq) return;
+          gifStrip.innerHTML = `
+            <div class="fp-chat__gifs-head">
+              <strong>GIFs</strong>
+              <button type="button" class="fp-chat__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+            </div>
+            <p class="fp-chat__gifs-empty">Couldn’t load GIFs</p>`;
+        }
+      };
+
+      const scheduleGifSuggest = () => {
+        if (!hasGifApi()) return;
+        clearTimeout(gifTimer);
+        const q = String(input?.value || "").trim();
+        // Auto-suggest for short reactions / keywords — skip long messages
+        if (!q) {
+          if (gifOpen) loadGifs("");
+          else hideGifStrip();
+          return;
+        }
+        if (q.length < 2 || q.length > 40 || /\s{2,}/.test(q) || q.split(/\s+/).length > 4) {
+          if (!gifOpen) return;
+          hideGifStrip();
+          return;
+        }
+        gifTimer = setTimeout(() => loadGifs(q), 320);
+      };
 
       const lockPageScroll = () => {
         window.scrollTo(0, 0);
@@ -1441,7 +1594,11 @@ export async function FriendsView(root) {
           if (composeSpacer) composeSpacer.hidden = true;
           // Keep compose height var so mobile message padding clears the fixed bar
           const composeH =
-            Math.ceil(form?.getBoundingClientRect().height || 0) || 58;
+            Math.ceil(
+              composer?.getBoundingClientRect().height ||
+                form?.getBoundingClientRect().height ||
+                0
+            ) || 58;
           document.documentElement.style.setProperty(
             "--friends-compose-h",
             `${composeH}px`
@@ -1469,7 +1626,12 @@ export async function FriendsView(root) {
         // Inline bottom as a hard fallback (some WebViews ignore the CSS var)
         if (form) form.style.bottom = `${inset}px`;
 
-        const composeH = Math.ceil(form?.getBoundingClientRect().height || 0) || 58;
+        const composeH =
+          Math.ceil(
+            composer?.getBoundingClientRect().height ||
+              form?.getBoundingClientRect().height ||
+              0
+          ) || 58;
         document.documentElement.style.setProperty(
           "--friends-compose-h",
           `${composeH}px`
@@ -1525,18 +1687,22 @@ export async function FriendsView(root) {
         syncSendEnabled();
         if (String(input?.value || "").trim()) pulseTyping();
         else stopTypingPing();
+        scheduleGifSuggest();
       });
 
-      const sendChat = async () => {
+      const sendChat = async (rawBody) => {
         if (sending) return;
-        const text = String(input?.value || "").trim();
+        const text = String(rawBody ?? input?.value ?? "").trim();
         if (!text) {
           input?.focus();
           return;
         }
         sending = true;
         stopTypingPing();
-        if (input) input.value = "";
+        clearTimeout(gifTimer);
+        hideGifStrip();
+        if (input && rawBody == null) input.value = "";
+        else if (input && rawBody != null) input.value = "";
         syncSendEnabled();
         // Show the bubble immediately — don't wait on the network round-trip
         const optimistic = {
@@ -1556,7 +1722,7 @@ export async function FriendsView(root) {
           await sendMessage(chatId, text);
           await refreshThread();
         } catch (err) {
-          if (input) input.value = text;
+          if (input && !parseGifMessage(text)) input.value = text;
           paint(threadMessages.filter((m) => m.id !== optimistic.id));
           alert(err.message);
         } finally {
@@ -1566,6 +1732,42 @@ export async function FriendsView(root) {
           syncChatViewport();
         }
       };
+
+      gifBtn?.addEventListener("click", async () => {
+        if (!hasGifApi()) {
+          showNotice({
+            title: "GIFs",
+            message:
+              "Add VITE_GIPHY_API_KEY to your .env — create a free key at https://developers.giphy.com/dashboard/ then run npm run sync-env.",
+          });
+          return;
+        }
+        if (gifOpen) {
+          hideGifStrip();
+          syncChatViewport();
+          return;
+        }
+        const q = String(input?.value || "").trim();
+        await loadGifs(q.length >= 2 ? q : "");
+        syncChatViewport();
+      });
+
+      gifStrip?.addEventListener("click", (e) => {
+        if (e.target.closest("[data-gif-close]")) {
+          e.preventDefault();
+          hideGifStrip();
+          syncChatViewport();
+          return;
+        }
+        const pick = e.target.closest("[data-gif-url]");
+        if (!pick) return;
+        e.preventDefault();
+        const url = pick.getAttribute("data-gif-url");
+        if (!url) return;
+        const gifId = pick.getAttribute("data-gif-id") || "";
+        registerGifShare(gifId, String(input?.value || "").trim());
+        sendChat(gifMessageBody(url));
+      });
 
       form?.addEventListener("submit", (e) => {
         e.preventDefault();
