@@ -42,6 +42,9 @@ export async function WatchPartyView(root, params = {}) {
   let movie = null;
   let lastAppliedKey = "";
   let lastMountedKey = "";
+  /** Last sync token the watcher already loaded — ignore heartbeats / UI noise */
+  let lastFollowedToken = -1;
+  let mountInFlightKey = "";
   let lastKnownTimeSec = 0;
   let soloAfterGuestLeft = false;
   let typingHideTimer = null;
@@ -322,6 +325,8 @@ export async function WatchPartyView(root, params = {}) {
       row.playback_season || ""
     }:${row.playback_episode || ""}`;
 
+  const syncTokenOf = (row) => Number(row?.playback_sync_token || 0);
+
   const readEpisodePick = () => {
     const defaults = mediaType === "tv" ? getTvDefaults(movie) : null;
     const seasonEl = root.querySelector("#stream-season");
@@ -378,6 +383,8 @@ export async function WatchPartyView(root, params = {}) {
             };
             lastAppliedKey = "";
             lastMountedKey = "";
+            mountInFlightKey = "";
+            lastFollowedToken = -1;
             applyPlayback(party, { force: true });
           } catch (err) {
             alert(err.message);
@@ -396,6 +403,7 @@ export async function WatchPartyView(root, params = {}) {
     clearStream();
     stripPlayerDom();
     lastMountedKey = "";
+    mountInFlightKey = "";
     waiting.hidden = false;
     waitingTitle.textContent = title;
     waitingCopy.textContent = copy ? ` · ${copy}` : "";
@@ -428,10 +436,23 @@ export async function WatchPartyView(root, params = {}) {
 
   const mountPlayer = (opts = {}) => {
     const key = opts.syncKey || playbackKey(party);
-    // Never tear down a healthy embed for chat/reactions/banner paints
-    if (!opts.force && key && key === lastMountedKey && hasLivePlayer()) {
+    // Same sync identity already loaded (or loading) → never tear down / refetch
+    if (
+      !opts.force &&
+      key &&
+      (key === lastMountedKey || key === mountInFlightKey)
+    ) {
       lastAppliedKey = key;
+      lastMountedKey = key;
       return;
+    }
+
+    // Claim before DOM work so overlapping realtime events can't double-fetch
+    mountInFlightKey = key;
+    lastMountedKey = key;
+    lastAppliedKey = key;
+    if (party.isGuest) {
+      lastFollowedToken = syncTokenOf(party);
     }
 
     clearStream();
@@ -455,8 +476,7 @@ export async function WatchPartyView(root, params = {}) {
       readOnly: !party.isHost,
     });
     waiting.insertAdjacentHTML("afterend", html);
-    lastMountedKey = key || lastMountedKey;
-    lastAppliedKey = key || lastAppliedKey;
+    mountInFlightKey = "";
 
     const frame = playerEl.querySelector(".detail__player-frame--embed");
     if (frame) {
@@ -478,12 +498,12 @@ export async function WatchPartyView(root, params = {}) {
     if (!row || row.status !== "active") return;
     const state = row.playback_state || "idle";
     const key = playbackKey(row);
+    const token = syncTokenOf(row);
 
     if (state === "playing") {
       // Host loads only via Start / Sync / Continue / episode Load (force).
       if (party.isHost && !force) {
         lastAppliedKey = key;
-        // Do NOT clear a live player — chat/banner refreshes used to wipe it
         if (!hasLivePlayer() && !hasPlayerShell()) {
           setSyncTipVisible(false);
           setWaiting(
@@ -494,26 +514,38 @@ export async function WatchPartyView(root, params = {}) {
         return;
       }
 
-      if (!force && key === lastAppliedKey && hasLivePlayer()) return;
-      if (!force && key === lastMountedKey && hasLivePlayer()) {
+      // Watcher: fetch ONLY when host bumps Sync (new token) or episode changes.
+      // Never gate on hasLivePlayer() — it flickers and re-fetched on every heartbeat.
+      if (party.isGuest && !force) {
+        if (key === lastMountedKey || key === mountInFlightKey) {
+          lastAppliedKey = key;
+          return;
+        }
+        // Already following this Sync token (iframe may still be buffering)
+        if (token === lastFollowedToken && lastFollowedToken >= 0) {
+          lastAppliedKey = key;
+          lastMountedKey = key;
+          return;
+        }
+      } else if (!force && (key === lastMountedKey || key === mountInFlightKey)) {
         lastAppliedKey = key;
         return;
       }
-      lastAppliedKey = key;
 
-      // Watcher: adopt host position only when the sync token actually changes
       mountPlayer({
         season: row.playback_season || undefined,
         episode: row.playback_episode || undefined,
         startAt: estimatePositionSec(row),
         syncKey: key,
-        force,
+        force: Boolean(force),
       });
       return;
     }
 
     lastAppliedKey = key;
     lastMountedKey = "";
+    mountInFlightKey = "";
+    if (party.isGuest) lastFollowedToken = -1;
     setSyncTipVisible(false);
     if (state === "paused") {
       setWaiting(
@@ -702,6 +734,7 @@ export async function WatchPartyView(root, params = {}) {
           };
           lastAppliedKey = playbackKey(party);
           lastMountedKey = lastAppliedKey;
+          mountInFlightKey = "";
           paintBanner();
         } catch (err) {
           setSyncTipVisible(false);
@@ -726,6 +759,8 @@ export async function WatchPartyView(root, params = {}) {
             isGuest: false,
           };
           lastMountedKey = "";
+          mountInFlightKey = "";
+          lastFollowedToken = -1;
           paintBanner();
           applyPlayback(party);
         } catch (err) {
@@ -1455,8 +1490,10 @@ export async function WatchPartyView(root, params = {}) {
   const resumeAfterBackground = () => {
     if (!party || party.status !== "active") return;
     if ((party.playback_state || "idle") !== "playing") return;
-    // Only remount if the embed actually died while backgrounded
-    if (hasLivePlayer()) return;
+    // Watcher: never refetch on tab focus — only host Sync bumps the token.
+    // Host: remount only if the iframe was destroyed while away.
+    if (party.isGuest) return;
+    if (hasPlayerShell()) return;
     const startAt = estimatePositionSec(party);
     const key = playbackKey(party);
     mountPlayer({
@@ -1466,7 +1503,6 @@ export async function WatchPartyView(root, params = {}) {
       syncKey: key,
       force: true,
     });
-    lastAppliedKey = key;
   };
 
   const onVisibility = () => {
@@ -1539,8 +1575,11 @@ export async function WatchPartyView(root, params = {}) {
       const nextKey = playbackKey(party);
       const statusChanged = prevStatus !== party.status;
       const playbackChanged = prevKey !== nextKey;
-      // Heartbeats update position without bumping sync — never remount the stream
-      if (statusChanged || playbackChanged) {
+      // Position heartbeats must not remount. Watcher only reacts to sync-token changes.
+      if (playbackChanged) {
+        paintBanner();
+        applyPlayback(party);
+      } else if (statusChanged) {
         paintBanner();
         applyPlayback(party);
       } else if (metaEl && party.status === "active") {
