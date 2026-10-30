@@ -47,12 +47,23 @@ export function createRouter(rootEl) {
   });
 
   onAuthChange((session, event) => {
-    // Token refresh must not remount the page or bounce category routes to home
+    // These must not remount the page — remounting kills watch-party / stream iframes
     if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") return;
 
     const pathname = currentPath();
 
-    if (event === "SIGNED_OUT" || (!session && event === "INITIAL_SESSION")) {
+    // INITIAL_SESSION fires after start() already rendered. Remounting here
+    // re-fetches CineSrc for watchers (see mountPlayer ← applyPlayback stack).
+    if (event === "INITIAL_SESSION") {
+      if (!session && !PUBLIC_PATHS.has(pathname)) {
+        rememberReturnPath(pathname);
+        if (location.hash !== "#/login") location.hash = "#/login";
+        else render();
+      }
+      return;
+    }
+
+    if (event === "SIGNED_OUT" || !session) {
       if (!PUBLIC_PATHS.has(pathname)) {
         rememberReturnPath(pathname);
         if (location.hash !== "#/login") location.hash = "#/login";
@@ -63,13 +74,13 @@ export function createRouter(rootEl) {
       return;
     }
 
-    if (session && pathname === "/reset-password") {
+    if (pathname === "/reset-password") {
       render();
       return;
     }
 
     // Only leave /login after a real sign-in — restore the last category/page
-    if (session && pathname === "/login") {
+    if (pathname === "/login") {
       const next = takeReturnPath();
       const hash = `#${next.startsWith("/") ? next : `/${next}`}`;
       if (location.hash !== hash) location.hash = hash;
@@ -77,15 +88,13 @@ export function createRouter(rootEl) {
       return;
     }
 
-    if (session && !location.hash) {
+    if (!location.hash) {
       location.hash = "#/";
       return;
     }
 
-    if (!session && !PUBLIC_PATHS.has(pathname)) {
-      rememberReturnPath(pathname);
-      if (location.hash !== "#/login") location.hash = "#/login";
-      else render();
+    // SIGNED_IN while already on an app page (e.g. watch party): keep the live view
+    if (event === "SIGNED_IN" && current && pathname !== "/login") {
       return;
     }
 

@@ -60,9 +60,8 @@ function iframeAttrs(streamUrl, { deferSrc = false } = {}) {
           title="Streaming player"
           frameborder="0"
           style="border: 0; border-radius: 12px;"
-          allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+          allow="autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
           sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-          allowfullscreen
   `.trim();
 }
 

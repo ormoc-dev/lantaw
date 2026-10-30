@@ -1527,6 +1527,9 @@ export async function WatchPartyView(root, params = {}) {
   }, 45000);
 
   paintBanner();
+  // Host: idle/waiting until they press Start (applyPlayback no-ops mount).
+  // Watcher: one adopt when host is already playing — further fetches need a new Sync token.
+  // Do not remount this view on auth INITIAL_SESSION (router guards that) or the embed refetches.
   applyPlayback(party);
   await hydrateComments();
 
