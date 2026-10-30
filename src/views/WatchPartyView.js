@@ -41,6 +41,7 @@ export async function WatchPartyView(root, params = {}) {
   let party = null;
   let movie = null;
   let lastAppliedKey = "";
+  let lastMountedKey = "";
   let lastKnownTimeSec = 0;
   let soloAfterGuestLeft = false;
   let typingHideTimer = null;
@@ -376,6 +377,7 @@ export async function WatchPartyView(root, params = {}) {
               isGuest: false,
             };
             lastAppliedKey = "";
+            lastMountedKey = "";
             applyPlayback(party, { force: true });
           } catch (err) {
             alert(err.message);
@@ -393,6 +395,7 @@ export async function WatchPartyView(root, params = {}) {
   const setWaiting = (title, copy) => {
     clearStream();
     stripPlayerDom();
+    lastMountedKey = "";
     waiting.hidden = false;
     waitingTitle.textContent = title;
     waitingCopy.textContent = copy ? ` · ${copy}` : "";
@@ -424,6 +427,13 @@ export async function WatchPartyView(root, params = {}) {
   };
 
   const mountPlayer = (opts = {}) => {
+    const key = opts.syncKey || playbackKey(party);
+    // Never tear down a healthy embed for chat/reactions/banner paints
+    if (!opts.force && key && key === lastMountedKey && hasLivePlayer()) {
+      lastAppliedKey = key;
+      return;
+    }
+
     clearStream();
     stripPlayerDom();
     waiting.hidden = true;
@@ -445,6 +455,8 @@ export async function WatchPartyView(root, params = {}) {
       readOnly: !party.isHost,
     });
     waiting.insertAdjacentHTML("afterend", html);
+    lastMountedKey = key || lastMountedKey;
+    lastAppliedKey = key || lastAppliedKey;
 
     const frame = playerEl.querySelector(".detail__player-frame--embed");
     if (frame) {
@@ -471,7 +483,8 @@ export async function WatchPartyView(root, params = {}) {
       // Host loads only via Start / Sync / Continue / episode Load (force).
       if (party.isHost && !force) {
         lastAppliedKey = key;
-        if (!hasLivePlayer()) {
+        // Do NOT clear a live player — chat/banner refreshes used to wipe it
+        if (!hasLivePlayer() && !hasPlayerShell()) {
           setSyncTipVisible(false);
           setWaiting(
             "Tap Sync to load",
@@ -481,19 +494,26 @@ export async function WatchPartyView(root, params = {}) {
         return;
       }
 
-      if (!force && key === lastAppliedKey && hasPlayerShell()) return;
+      if (!force && key === lastAppliedKey && hasLivePlayer()) return;
+      if (!force && key === lastMountedKey && hasLivePlayer()) {
+        lastAppliedKey = key;
+        return;
+      }
       lastAppliedKey = key;
 
-      // Watcher: adopt host position immediately — no Sync button on their side
+      // Watcher: adopt host position only when the sync token actually changes
       mountPlayer({
         season: row.playback_season || undefined,
         episode: row.playback_episode || undefined,
         startAt: estimatePositionSec(row),
+        syncKey: key,
+        force,
       });
       return;
     }
 
     lastAppliedKey = key;
+    lastMountedKey = "";
     setSyncTipVisible(false);
     if (state === "paused") {
       setWaiting(
@@ -665,6 +685,7 @@ export async function WatchPartyView(root, params = {}) {
             season: pick.season,
             episode: pick.episode,
             startAt: positionSec,
+            force: true,
           });
           const updated = await updateWatchPartyPlayback(partyId, {
             state: "playing",
@@ -680,6 +701,7 @@ export async function WatchPartyView(root, params = {}) {
             isGuest: false,
           };
           lastAppliedKey = playbackKey(party);
+          lastMountedKey = lastAppliedKey;
           paintBanner();
         } catch (err) {
           setSyncTipVisible(false);
@@ -703,7 +725,9 @@ export async function WatchPartyView(root, params = {}) {
             isHost: true,
             isGuest: false,
           };
+          lastMountedKey = "";
           paintBanner();
+          applyPlayback(party);
         } catch (err) {
           alert(err.message);
         }
@@ -749,10 +773,13 @@ export async function WatchPartyView(root, params = {}) {
         }
       });
     }
-    applyPlayback(party);
+    // Playback is applied separately — never remount the stream from a banner paint
+    // (chat reactions / heartbeats used to re-enter here and refetch the video).
   };
 
   const REACTIONS = ["👍", "❤️", "😂", "😮", "🔥"];
+  /** @type {Map<string, Array<{id?: string, user_id: string, emoji: string}>>} */
+  const msgReactions = new Map();
 
   const groupReactions = (reactions = []) => {
     const map = new Map();
@@ -782,12 +809,111 @@ export async function WatchPartyView(root, params = {}) {
     </div>`;
   };
 
+  const paintMsgReactions = (msgId) => {
+    applyReactionsToDom([
+      { id: msgId, reactions: msgReactions.get(msgId) || [] },
+    ]);
+  };
+
+  /** Instant local toggle — UI updates before the network round-trip. */
+  const toggleLocalReaction = (msgId, emoji) => {
+    const prev = [...(msgReactions.get(msgId) || [])];
+    const idx = prev.findIndex(
+      (r) => r.user_id === me.id && r.emoji === emoji
+    );
+    let next;
+    if (idx >= 0) {
+      next = prev.filter((_, i) => i !== idx);
+    } else {
+      next = [
+        ...prev,
+        {
+          id: `local-${Date.now()}`,
+          user_id: me.id,
+          emoji,
+          message_id: msgId,
+        },
+      ];
+    }
+    msgReactions.set(msgId, next);
+    paintMsgReactions(msgId);
+    return { previous: prev, next };
+  };
+
+  const applyReactionEvent = (payload) => {
+    const eventType = payload?.eventType || payload?.event;
+    if (eventType === "INSERT" && payload?.new) {
+      const row = payload.new;
+      const msgId = row.message_id;
+      if (!msgId) return false;
+      const list = msgReactions.get(msgId) || [];
+      const dup = list.some(
+        (r) =>
+          r.id === row.id ||
+          (r.user_id === row.user_id && r.emoji === row.emoji)
+      );
+      if (!dup) {
+        msgReactions.set(msgId, [
+          ...list.filter(
+            (r) =>
+              !(
+                String(r.id || "").startsWith("local-") &&
+                r.user_id === row.user_id &&
+                r.emoji === row.emoji
+              )
+          ),
+          row,
+        ]);
+        paintMsgReactions(msgId);
+      } else {
+        // Replace optimistic local id with server row
+        msgReactions.set(
+          msgId,
+          list.map((r) =>
+            r.user_id === row.user_id && r.emoji === row.emoji ? row : r
+          )
+        );
+        paintMsgReactions(msgId);
+      }
+      return true;
+    }
+    if (eventType === "DELETE") {
+      const old = payload?.old || {};
+      const msgId = old.message_id;
+      if (msgId) {
+        const list = (msgReactions.get(msgId) || []).filter(
+          (r) =>
+            r.id !== old.id &&
+            !(r.user_id === old.user_id && r.emoji === old.emoji)
+        );
+        msgReactions.set(msgId, list);
+        paintMsgReactions(msgId);
+        return true;
+      }
+      if (old.id) {
+        for (const [id, list] of msgReactions) {
+          const filtered = list.filter((r) => r.id !== old.id);
+          if (filtered.length !== list.length) {
+            msgReactions.set(id, filtered);
+            paintMsgReactions(id);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
   function spawnComment(
     msg,
     { mine = false, name = "Friend", skipScroll = false } = {}
   ) {
     if (!msg?.id || knownMsgIds.has(msg.id)) return;
     knownMsgIds.add(msg.id);
+    msgReactions.set(
+      msg.id,
+      Array.isArray(msg.reactions) ? [...msg.reactions] : []
+    );
     if (!mine) setTypingVisible(false);
     const profile = profileFor(msg.sender_id);
     const av = avatarHtml(profile, mine ? myName : name);
@@ -813,7 +939,7 @@ export async function WatchPartyView(root, params = {}) {
             : `<p class="fp-bubble__text">${escapeHtml(msg.body)}</p>`
         }
         <time>${formatTime(msg.created_at)}</time>
-        ${reactionsHtml(msg.id, msg.reactions || [])}
+        ${reactionsHtml(msg.id, msgReactions.get(msg.id) || [])}
         <div class="fp-bubble__tools" hidden>
           <div class="fp-react-bar">
             ${REACTIONS.map(
@@ -830,7 +956,10 @@ export async function WatchPartyView(root, params = {}) {
     comments.appendChild(el);
     while (comments.querySelectorAll(".wparty__msg").length > 80) {
       const first = comments.querySelector(".wparty__msg");
-      if (first?.dataset?.msgId) knownMsgIds.delete(first.dataset.msgId);
+      if (first?.dataset?.msgId) {
+        knownMsgIds.delete(first.dataset.msgId);
+        msgReactions.delete(first.dataset.msgId);
+      }
       first?.remove();
     }
     if (!skipScroll) comments.scrollTop = comments.scrollHeight;
@@ -847,11 +976,14 @@ export async function WatchPartyView(root, params = {}) {
   function applyReactionsToDom(rows = []) {
     for (const m of rows) {
       if (!m?.id) continue;
+      if (Array.isArray(m.reactions)) {
+        msgReactions.set(m.id, [...m.reactions]);
+      }
       const bubble = comments.querySelector(
         `.fp-bubble[data-msg-id="${CSS.escape(m.id)}"]`
       );
       if (!bubble) continue;
-      const next = reactionsHtml(m.id, m.reactions || []);
+      const next = reactionsHtml(m.id, msgReactions.get(m.id) || []);
       const chips = bubble.querySelector("[data-react-chips]");
       if (chips) {
         if (next) chips.outerHTML = next;
@@ -892,6 +1024,7 @@ export async function WatchPartyView(root, params = {}) {
 
         comments.innerHTML = "";
         knownMsgIds.clear();
+        msgReactions.clear();
         if (!rows.length) {
           comments.innerHTML = `<p class="muted wparty__chat-empty">Say hi while you watch.</p>`;
           continue;
@@ -922,7 +1055,6 @@ export async function WatchPartyView(root, params = {}) {
   const gifBtn = root.querySelector("#wp-gif-btn");
   const gifStrip = root.querySelector("#wp-gifs");
   const wpartyShell = root.querySelector(".wparty");
-  let wpartyLockH = 0;
   let inputFocused = false;
   let kbPollTimer = null;
   let gifOpen = false;
@@ -1068,7 +1200,6 @@ export async function WatchPartyView(root, params = {}) {
   const syncWpartyKb = () => {
     const vv = window.visualViewport;
     const layoutH = window.innerHeight;
-    const visibleH = vv ? vv.height : layoutH;
     const inset = keyboardInset();
     const shrunk = vv ? layoutH - vv.height > 50 : false;
     const kbOpen =
@@ -1080,9 +1211,7 @@ export async function WatchPartyView(root, params = {}) {
     document.body.classList.toggle("is-wparty-kb", kbOpen || inputFocused);
 
     if (!kbOpen && !inputFocused) {
-      wpartyLockH = 0;
-      wpartyShell?.style.removeProperty("height");
-      wpartyShell?.style.removeProperty("max-height");
+      // Never resize .wparty while a stream is up — height changes reload the iframe
       document.documentElement.style.removeProperty("--wparty-kb-bottom");
       document.documentElement.style.removeProperty("--wparty-compose-h");
       form?.style.removeProperty("bottom");
@@ -1091,18 +1220,7 @@ export async function WatchPartyView(root, params = {}) {
       return;
     }
 
-    if (!wpartyLockH && wpartyShell) {
-      wpartyLockH =
-        Math.round(wpartyShell.getBoundingClientRect().height) || layoutH;
-    }
-
-    // Fit the room to the visible viewport so chat isn't trapped under the keyboard
-    const roomH = Math.max(260, Math.round(visibleH));
-    if (wpartyShell) {
-      wpartyShell.style.height = `${roomH}px`;
-      wpartyShell.style.maxHeight = `${roomH}px`;
-    }
-
+    // Pin compose only — do not change shell/player height (that refetches CineSrc)
     const bottom = Math.max(inset, inputFocused && inset < 40 ? 0 : inset);
     document.documentElement.style.setProperty(
       "--wparty-kb-bottom",
@@ -1175,14 +1293,20 @@ export async function WatchPartyView(root, params = {}) {
     if (reactBtn) {
       e.preventDefault();
       e.stopPropagation();
+      const msgId = reactBtn.dataset.react;
+      const emoji = reactBtn.dataset.emoji;
+      if (!msgId || !emoji) return;
+      // Close the picker immediately and paint the chip before any network wait
+      const tools = reactBtn.closest(".fp-bubble")?.querySelector(
+        ".fp-bubble__tools"
+      );
+      if (tools) tools.hidden = true;
+      const { previous } = toggleLocalReaction(msgId, emoji);
       try {
-        await toggleWatchPartyReaction(
-          reactBtn.dataset.react,
-          reactBtn.dataset.emoji
-        );
-        // Patch chips only — full remount raced with realtime and reshuffled chat
-        await hydrateComments({ reactionsOnly: true });
+        await toggleWatchPartyReaction(msgId, emoji);
       } catch (err) {
+        msgReactions.set(msgId, previous);
+        paintMsgReactions(msgId);
         alert(err.message || "Could not react");
       }
       return;
@@ -1274,9 +1398,6 @@ export async function WatchPartyView(root, params = {}) {
     inputFocused = true;
     // Lift immediately so the bar isn’t trapped under the rising keyboard
     document.body.classList.add("is-wparty-kb");
-    if (wpartyShell && !wpartyLockH) {
-      wpartyLockH = Math.round(wpartyShell.getBoundingClientRect().height);
-    }
     lockPageScroll();
     syncWpartyKb();
     startKbPoll();
@@ -1334,14 +1455,18 @@ export async function WatchPartyView(root, params = {}) {
   const resumeAfterBackground = () => {
     if (!party || party.status !== "active") return;
     if ((party.playback_state || "idle") !== "playing") return;
-    // Watcher re-adopts the host clock; host resumes their own spot
+    // Only remount if the embed actually died while backgrounded
+    if (hasLivePlayer()) return;
     const startAt = estimatePositionSec(party);
+    const key = playbackKey(party);
     mountPlayer({
       season: party.playback_season || undefined,
       episode: party.playback_episode || undefined,
       startAt,
+      syncKey: key,
+      force: true,
     });
-    lastAppliedKey = playbackKey(party);
+    lastAppliedKey = key;
   };
 
   const onVisibility = () => {
@@ -1366,6 +1491,7 @@ export async function WatchPartyView(root, params = {}) {
   }, 45000);
 
   paintBanner();
+  applyPlayback(party);
   await hydrateComments();
 
   partySub = subscribeWatchParty(partyId, {
@@ -1381,8 +1507,11 @@ export async function WatchPartyView(root, params = {}) {
         soloAfterGuestLeft = false;
         wipeRoomChat();
         paintBanner();
+        applyPlayback(party);
         return;
       }
+      const prevStatus = party?.status;
+      const prevKey = playbackKey(party);
       const row = payload?.new;
       if (!row) {
         try {
@@ -1407,7 +1536,18 @@ export async function WatchPartyView(root, params = {}) {
           isGuest: row.guest_id === me.id,
         };
       }
-      paintBanner();
+      const nextKey = playbackKey(party);
+      const statusChanged = prevStatus !== party.status;
+      const playbackChanged = prevKey !== nextKey;
+      // Heartbeats update position without bumping sync — never remount the stream
+      if (statusChanged || playbackChanged) {
+        paintBanner();
+        applyPlayback(party);
+      } else if (metaEl && party.status === "active") {
+        metaEl.textContent = party.isHost
+          ? `Host · ${otherName} follows`
+          : `Watching · following ${otherName}`;
+      }
     },
     onMessage: (payload) => {
       const msg = payload?.new;
@@ -1421,8 +1561,16 @@ export async function WatchPartyView(root, params = {}) {
         }
       );
     },
-    onReaction: () => {
-      hydrateComments({ reactionsOnly: true });
+    onReaction: (payload) => {
+      // Reactions must never touch playback — patch chips only
+      const msgId =
+        payload?.new?.message_id || payload?.old?.message_id || null;
+      if (msgId && !knownMsgIds.has(msgId) && !msgReactions.has(msgId)) {
+        return;
+      }
+      if (!applyReactionEvent(payload)) {
+        hydrateComments({ reactionsOnly: true });
+      }
     },
     onTyping: (payload) => {
       if (!payload || payload.userId === me.id) return;

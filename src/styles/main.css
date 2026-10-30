@@ -7025,6 +7025,9 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   position: relative;
   width: 100%;
   min-width: 0;
+  flex-shrink: 0;
+  /* Keep the embed box stable — chat/reaction layout shifts must not resize it */
+  contain: layout;
   background: #000;
 }
 
@@ -7300,6 +7303,8 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   border-radius: 0 !important;
   overflow: hidden;
   background: #000;
+  /* Prevent chat DOM updates from forcing a CineSrc reload */
+  contain: strict;
 }
 
 .wparty__player .detail__player-frame iframe,
