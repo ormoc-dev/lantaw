@@ -66,20 +66,31 @@ export async function FriendsView(root) {
   let chatPaint = null;
   let lastThreadPaintKey = "";
   let inboxFetchToken = 0;
+  let peerIsTyping = false;
 
   startPresence().catch(() => {});
 
   const syncPresenceUi = () => {
     page.querySelectorAll("[data-presence-id]").forEach((el) => {
       const on = isUserOnline(el.dataset.presenceId);
-      el.classList.toggle("is-online", on);
+      el.classList.toggle("is-online", on || peerIsTyping);
       const inThread = Boolean(el.closest(".fp-chat__head"));
-      const onLabel = inThread ? "Active now" : "Online";
+      const onLabel =
+        inThread && peerIsTyping
+          ? "Typing…"
+          : inThread
+            ? "Active now"
+            : "Online";
       const offLabel = "Offline";
-      el.setAttribute("title", on ? onLabel : offLabel);
-      el.setAttribute("aria-label", on ? onLabel : offLabel);
+      const showOn = on || (inThread && peerIsTyping);
+      el.setAttribute("title", showOn ? onLabel : offLabel);
+      el.setAttribute("aria-label", showOn ? onLabel : offLabel);
       const label = el.querySelector("[data-presence-label]");
-      if (label) label.textContent = on ? onLabel : offLabel;
+      if (label) {
+        label.textContent = showOn ? onLabel : offLabel;
+        label.classList.toggle("is-online", showOn);
+        label.classList.toggle("is-typing", inThread && peerIsTyping);
+      }
     });
   };
 
@@ -875,6 +886,10 @@ export async function FriendsView(root) {
               className: "ui-loading--inline",
               size: "sm",
             })}</div>
+            <p class="fp-chat__typing" id="chat-typing" hidden aria-live="polite">
+              <span class="fp-chat__typing-dots" aria-hidden="true"></span>
+              <span id="chat-typing-label"></span>
+            </p>
             <div class="fp-chat__compose-spacer" id="chat-compose-spacer" hidden></div>
             <form class="fp-chat__compose" id="chat-form" autocomplete="off">
               <input
@@ -961,9 +976,16 @@ export async function FriendsView(root) {
         return [...map.entries()].map(([emoji, users]) => ({ emoji, users }));
       };
 
+      let threadMessages = [];
+      let threadFetchBusy = false;
+      let threadFetchQueued = false;
+      let threadPoll = null;
+      let sending = false;
+
       const paint = (messages) => {
         if (!box.isConnected) return;
-        const paintKey = (messages || [])
+        threadMessages = Array.isArray(messages) ? messages : [];
+        const paintKey = threadMessages
           .map(
             (m) =>
               `${m.id}:${m.body}:${m.edited_at || ""}:${(m.reactions || [])
@@ -973,7 +995,7 @@ export async function FriendsView(root) {
           )
           .join("|");
         if (paintKey && paintKey === lastThreadPaintKey) {
-          const latestSame = messages[messages.length - 1];
+          const latestSame = threadMessages[threadMessages.length - 1];
           markChatRead(activeChatId, latestSame?.created_at);
           return;
         }
@@ -982,7 +1004,7 @@ export async function FriendsView(root) {
         const stickBottom =
           box.scrollHeight - box.scrollTop - box.clientHeight < 80;
         const prevScrollTop = box.scrollTop;
-        if (!messages.length) {
+        if (!threadMessages.length) {
           box.innerHTML = `
             <div class="fp-chat__empty">
               ${presenceAvatarHtml(current.other, "fp-avatar--md")}
@@ -994,11 +1016,11 @@ export async function FriendsView(root) {
         }
 
         const CLUSTER_MS = 2 * 60 * 1000;
-        box.innerHTML = messages
+        box.innerHTML = threadMessages
           .map((m, i) => {
             const mine = m.sender_id === me.id;
-            const prev = messages[i - 1];
-            const next = messages[i + 1];
+            const prev = threadMessages[i - 1];
+            const next = threadMessages[i + 1];
             const t = new Date(m.created_at).getTime();
             const samePrev =
               prev &&
@@ -1097,7 +1119,7 @@ export async function FriendsView(root) {
           .join("");
         if (stickBottom) box.scrollTop = box.scrollHeight;
         else box.scrollTop = prevScrollTop;
-        const latest = messages[messages.length - 1];
+        const latest = threadMessages[threadMessages.length - 1];
         markChatRead(activeChatId, latest?.created_at);
         // Keep inbox preview cache warm when viewing a thread
         if (latest) {
@@ -1113,11 +1135,50 @@ export async function FriendsView(root) {
           };
         }
       };
-      chatPaint = paint;
+      const paintFromServer = (messages) => {
+        if (sending) {
+          // Keep optimistic bubbles until send finishes
+          const locals = threadMessages.filter((m) =>
+            String(m.id).startsWith("local-")
+          );
+          if (locals.length) {
+            const server = Array.isArray(messages) ? messages : [];
+            const merged = [...server];
+            for (const local of locals) {
+              const already = server.some(
+                (m) =>
+                  m.sender_id === local.sender_id &&
+                  m.body === local.body &&
+                  Math.abs(
+                    new Date(m.created_at).getTime() -
+                      new Date(local.created_at).getTime()
+                  ) < 60000
+              );
+              if (!already) merged.push(local);
+            }
+            paint(merged);
+            return;
+          }
+        }
+        paint(messages);
+      };
+      chatPaint = paintFromServer;
       lastThreadPaintKey = "";
 
       const refreshThread = async () => {
-        paint(await listMessages(chatId));
+        if (threadFetchBusy) {
+          threadFetchQueued = true;
+          return;
+        }
+        threadFetchBusy = true;
+        try {
+          do {
+            threadFetchQueued = false;
+            paintFromServer(await listMessages(chatId));
+          } while (threadFetchQueued && box.isConnected);
+        } finally {
+          threadFetchBusy = false;
+        }
       };
 
       box.addEventListener("click", async (e) => {
@@ -1176,8 +1237,37 @@ export async function FriendsView(root) {
       }
 
       if (unsubChat) unsubChat();
+      peerIsTyping = false;
+
+      const typingEl = panel.querySelector("#chat-typing");
+      const typingLabel = panel.querySelector("#chat-typing-label");
+      const peerName = current.other?.display_name || "Friend";
+      let typingHideTimer = null;
+      let typingPingTimer = null;
+      let amTyping = false;
+
+      const setPeerTyping = (visible, name = peerName) => {
+        peerIsTyping = Boolean(visible);
+        if (typingEl && typingLabel) {
+          if (!visible) {
+            typingEl.hidden = true;
+            typingLabel.textContent = "";
+          } else {
+            typingLabel.textContent = `${name} is typing…`;
+            typingEl.hidden = false;
+            requestAnimationFrame(() => {
+              box.scrollTop = box.scrollHeight;
+            });
+          }
+        }
+        syncPresenceUi();
+      };
+
+      // Stable topic so typing broadcast reaches the other person
       const channel = getSupabase()
-        .channel(`chat-${chatId}-${Date.now()}`)
+        .channel(`friend-chat-${chatId}`, {
+          config: { broadcast: { self: false } },
+        })
         .on(
           "postgres_changes",
           {
@@ -1186,14 +1276,14 @@ export async function FriendsView(root) {
             table: "friend_messages",
             filter: `friendship_id=eq.${chatId}`,
           },
-          async () => {
-            try {
-              paint(await listMessages(chatId));
-              activity = await getFriendsActivityCounts().catch(() => activity);
-              notifyFriendsBadge();
-            } catch (_) {
-              /* ignore */
-            }
+          () => {
+            setPeerTyping(false);
+            refreshThread()
+              .then(async () => {
+                activity = await getFriendsActivityCounts().catch(() => activity);
+                notifyFriendsBadge();
+              })
+              .catch(() => {});
           }
         )
         .on(
@@ -1203,16 +1293,64 @@ export async function FriendsView(root) {
             schema: "public",
             table: "friend_message_reactions",
           },
-          async () => {
-            try {
-              paint(await listMessages(chatId));
-            } catch (_) {
-              /* ignore */
-            }
+          () => {
+            refreshThread().catch(() => {});
           }
         )
+        .on("broadcast", { event: "typing" }, ({ payload }) => {
+          if (!payload || payload.userId === me.id) return;
+          window.clearTimeout(typingHideTimer);
+          if (payload.typing) {
+            setPeerTyping(true, peerName);
+            typingHideTimer = window.setTimeout(() => setPeerTyping(false), 2200);
+          } else {
+            setPeerTyping(false);
+          }
+        })
         .subscribe();
+
+      const sendTyping = async (typing) => {
+        try {
+          await channel.send({
+            type: "broadcast",
+            event: "typing",
+            payload: {
+              typing: Boolean(typing),
+              userId: me.id,
+              name: me.user_metadata?.display_name || me.email || "Friend",
+            },
+          });
+        } catch {
+          /* ignore */
+        }
+      };
+
+      const stopTypingPing = () => {
+        window.clearTimeout(typingPingTimer);
+        typingPingTimer = null;
+        if (!amTyping) return;
+        amTyping = false;
+        sendTyping(false);
+      };
+
+      const pulseTyping = () => {
+        sendTyping(true);
+        amTyping = true;
+        window.clearTimeout(typingPingTimer);
+        typingPingTimer = window.setTimeout(stopTypingPing, 1400);
+      };
+
+      // Realtime can lag or miss events — poll the open thread so chat stays near-instant
+      threadPoll = setInterval(() => {
+        if (sending) return;
+        refreshThread().catch(() => {});
+      }, 1200);
       unsubChat = () => {
+        stopTypingPing();
+        window.clearTimeout(typingHideTimer);
+        peerIsTyping = false;
+        if (threadPoll) clearInterval(threadPoll);
+        threadPoll = null;
         getSupabase().removeChannel(channel);
         unsubChat = null;
         chatPaint = null;
@@ -1346,7 +1484,6 @@ export async function FriendsView(root) {
         unsubChatVv = null;
       };
 
-      let sending = false;
       const syncSendEnabled = () => {
         if (!sendBtn) return;
         const hasText = Boolean(String(input?.value || "").trim());
@@ -1354,7 +1491,11 @@ export async function FriendsView(root) {
         sendBtn.classList.toggle("is-ready", hasText && !sending);
       };
       syncSendEnabled();
-      input?.addEventListener("input", syncSendEnabled);
+      input?.addEventListener("input", () => {
+        syncSendEnabled();
+        if (String(input?.value || "").trim()) pulseTyping();
+        else stopTypingPing();
+      });
 
       const sendChat = async () => {
         if (sending) return;
@@ -1364,13 +1505,29 @@ export async function FriendsView(root) {
           return;
         }
         sending = true;
+        stopTypingPing();
         if (input) input.value = "";
         syncSendEnabled();
+        // Show the bubble immediately — don't wait on the network round-trip
+        const optimistic = {
+          id: `local-${Date.now()}`,
+          friendship_id: chatId,
+          sender_id: me.id,
+          body: text,
+          created_at: new Date().toISOString(),
+          edited_at: null,
+          reactions: [],
+        };
+        paint([...threadMessages, optimistic]);
+        requestAnimationFrame(() => {
+          box.scrollTop = box.scrollHeight;
+        });
         try {
           await sendMessage(chatId, text);
-          paint(await listMessages(chatId));
+          await refreshThread();
         } catch (err) {
           if (input) input.value = text;
+          paint(threadMessages.filter((m) => m.id !== optimistic.id));
           alert(err.message);
         } finally {
           sending = false;
@@ -1421,6 +1578,7 @@ export async function FriendsView(root) {
 
       input?.addEventListener("blur", () => {
         inputFocused = false;
+        stopTypingPing();
         setTimeout(() => {
           if (inputFocused) return;
           syncChatViewport();
@@ -1920,6 +2078,34 @@ export async function FriendsView(root) {
     try {
       const table = payload?.table;
       const fromBadge = payload?.source === "badge-event";
+      const source = payload?.source;
+      const isSoft =
+        source === "poll" ||
+        source === "visible" ||
+        source === "queued" ||
+        fromBadge;
+
+      // Open thread: refresh messages first — skip heavy friendship/party refetch
+      if (tab === "chat" && activeChatId && chatPaint) {
+        const row = payload?.new;
+        const msgEvent = table === "friend_messages";
+        const forThis =
+          !msgEvent ||
+          !row?.friendship_id ||
+          row.friendship_id === activeChatId;
+        if (forThis && (msgEvent || isSoft || !table)) {
+          try {
+            chatPaint(await listMessages(activeChatId));
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        refreshChatPreviews().catch(() => {});
+        activity = await getFriendsActivityCounts().catch(() => activity);
+        syncTabBadgesOnly();
+        if (!fromBadge) notifyFriendsBadge();
+        return;
+      }
 
       await refreshData();
       // Avoid badge-event → refresh → notify → badge-event loops
@@ -1933,26 +2119,9 @@ export async function FriendsView(root) {
       } else if (tab === "friends") {
         paintPeopleLists();
       } else if (tab === "chat") {
-        if (activeChatId) {
-          // Only refetch the open thread on real message events (not polls)
-          if (table === "friend_messages" && chatPaint) {
-            const row = payload?.new;
-            const forThis =
-              !row?.friendship_id || row.friendship_id === activeChatId;
-            if (forThis) {
-              try {
-                chatPaint(await listMessages(activeChatId));
-              } catch (_) {
-                /* ignore */
-              }
-            }
-            refreshChatPreviews().catch(() => {});
-          }
-        } else {
-          // Soft-update inbox only — never remount (blinks)
-          await refreshChatPreviews();
-          paintInboxList();
-        }
+        // Soft-update inbox only — never remount (blinks)
+        await refreshChatPreviews();
+        paintInboxList();
       }
     } finally {
       liveBusy = false;
@@ -1965,9 +2134,11 @@ export async function FriendsView(root) {
 
   function scheduleLiveRefresh(payload) {
     clearTimeout(liveTimer);
+    // Message events should paint ASAP; polls can debounce a bit
+    const delay = payload?.table === "friend_messages" ? 40 : 180;
     liveTimer = setTimeout(() => {
       applyLiveUpdate(payload).catch(() => {});
-    }, 180);
+    }, delay);
   }
 
   renderShell();
@@ -2008,6 +2179,7 @@ export async function FriendsView(root) {
   return {
     unmount() {
       clearTimeout(liveTimer);
+      peerIsTyping = false;
       unsubChat?.();
       unsubPage?.();
       unsubWatchDoc?.();

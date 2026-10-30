@@ -653,7 +653,10 @@ export async function WatchPartyView(root, params = {}) {
     </div>`;
   };
 
-  function spawnComment(msg, { mine = false, name = "Friend" } = {}) {
+  function spawnComment(
+    msg,
+    { mine = false, name = "Friend", skipScroll = false } = {}
+  ) {
     if (!msg?.id || knownMsgIds.has(msg.id)) return;
     knownMsgIds.add(msg.id);
     if (!mine) setTypingVisible(false);
@@ -690,7 +693,7 @@ export async function WatchPartyView(root, params = {}) {
       if (first?.dataset?.msgId) knownMsgIds.delete(first.dataset.msgId);
       first?.remove();
     }
-    comments.scrollTop = comments.scrollHeight;
+    if (!skipScroll) comments.scrollTop = comments.scrollHeight;
   }
 
   function displayNameFor(senderId) {
@@ -701,26 +704,74 @@ export async function WatchPartyView(root, params = {}) {
     return party.guest?.display_name || party.guest?.email || "Friend";
   }
 
-  async function hydrateComments() {
+  function applyReactionsToDom(rows = []) {
+    for (const m of rows) {
+      if (!m?.id) continue;
+      const bubble = comments.querySelector(
+        `.fp-bubble[data-msg-id="${CSS.escape(m.id)}"]`
+      );
+      if (!bubble) continue;
+      const next = reactionsHtml(m.id, m.reactions || []);
+      const chips = bubble.querySelector("[data-react-chips]");
+      if (chips) {
+        if (next) chips.outerHTML = next;
+        else chips.remove();
+      } else if (next) {
+        const time = bubble.querySelector("time");
+        if (time) time.insertAdjacentHTML("afterend", next);
+        else bubble.insertAdjacentHTML("beforeend", next);
+      }
+    }
+  }
+
+  let hydrateGen = 0;
+  let hydrateBusy = false;
+  let hydrateQueued = false;
+
+  async function hydrateComments({ reactionsOnly = false } = {}) {
+    if (hydrateBusy) {
+      hydrateQueued = true;
+      return;
+    }
+    hydrateBusy = true;
     try {
-      const stickBottom =
-        comments.scrollHeight - comments.scrollTop - comments.clientHeight < 80;
-      const rows = await listWatchPartyMessages(partyId);
-      comments.innerHTML = "";
-      knownMsgIds.clear();
-      if (!rows.length) {
-        comments.innerHTML = `<p class="muted wparty__chat-empty">Say hi while you watch.</p>`;
-        return;
-      }
-      for (const m of rows) {
-        spawnComment(m, {
-          mine: m.sender_id === me.id,
-          name: displayNameFor(m.sender_id),
-        });
-      }
-      if (stickBottom) comments.scrollTop = comments.scrollHeight;
+      do {
+        hydrateQueued = false;
+        const gen = ++hydrateGen;
+        const stickBottom =
+          comments.scrollHeight - comments.scrollTop - comments.clientHeight <
+          80;
+        const prevScrollTop = comments.scrollTop;
+        const rows = await listWatchPartyMessages(partyId);
+        if (gen !== hydrateGen) continue;
+
+        if (reactionsOnly && comments.querySelector(".wparty__msg")) {
+          applyReactionsToDom(rows);
+          continue;
+        }
+
+        comments.innerHTML = "";
+        knownMsgIds.clear();
+        if (!rows.length) {
+          comments.innerHTML = `<p class="muted wparty__chat-empty">Say hi while you watch.</p>`;
+          continue;
+        }
+        for (const m of rows) {
+          spawnComment(m, {
+            mine: m.sender_id === me.id,
+            name: displayNameFor(m.sender_id),
+            skipScroll: true,
+          });
+        }
+        if (stickBottom) comments.scrollTop = comments.scrollHeight;
+        else comments.scrollTop = prevScrollTop;
+      } while (hydrateQueued);
     } catch (_) {
-      comments.innerHTML = `<p class="muted wparty__chat-empty">Chat unavailable.</p>`;
+      if (!comments.querySelector(".wparty__msg")) {
+        comments.innerHTML = `<p class="muted wparty__chat-empty">Chat unavailable.</p>`;
+      }
+    } finally {
+      hydrateBusy = false;
     }
   }
 
@@ -819,7 +870,8 @@ export async function WatchPartyView(root, params = {}) {
           reactBtn.dataset.react,
           reactBtn.dataset.emoji
         );
-        await hydrateComments();
+        // Patch chips only — full remount raced with realtime and reshuffled chat
+        await hydrateComments({ reactionsOnly: true });
       } catch (err) {
         alert(err.message || "Could not react");
       }
@@ -938,7 +990,7 @@ export async function WatchPartyView(root, params = {}) {
       );
     },
     onReaction: () => {
-      hydrateComments();
+      hydrateComments({ reactionsOnly: true });
     },
     onTyping: (payload) => {
       if (!payload || payload.userId === me.id) return;
