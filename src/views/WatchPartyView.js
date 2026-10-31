@@ -21,15 +21,8 @@ import {
   streamContentKey,
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
-import { showConfirm, showNotice } from "../lib/appModal.js";
-import {
-  featuredGifs,
-  gifMessageBody,
-  hasGifApi,
-  parseGifMessage,
-  registerGifShare,
-  searchGifs,
-} from "../lib/giphy.js";
+import { showConfirm } from "../lib/appModal.js";
+import { parseGifMessage } from "../lib/giphy.js";
 
 /**
  * Dedicated watch-together room.
@@ -180,40 +173,42 @@ export async function WatchPartyView(root, params = {}) {
 
   root.innerHTML = `
     <section class="wparty">
-      <div class="wparty__stage">
-        <a class="wparty__back" href="${linkTo("/friends")}" aria-label="Back to Friends">←</a>
-        <div class="wparty__player" id="wp-player">
-          <p class="muted wparty__waiting" id="wp-waiting">
-            <span id="wp-waiting-title">Waiting…</span>
-            <span id="wp-waiting-copy"></span>
-          </p>
-        </div>
-      </div>
-
-      <div class="wparty__info">
-        <div class="wparty__titles">
-          <div class="wparty__titles-main">
-            <h1>${escapeHtml(party.title || movie.title || "Room")}</h1>
-            <p class="muted wparty__meta" id="wp-meta"></p>
+      <div class="wparty__main">
+        <div class="wparty__stage">
+          <a class="wparty__back" href="${linkTo("/friends")}" aria-label="Back to Friends">←</a>
+          <div class="wparty__player" id="wp-player">
+            <p class="muted wparty__waiting" id="wp-waiting">
+              <span id="wp-waiting-title">Waiting…</span>
+              <span id="wp-waiting-copy"></span>
+            </p>
           </div>
-          <button
-            type="button"
-            class="wparty__hint"
-            id="wp-sync-hint"
-            hidden
-            aria-label="Watch tip"
-            aria-expanded="false"
-            aria-controls="wp-sync-tip"
-            title="Watch tip"
-          >i</button>
-          <p class="wparty__sync-tip" id="wp-sync-tip" hidden role="tooltip">
-            Only the host Syncs. Watchers follow that moment automatically.
-          </p>
         </div>
-        <div class="wparty__controls" id="wp-banner"></div>
+
+        <div class="wparty__info">
+          <div class="wparty__titles">
+            <div class="wparty__titles-main">
+              <h1>${escapeHtml(party.title || movie.title || "Room")}</h1>
+              <p class="muted wparty__meta" id="wp-meta"></p>
+            </div>
+            <button
+              type="button"
+              class="wparty__hint"
+              id="wp-sync-hint"
+              hidden
+              aria-label="Watch tip"
+              aria-expanded="false"
+              aria-controls="wp-sync-tip"
+              title="Watch tip"
+            >i</button>
+            <p class="wparty__sync-tip" id="wp-sync-tip" hidden role="tooltip">
+              Only the host Syncs. Watchers follow that moment automatically.
+            </p>
+          </div>
+          <div class="wparty__controls" id="wp-banner"></div>
+        </div>
       </div>
 
-      <div class="wparty__chat">
+      <div class="wparty__chat" id="wp-chat">
         <header class="wparty__chat-head">
           <div class="wparty__chat-who">
             ${avatarHtml(other, otherName)}
@@ -222,6 +217,13 @@ export async function WatchPartyView(root, params = {}) {
               <span class="muted">with ${escapeHtml(otherName)}</span>
             </div>
           </div>
+          <button
+            type="button"
+            class="wparty__chat-close"
+            id="wp-chat-close"
+            aria-label="Close chat"
+            title="Close chat"
+          >✕</button>
         </header>
         <div class="wparty__messages" id="wp-comments" aria-live="polite"></div>
         <p class="wparty__typing" id="wp-typing" hidden aria-live="polite">
@@ -230,22 +232,7 @@ export async function WatchPartyView(root, params = {}) {
         </p>
         <div class="wparty__compose-spacer" id="wp-compose-spacer" hidden></div>
         <div class="wparty__composer" id="wp-composer">
-          <div
-            class="wparty__gifs"
-            id="wp-gifs"
-            hidden
-            role="listbox"
-            aria-label="GIF suggestions"
-          ></div>
           <form class="wparty__compose" id="wp-compose" autocomplete="off">
-            <button
-              type="button"
-              class="wparty__gif-btn"
-              id="wp-gif-btn"
-              aria-label="GIFs"
-              aria-pressed="false"
-              title="GIFs"
-            >GIF</button>
             <input
               type="text"
               name="body"
@@ -264,6 +251,24 @@ export async function WatchPartyView(root, params = {}) {
           </form>
         </div>
       </div>
+
+      <button
+        type="button"
+        class="wparty__chat-open"
+        id="wp-chat-open"
+        hidden
+        aria-label="Open chat"
+        title="Open chat"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2Zm2 4v2h12V8H6Zm0 4v2h8v-2H6Z"
+          />
+        </svg>
+        <span class="wparty__chat-open-label">Chat</span>
+        <span class="wparty__chat-badge" id="wp-chat-badge" hidden>0</span>
+      </button>
     </section>
   `;
 
@@ -280,6 +285,61 @@ export async function WatchPartyView(root, params = {}) {
   const typingEl = root.querySelector("#wp-typing");
   const typingLabel = root.querySelector("#wp-typing-label");
   const form = root.querySelector("#wp-compose");
+  const chatEl = root.querySelector("#wp-chat");
+  const chatCloseBtn = root.querySelector("#wp-chat-close");
+  const chatOpenBtn = root.querySelector("#wp-chat-open");
+  const chatBadge = root.querySelector("#wp-chat-badge");
+  const wpartyRoot = root.querySelector(".wparty");
+  let chatOpen = true;
+  let unreadChat = 0;
+
+  const paintChatBadge = () => {
+    if (!chatBadge || !chatOpenBtn) return;
+    if (unreadChat > 0) {
+      chatBadge.hidden = false;
+      chatBadge.textContent = unreadChat > 99 ? "99+" : String(unreadChat);
+      chatOpenBtn.classList.add("has-unread");
+      chatOpenBtn.setAttribute(
+        "aria-label",
+        `Open chat, ${unreadChat} new message${unreadChat === 1 ? "" : "s"}`
+      );
+    } else {
+      chatBadge.hidden = true;
+      chatBadge.textContent = "0";
+      chatOpenBtn.classList.remove("has-unread");
+      chatOpenBtn.setAttribute("aria-label", "Open chat");
+    }
+  };
+
+  const isDesktopChat = () => window.matchMedia("(min-width: 960px)").matches;
+
+  const setChatOpen = (open) => {
+    // Phones/tablets keep the stacked chat — collapse is desktop-only
+    const next = isDesktopChat() ? open : true;
+    chatOpen = next;
+    wpartyRoot?.classList.toggle("is-chat-closed", !next);
+    if (chatEl) chatEl.hidden = !next;
+    if (chatOpenBtn) chatOpenBtn.hidden = next || !isDesktopChat();
+    if (chatCloseBtn) chatCloseBtn.hidden = !isDesktopChat();
+    if (next) {
+      unreadChat = 0;
+      paintChatBadge();
+      requestAnimationFrame(() => {
+        comments.scrollTop = comments.scrollHeight;
+      });
+    }
+  };
+
+  chatCloseBtn?.addEventListener("click", () => setChatOpen(false));
+  chatOpenBtn?.addEventListener("click", () => setChatOpen(true));
+  setChatOpen(true);
+
+  const onChatLayoutMq = () => {
+    if (!isDesktopChat() && !chatOpen) setChatOpen(true);
+    else if (chatCloseBtn) chatCloseBtn.hidden = !isDesktopChat();
+    if (chatOpenBtn && chatOpen) chatOpenBtn.hidden = true;
+  };
+  window.addEventListener("resize", onChatLayoutMq);
 
   const setTypingVisible = (visible, name = otherName) => {
     if (!typingEl || !typingLabel) return;
@@ -1195,122 +1255,13 @@ export async function WatchPartyView(root, params = {}) {
   const composeSend = form.querySelector("#wp-send");
   const composeSpacer = root.querySelector("#wp-compose-spacer");
   const composer = root.querySelector("#wp-composer");
-  const gifBtn = root.querySelector("#wp-gif-btn");
-  const gifStrip = root.querySelector("#wp-gifs");
-  const wpartyShell = root.querySelector(".wparty");
+  const wpartyShell = wpartyRoot;
   let inputFocused = false;
-  let kbPollTimer = null;
-  let gifOpen = false;
-  let gifTimer = 0;
-  let gifReq = 0;
-  let sendingGif = false;
-
-  const hideGifStrip = () => {
-    gifOpen = false;
-    gifBtn?.setAttribute("aria-pressed", "false");
-    gifBtn?.classList.remove("is-on");
-    if (gifStrip) {
-      gifStrip.hidden = true;
-      gifStrip.innerHTML = "";
-    }
-  };
-
-  const paintGifStrip = (items, query = "") => {
-    if (!gifStrip) return;
-    const label = String(query || "").trim()
-      ? `Results for “${String(query).trim()}”`
-      : "Trending GIFs";
-    if (!items?.length) {
-      gifStrip.innerHTML = `
-        <div class="wparty__gifs-head">
-          <strong>${escapeHtml(label)}</strong>
-          <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
-        </div>
-        <p class="wparty__gifs-empty">No GIFs found</p>`;
-      gifStrip.hidden = false;
-      return;
-    }
-    gifStrip.innerHTML = `
-      <div class="wparty__gifs-head">
-        <strong>${escapeHtml(label)}</strong>
-        <span class="wparty__gifs-via">GIPHY</span>
-        <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
-      </div>
-      <div class="wparty__gifs-rail" role="presentation">
-        ${items
-          .map(
-            (g) => `
-          <button
-            type="button"
-            class="wparty__gif-pick"
-            role="option"
-            data-gif-url="${escapeHtml(g.url)}"
-            data-gif-id="${escapeHtml(g.id)}"
-            title="${escapeHtml(g.title)}"
-            aria-label="${escapeHtml(g.title)}"
-          >
-            <img src="${escapeHtml(g.preview)}" alt="" loading="lazy" decoding="async" />
-          </button>`
-          )
-          .join("")}
-      </div>`;
-    gifStrip.hidden = false;
-    gifOpen = true;
-    gifBtn?.setAttribute("aria-pressed", "true");
-    gifBtn?.classList.add("is-on");
-  };
-
-  const loadGifs = async (query) => {
-    if (!hasGifApi() || !gifStrip) return;
-    const req = ++gifReq;
-    const q = String(query || "").trim();
-    gifStrip.hidden = false;
-    gifStrip.innerHTML = `
-      <div class="wparty__gifs-head">
-        <strong>${q ? `Results for “${escapeHtml(q)}”` : "Trending GIFs"}</strong>
-        <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
-      </div>
-      <p class="wparty__gifs-empty">Searching…</p>`;
-    gifOpen = true;
-    gifBtn?.setAttribute("aria-pressed", "true");
-    gifBtn?.classList.add("is-on");
-    try {
-      const items = await searchGifs(q);
-      if (req !== gifReq) return;
-      paintGifStrip(items, q);
-    } catch {
-      if (req !== gifReq) return;
-      gifStrip.innerHTML = `
-        <div class="wparty__gifs-head">
-          <strong>GIFs</strong>
-          <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
-        </div>
-        <p class="wparty__gifs-empty">Couldn’t load GIFs</p>`;
-    }
-  };
-
-  const scheduleGifSuggest = () => {
-    if (!hasGifApi()) return;
-    clearTimeout(gifTimer);
-    const q = String(composeInput?.value || "").trim();
-    if (!q) {
-      if (gifOpen) loadGifs("");
-      else hideGifStrip();
-      return;
-    }
-    if (q.length < 2 || q.length > 40 || /\s{2,}/.test(q) || q.split(/\s+/).length > 4) {
-      if (gifOpen) hideGifStrip();
-      return;
-    }
-    gifTimer = setTimeout(() => loadGifs(q), 320);
-  };
-
-  const lockPageScroll = () => {
-    window.scrollTo(0, 0);
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-    if (root.scrollTop) root.scrollTop = 0;
-  };
+  let sendingChat = false;
+  let kbRaf = 0;
+  let kbSettleTimer = 0;
+  let lastKbBottom = -1;
+  let lastComposeH = -1;
 
   const keyboardInset = () => {
     const vv = window.visualViewport;
@@ -1339,69 +1290,61 @@ export async function WatchPartyView(root, params = {}) {
   };
   syncSendReady();
 
-  // Pin compose above the mobile keyboard so typing stays visible.
-  const syncWpartyKb = () => {
-    const vv = window.visualViewport;
-    const layoutH = window.innerHeight;
-    const inset = keyboardInset();
-    const shrunk = vv ? layoutH - vv.height > 50 : false;
-    const kbOpen =
-      inset > 40 ||
-      shrunk ||
-      (inputFocused && vv && vv.height / layoutH < 0.92) ||
-      (inputFocused && inset > 0);
+  const measureComposeH = () =>
+    Math.ceil(
+      composer?.getBoundingClientRect().height ||
+        form?.getBoundingClientRect().height ||
+        0
+    ) || 52;
 
-    document.body.classList.toggle("is-wparty-kb", kbOpen || inputFocused);
-
-    if (!kbOpen && !inputFocused) {
-      // Never resize .wparty while a stream is up — height changes reload the iframe
-      document.documentElement.style.removeProperty("--wparty-kb-bottom");
-      document.documentElement.style.removeProperty("--wparty-compose-h");
-      form?.style.removeProperty("bottom");
-      composer?.style.removeProperty("bottom");
-      if (composeSpacer) composeSpacer.hidden = true;
-      return;
+  // Reserve space under the fixed mobile compose bar (YouTube-style).
+  const ensureComposeSpacer = () => {
+    const h = measureComposeH();
+    if (h !== lastComposeH) {
+      lastComposeH = h;
+      document.documentElement.style.setProperty("--wparty-compose-h", `${h}px`);
     }
-
-    // Pin compose only — do not change shell/player height (that refetches CineSrc)
-    const bottom = Math.max(inset, inputFocused && inset < 40 ? 0 : inset);
-    document.documentElement.style.setProperty(
-      "--wparty-kb-bottom",
-      `${bottom}px`
-    );
-    // Inline bottom as a hard fallback (some WebViews ignore the CSS var)
-    if (composer) composer.style.bottom = `${bottom}px`;
-    else if (form) form.style.bottom = `${bottom}px`;
-
-    const composeH =
-      Math.ceil(
-        composer?.getBoundingClientRect().height ||
-          form?.getBoundingClientRect().height ||
-          0
-      ) || 52;
-    document.documentElement.style.setProperty(
-      "--wparty-compose-h",
-      `${composeH}px`
-    );
     if (composeSpacer) composeSpacer.hidden = false;
-
-    lockPageScroll();
-    requestAnimationFrame(() => {
-      comments.scrollTop = comments.scrollHeight;
-    });
   };
+  ensureComposeSpacer();
 
-  const startKbPoll = () => {
-    clearInterval(kbPollTimer);
-    let ticks = 0;
-    kbPollTimer = setInterval(() => {
-      syncWpartyKb();
-      ticks += 1;
-      if (ticks >= 20 || (!inputFocused && keyboardInset() < 40)) {
-        clearInterval(kbPollTimer);
-        kbPollTimer = null;
+  /**
+   * Pin compose above the keypad — only write styles when the inset changes.
+   * Avoid scroll locking / polling / sticky↔fixed flips (those blink the caret on iOS/Android).
+   */
+  const syncWpartyKb = () => {
+    if (kbRaf) return;
+    kbRaf = requestAnimationFrame(() => {
+      kbRaf = 0;
+      const inset = keyboardInset();
+      const kbOpen = inset > 48;
+
+      if (!inputFocused && !kbOpen) {
+        document.body.classList.remove("is-wparty-kb");
+        if (lastKbBottom !== 0) {
+          lastKbBottom = 0;
+          document.documentElement.style.setProperty("--wparty-kb-bottom", "0px");
+          composer?.style.removeProperty("bottom");
+          form?.style.removeProperty("bottom");
+        }
+        ensureComposeSpacer();
+        return;
       }
-    }, 50);
+
+      document.body.classList.add("is-wparty-kb");
+      // While the keyboard is animating open, keep bottom at 0 until inset is real —
+      // jumping early causes the input to blink under the rising keypad.
+      const bottom = kbOpen ? inset : 0;
+      if (bottom !== lastKbBottom) {
+        lastKbBottom = bottom;
+        document.documentElement.style.setProperty(
+          "--wparty-kb-bottom",
+          `${bottom}px`
+        );
+        if (composer) composer.style.bottom = `${bottom}px`;
+      }
+      ensureComposeSpacer();
+    });
   };
 
   const stopTypingPing = () => {
@@ -1465,14 +1408,12 @@ export async function WatchPartyView(root, params = {}) {
   });
 
   const sendWpChat = async (rawBody) => {
-    if (sendingGif) return;
+    if (sendingChat) return;
     const text = String(rawBody ?? form.body?.value ?? "").trim();
     if (!text) return;
     if (party.status !== "active" && party.status !== "invited") return;
-    sendingGif = true;
+    sendingChat = true;
     stopTypingPing();
-    clearTimeout(gifTimer);
-    hideGifStrip();
     if (form.body) form.body.value = "";
     syncSendReady();
     comments.querySelector(".wparty__chat-empty")?.remove();
@@ -1480,10 +1421,10 @@ export async function WatchPartyView(root, params = {}) {
       const msg = await sendWatchPartyMessage(partyId, text);
       spawnComment(msg, { mine: true, name: "You" });
     } catch (err) {
-      if (!parseGifMessage(text) && form.body) form.body.value = text;
+      if (form.body) form.body.value = text;
       alert(err.message || "Could not send");
     } finally {
-      sendingGif = false;
+      sendingChat = false;
       syncSendReady();
       composeInput?.focus({ preventScroll: true });
       syncWpartyKb();
@@ -1495,76 +1436,37 @@ export async function WatchPartyView(root, params = {}) {
     await sendWpChat();
   });
 
-  gifBtn?.addEventListener("click", async () => {
-    if (!hasGifApi()) {
-      showNotice({
-        title: "GIFs",
-        message:
-          "Add VITE_GIPHY_API_KEY to your .env — create a free key at https://developers.giphy.com/dashboard/ then run npm run sync-env.",
-      });
-      return;
-    }
-    if (gifOpen) {
-      hideGifStrip();
-      return;
-    }
-    const q = String(composeInput?.value || "").trim();
-    await loadGifs(q.length >= 2 ? q : "");
-  });
-
-  gifStrip?.addEventListener("click", (e) => {
-    if (e.target.closest("[data-gif-close]")) {
-      e.preventDefault();
-      hideGifStrip();
-      return;
-    }
-    const pick = e.target.closest("[data-gif-url]");
-    if (!pick) return;
-    e.preventDefault();
-    const url = pick.getAttribute("data-gif-url");
-    if (!url) return;
-    registerGifShare(
-      pick.getAttribute("data-gif-id") || "",
-      String(composeInput?.value || "").trim()
-    );
-    sendWpChat(gifMessageBody(url));
-  });
-
   composeInput?.addEventListener("input", () => {
     syncSendReady();
     if (String(composeInput.value || "").trim()) pulseTyping();
     else stopTypingPing();
-    scheduleGifSuggest();
   });
 
   composeInput?.addEventListener("focus", () => {
     inputFocused = true;
-    // Lift immediately so the bar isn’t trapped under the rising keyboard
     document.body.classList.add("is-wparty-kb");
-    lockPageScroll();
     syncWpartyKb();
-    startKbPoll();
-    [80, 160, 280, 450, 700].forEach((ms) => {
-      window.setTimeout(() => {
-        if (!inputFocused) return;
-        syncWpartyKb();
-        lockPageScroll();
-        comments.scrollTop = comments.scrollHeight;
-      }, ms);
-    });
+    // One settle after the OS keyboard animation — no poll / no scroll spam
+    window.clearTimeout(kbSettleTimer);
+    kbSettleTimer = window.setTimeout(() => {
+      if (!inputFocused) return;
+      syncWpartyKb();
+      comments.scrollTop = comments.scrollHeight;
+    }, 280);
   });
 
   composeInput?.addEventListener("blur", () => {
     inputFocused = false;
     stopTypingPing();
-    window.setTimeout(() => {
+    window.clearTimeout(kbSettleTimer);
+    kbSettleTimer = window.setTimeout(() => {
       if (inputFocused) return;
       syncWpartyKb();
-    }, 120);
+    }, 160);
   });
 
+  // resize = keyboard height changes; skip scroll — iOS fires it constantly while typing
   window.visualViewport?.addEventListener("resize", syncWpartyKb);
-  window.visualViewport?.addEventListener("scroll", syncWpartyKb);
   window.addEventListener("resize", syncWpartyKb);
 
   // Mobile freezes/reloads embeds when switching apps. We can't keep the
@@ -1703,13 +1605,18 @@ export async function WatchPartyView(root, params = {}) {
       const msg = payload?.new;
       if (!msg) return;
       comments.querySelector(".wparty__chat-empty")?.remove();
+      const mine = msg.sender_id === me.id;
       spawnComment(
         { ...msg, reactions: msg.reactions || [] },
         {
-          mine: msg.sender_id === me.id,
+          mine,
           name: displayNameFor(msg.sender_id),
         }
       );
+      if (!chatOpen && !mine) {
+        unreadChat += 1;
+        paintChatBadge();
+      }
     },
     onReaction: (payload) => {
       // Reactions must never touch playback — patch chips only
@@ -1744,8 +1651,9 @@ export async function WatchPartyView(root, params = {}) {
     unmount() {
       stopTypingPing();
       window.clearTimeout(typingHideTimer);
-      clearInterval(kbPollTimer);
-      kbPollTimer = null;
+      window.clearTimeout(kbSettleTimer);
+      if (kbRaf) cancelAnimationFrame(kbRaf);
+      kbRaf = 0;
       clearInterval(positionHeartbeat);
       document.removeEventListener("visibilitychange", onVisibility);
       document.removeEventListener("click", onDocClickCloseTip);
@@ -1753,12 +1661,13 @@ export async function WatchPartyView(root, params = {}) {
       partySub?.stop?.();
       unsubTime?.();
       window.visualViewport?.removeEventListener("resize", syncWpartyKb);
-      window.visualViewport?.removeEventListener("scroll", syncWpartyKb);
       window.removeEventListener("resize", syncWpartyKb);
+      window.removeEventListener("resize", onChatLayoutMq);
       document.body.classList.remove("is-wparty-kb");
       wpartyShell?.style.removeProperty("height");
       wpartyShell?.style.removeProperty("max-height");
       form?.style.removeProperty("bottom");
+      composer?.style.removeProperty("bottom");
       document.documentElement.style.removeProperty("--wparty-kb-bottom");
       document.documentElement.style.removeProperty("--wparty-compose-h");
       if (composeSpacer) composeSpacer.hidden = true;

@@ -430,9 +430,9 @@ export async function LoginView(root) {
 
   // Clear a previous session dismiss so updates show the modal again once
   try {
-    if (sessionStorage.getItem("lantaw-pwa-force") !== "55") {
+    if (sessionStorage.getItem("lantaw-pwa-force") !== "125") {
       sessionStorage.removeItem("lantaw-pwa-dismiss");
-      sessionStorage.setItem("lantaw-pwa-force", "55");
+      sessionStorage.setItem("lantaw-pwa-force", "125");
     }
   } catch {
     /* ignore */

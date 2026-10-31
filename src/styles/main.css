@@ -6351,11 +6351,8 @@ body.is-halloween .home-sticky__mark::after {
     position: absolute;
     inset: 0;
     align-items: stretch;
-    gap: 0.65rem;
-    padding:
-      clamp(1.25rem, 3vh, 2rem)
-      clamp(1.25rem, 3vw, 2.5rem)
-      clamp(7rem, 14vh, 9rem);
+    gap: 0;
+    padding: 0 0 clamp(7rem, 14vh, 9rem);
     height: 100%;
     box-sizing: border-box;
   }
@@ -6364,8 +6361,8 @@ body.is-halloween .home-sticky__mark::after {
     width: auto;
     height: 100%;
     aspect-ratio: 2 / 3;
-    border-radius: 14px;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .auth-showcase__veil {
@@ -6419,12 +6416,8 @@ body.is-halloween .home-sticky__mark::after {
       clamp(2rem, 4vh, 3rem)
       clamp(1.75rem, 3vw, 3rem);
     box-sizing: border-box;
-    border-left: 1px solid rgba(255, 255, 255, 0.06);
-    background: linear-gradient(
-      90deg,
-      rgba(12, 7, 8, 0.55),
-      rgba(12, 7, 8, 0.88) 40%
-    );
+    border: none;
+    background: transparent;
     animation: none;
   }
 
@@ -6937,7 +6930,8 @@ body.is-watch-party .bottom-nav {
 
 .wparty {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /* main (video+controls) stacked above chat on mobile */
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0.35rem;
   width: 100%;
   max-width: none;
@@ -6947,6 +6941,56 @@ body.is-watch-party .bottom-nav {
   padding: 0 0 max(0.85rem, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.wparty__main {
+  display: grid;
+  grid-template-rows: auto auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Mobile/tablet: keep video at natural height — never stretch into empty black */
+@media (max-width: 959px) {
+  .wparty.is-chat-closed {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .wparty.is-chat-closed .wparty__main {
+    grid-template-rows: auto auto;
+    height: auto;
+  }
+
+  .wparty__stage {
+    display: grid;
+    place-items: stretch;
+    flex-shrink: 0;
+    height: auto;
+    max-height: none;
+  }
+
+  .wparty__player {
+    width: 100%;
+  }
+
+  .wparty__waiting {
+    width: 100%;
+    min-height: 0;
+    aspect-ratio: 16 / 9;
+    max-height: min(36vh, 280px);
+    place-content: center;
+    align-content: center;
+  }
+
+  .wparty__chat-close,
+  .wparty__chat-open {
+    display: none !important;
+  }
+
+  .wparty__info {
+    padding-bottom: 0.35rem;
+  }
 }
 
 .wparty__info,
@@ -6963,7 +7007,7 @@ body.has-mobile-nav.is-watch-party .wparty {
   max-height: 100dvh;
 }
 
-/* Keyboard open: freeze the room; pin compose to the visible viewport */
+/* Keyboard open: freeze page chrome — compose stays fixed (YouTube-style) */
 body.is-wparty-kb {
   overflow: hidden !important;
 }
@@ -6980,49 +7024,77 @@ body.is-wparty-kb .wparty {
   overscroll-behavior: none;
 }
 
-body.is-wparty-kb .wparty__composer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: var(--wparty-kb-bottom, 0px);
-  z-index: 80;
-  width: 100%;
-  max-width: none;
-  transform: none;
-  margin: 0;
-  box-sizing: border-box;
-  background: color-mix(in srgb, var(--bg) 96%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px 14px 0 0;
-  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.4);
-}
-
-body.is-wparty-kb .wparty__compose {
-  position: relative;
-  bottom: auto;
-  padding: 0.4rem max(0.85rem, env(safe-area-inset-left))
-    max(0.4rem, env(safe-area-inset-bottom))
-    max(0.85rem, env(safe-area-inset-right));
-  background: transparent;
-  border-top: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-
 body.is-wparty-kb.has-mobile-nav .wparty {
   padding-bottom: 0;
 }
 
 .wparty__compose-spacer {
   flex: 0 0 auto;
-  height: var(--wparty-compose-h, 3rem);
+  height: var(--wparty-compose-h, 3.25rem);
   pointer-events: none;
 }
 
 .wparty__compose-spacer[hidden] {
   display: none !important;
+}
+
+/* Phones/tablets: compose always fixed — never flip sticky↔fixed while typing */
+@media (max-width: 959px) {
+  body.is-watch-party .wparty__composer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--wparty-kb-bottom, 0px);
+    z-index: 80;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    box-sizing: border-box;
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.4);
+    /* Stable compositing — reduces caret blink on iOS/Android keyboards */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+  }
+
+  body.is-watch-party .wparty__compose {
+    position: relative;
+    bottom: auto;
+    padding: 0.45rem max(0.85rem, env(safe-area-inset-left))
+      max(0.45rem, env(safe-area-inset-bottom))
+      max(0.85rem, env(safe-area-inset-right));
+    background: transparent;
+    border-top: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  body.is-watch-party .wparty__compose-spacer,
+  body.is-watch-party .wparty__compose-spacer[hidden] {
+    display: block !important;
+    height: var(--wparty-compose-h, 3.25rem);
+  }
+}
+
+/* Desktop split: compose stays in the chat column — never viewport-fixed */
+@media (min-width: 960px) {
+  body.is-wparty-kb .wparty__composer,
+  body.is-watch-party .wparty__composer {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto !important;
+    width: auto;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    transform: none;
+  }
 }
 
 .wparty__loading {
@@ -7323,7 +7395,11 @@ body.is-wparty-kb.has-mobile-nav .wparty {
 @media (max-width: 639px) {
   .wparty__player .detail__player-frame,
   .wparty__player .detail__player-frame--embed {
-    max-height: min(28vh, 220px);
+    max-height: min(32vh, 240px);
+  }
+
+  .wparty__waiting {
+    max-height: min(32vh, 240px);
   }
 }
 
@@ -7331,6 +7407,213 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   .wparty__player .detail__player-frame,
   .wparty__player .detail__player-frame--embed {
     max-height: min(42vh, 520px);
+  }
+}
+
+/* —— Watch party: tablet info bar (mobile layout unchanged) —— */
+@media (min-width: 640px) {
+  .wparty__info,
+  .wparty__chat {
+    padding-inline: max(1.35rem, env(safe-area-inset-left))
+      max(1.35rem, env(safe-area-inset-right));
+  }
+
+  .wparty__info {
+    gap: 0.75rem 1.25rem;
+    padding-block: 0.65rem 0.45rem;
+    align-items: center;
+  }
+
+  .wparty__titles {
+    gap: 0.55rem;
+    align-items: center;
+  }
+
+  .wparty__titles h1 {
+    font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+    letter-spacing: -0.035em;
+  }
+
+  .wparty__meta {
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+  }
+
+  .wparty__hint {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-top: 0;
+    font-size: 0.74rem;
+  }
+
+  .wparty__controls {
+    gap: 0.45rem;
+  }
+
+  .wparty__playback {
+    gap: 0.4rem;
+  }
+
+  .wparty__playback .btn,
+  .wparty__playback .fp-btn {
+    min-height: 2.4rem;
+    padding-inline: 1.05rem;
+    font-size: 0.86rem;
+    border-radius: 11px;
+  }
+}
+
+/* —— Watch party: desktop split (video column | chat column) —— */
+@media (min-width: 960px) {
+  .wparty {
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 26rem);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+  }
+
+  .wparty.is-chat-closed {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .wparty.is-chat-closed .wparty__chat-open {
+    right: max(1.25rem, env(safe-area-inset-right));
+    bottom: max(5.5rem, env(safe-area-inset-bottom));
+  }
+
+  /* Left column owns video + Start/End — never paints into chat */
+  .wparty__main {
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .wparty__stage {
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #000;
+  }
+
+  .wparty__info {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.85rem 1.15rem 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--bg) 94%, #1a0a0e);
+    overflow: hidden;
+  }
+
+  .wparty__titles {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .wparty__titles h1 {
+    font-size: clamp(1.15rem, 1.4vw, 1.45rem);
+  }
+
+  .wparty__meta {
+    font-size: 0.84rem;
+  }
+
+  .wparty__controls {
+    flex: 0 0 auto;
+    min-width: 0;
+    justify-items: end;
+  }
+
+  .wparty__playback {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
+  }
+
+  .wparty__playback .btn,
+  .wparty__playback .fp-btn {
+    flex: 0 0 auto;
+    min-width: 4.25rem;
+    height: 2.4rem;
+    min-height: 2.4rem;
+    padding-inline: 0.85rem;
+  }
+
+  /* Right column — fully separate from video controls */
+  .wparty__chat {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    max-height: 100dvh;
+    border-top: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.9rem 1rem 0.85rem;
+    background: color-mix(in srgb, var(--bg) 97%, #12080c);
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .wparty__player {
+    width: 100%;
+    max-height: 100%;
+    align-content: center;
+  }
+
+  .wparty__player .detail__player-frame,
+  .wparty__player .detail__player-frame--embed {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(100%, calc(100dvh - 5.75rem));
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  .wparty__waiting {
+    width: 100%;
+    min-height: min(52vh, 28rem);
+  }
+
+  .wparty__back {
+    top: max(0.75rem, env(safe-area-inset-top));
+    left: max(0.75rem, env(safe-area-inset-left));
+    width: 2rem;
+    height: 2rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .wparty {
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 28rem);
+  }
+
+  .wparty__info {
+    padding: 0.95rem 1.35rem 1.1rem;
+  }
+
+  .wparty__titles h1 {
+    font-size: 1.55rem;
+  }
+
+  .wparty__playback .btn,
+  .wparty__playback .fp-btn {
+    min-width: 4.5rem;
+    padding-inline: 0.9rem;
   }
 }
 
@@ -7382,11 +7665,121 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.wparty__chat[hidden] {
+  display: none !important;
+}
+
+.wparty.is-chat-closed {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.wparty.is-chat-closed .wparty__main {
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+}
+
 .wparty__chat-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   padding-inline: 0.1rem;
+}
+
+.wparty__chat-close {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 1.7rem;
+  height: 1.7rem;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wparty__chat-close:hover,
+.wparty__chat-close:focus-visible {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
+  outline: none;
+}
+
+.wparty__chat-open {
+  appearance: none;
+  position: fixed;
+  right: max(0.85rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  /* badge anchors to this control */
+  min-height: 2.55rem;
+  margin: 0;
+  padding: 0.45rem 0.85rem 0.45rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 88%, #2a1016);
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.wparty__chat-open[hidden] {
+  display: none !important;
+}
+
+.wparty__chat-open svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  display: block;
+  flex-shrink: 0;
+}
+
+.wparty__chat-open-label {
+  line-height: 1;
+}
+
+.wparty__chat-badge {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.25rem;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bg) 90%, #000);
+}
+
+.wparty__chat-badge[hidden] {
+  display: none !important;
+}
+
+.wparty__chat-open.has-unread {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .wparty__chat-who {
@@ -7394,6 +7787,7 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   align-items: center;
   gap: 0.45rem;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .wparty__chat-who-text {
@@ -7697,26 +8091,10 @@ body.is-wparty-kb.has-mobile-nav .wparty {
 
 .wparty__compose {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.35rem;
   align-items: center;
   padding: 0.35rem 0.1rem 0.45rem;
-}
-
-@media (max-width: 767px) {
-  body.is-watch-party:not(.is-wparty-kb) .wparty__composer {
-    position: sticky;
-    bottom: 0;
-    z-index: 30;
-    margin-top: auto;
-    background: color-mix(in srgb, var(--bg) 96%, transparent);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
-  }
-
-  body.is-watch-party:not(.is-wparty-kb) .wparty__compose {
-    padding: 0.45rem 0.15rem 0.55rem;
-  }
 }
 
 .wparty__compose input {
@@ -7729,6 +8107,17 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   padding: 0.5rem 0.9rem;
   font: inherit;
   font-size: 16px; /* avoid iOS focus zoom */
+  /* Keep caret stable — no transform/filter on the field itself */
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+.wparty__compose input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  /* Do not animate border/background on focus — causes blink on mobile */
+  transition: none;
 }
 
 /* Compact GIF messages in the side chat — no bubble bg */
@@ -7761,11 +8150,6 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   border-radius: 10px;
   object-fit: cover;
   background: none;
-}
-
-.wparty__compose input:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .wparty__send {
