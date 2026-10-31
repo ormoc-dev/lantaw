@@ -7967,6 +7967,11 @@ body.is-wparty-kb.has-mobile-nav .wparty {
   background: color-mix(in srgb, var(--bg) 90%, #1a1012);
 }
 
+/* Keep the Aa bar visible while the keypad is up */
+body.is-wparty-kb .wparty__gifs:not([hidden]) {
+  max-height: 5.5rem;
+}
+
 .wparty__gifs[hidden] {
   display: none !important;
 }
@@ -8091,7 +8096,7 @@ body.is-wparty-kb.has-mobile-nav .wparty {
 
 .wparty__compose {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.35rem;
   align-items: center;
   padding: 0.35rem 0.1rem 0.45rem;

@@ -259,6 +259,72 @@ export async function promptInstall() {
   return choice;
 }
 
+const RELOAD_FLAG = "lantaw-sw-reloading";
+
+/** When a new service worker takes control, reload once to load stamped assets. */
+function bindControllerReload() {
+  if (!("serviceWorker" in navigator)) return;
+
+  let justReloaded = false;
+  try {
+    justReloaded = sessionStorage.getItem(RELOAD_FLAG) === "1";
+  } catch {
+    /* ignore */
+  }
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    try {
+      // Guard against reload loops when claim fires again after we just reloaded
+      if (sessionStorage.getItem(RELOAD_FLAG) === "1") return;
+      sessionStorage.setItem(RELOAD_FLAG, "1");
+    } catch {
+      /* ignore */
+    }
+    window.location.reload();
+  });
+
+  // After a successful post-update boot, drop the flag so the next deploy can reload
+  if (justReloaded) {
+    window.setTimeout(() => {
+      try {
+        sessionStorage.removeItem(RELOAD_FLAG);
+      } catch {
+        /* ignore */
+      }
+    }, 2000);
+  }
+}
+
+function watchForUpdates(reg) {
+  if (!reg) return;
+
+  const check = () => {
+    reg.update().catch(() => {});
+  };
+
+  // New worker installed → activate immediately (sw.js also calls skipWaiting)
+  reg.addEventListener("updatefound", () => {
+    const worker = reg.installing;
+    if (!worker) return;
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "installed" && navigator.serviceWorker.controller) {
+        worker.postMessage("SKIP_WAITING");
+      }
+    });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") check();
+  });
+  window.addEventListener("focus", check);
+  // Installed PWAs stay open for hours — poll while visible
+  window.setInterval(() => {
+    if (document.visibilityState === "visible") check();
+  }, 60_000);
+
+  check();
+}
+
 export async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return null;
   const base = getBasePath();
@@ -266,8 +332,11 @@ export async function registerServiceWorker() {
   try {
     const reg = await navigator.serviceWorker.register(swUrl, {
       scope: base ? `${base}/` : "/",
+      // Always revalidate sw.js — don't let HTTP cache hide deploys
+      updateViaCache: "none",
     });
     ready = true;
+    watchForUpdates(reg);
     notify();
     return reg;
   } catch (err) {
@@ -278,6 +347,8 @@ export async function registerServiceWorker() {
 
 export function initPwaInstall() {
   if (typeof window === "undefined") return;
+
+  bindControllerReload();
 
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();

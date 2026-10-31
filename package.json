@@ -5,6 +5,7 @@
   "description": "Lantaw — static movie app",
   "type": "module",
   "scripts": {
-    "sync-env": "node scripts/sync-env.mjs"
+    "sync-env": "node scripts/sync-env.mjs",
+    "stamp-build": "node scripts/stamp-build.mjs"
   }
 }

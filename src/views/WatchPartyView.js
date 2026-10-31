@@ -21,8 +21,14 @@ import {
   streamContentKey,
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
-import { showConfirm } from "../lib/appModal.js";
-import { parseGifMessage } from "../lib/giphy.js";
+import { showConfirm, showNotice } from "../lib/appModal.js";
+import {
+  gifMessageBody,
+  hasGifApi,
+  parseGifMessage,
+  registerGifShare,
+  searchGifs,
+} from "../lib/giphy.js";
 
 /**
  * Dedicated watch-together room.
@@ -232,7 +238,22 @@ export async function WatchPartyView(root, params = {}) {
         </p>
         <div class="wparty__compose-spacer" id="wp-compose-spacer" hidden></div>
         <div class="wparty__composer" id="wp-composer">
+          <div
+            class="wparty__gifs"
+            id="wp-gifs"
+            hidden
+            role="listbox"
+            aria-label="GIF suggestions"
+          ></div>
           <form class="wparty__compose" id="wp-compose" autocomplete="off">
+            <button
+              type="button"
+              class="wparty__gif-btn"
+              id="wp-gif-btn"
+              aria-label="GIFs"
+              aria-pressed="false"
+              title="GIFs"
+            >GIF</button>
             <input
               type="text"
               name="body"
@@ -1255,6 +1276,8 @@ export async function WatchPartyView(root, params = {}) {
   const composeSend = form.querySelector("#wp-send");
   const composeSpacer = root.querySelector("#wp-compose-spacer");
   const composer = root.querySelector("#wp-composer");
+  const gifBtn = root.querySelector("#wp-gif-btn");
+  const gifStrip = root.querySelector("#wp-gifs");
   const wpartyShell = wpartyRoot;
   let inputFocused = false;
   let sendingChat = false;
@@ -1262,6 +1285,124 @@ export async function WatchPartyView(root, params = {}) {
   let kbSettleTimer = 0;
   let lastKbBottom = -1;
   let lastComposeH = -1;
+  let gifOpen = false;
+  let gifTimer = 0;
+  let gifReq = 0;
+
+  const hideGifStrip = () => {
+    gifOpen = false;
+    gifBtn?.setAttribute("aria-pressed", "false");
+    gifBtn?.classList.remove("is-on");
+    if (gifStrip) {
+      gifStrip.hidden = true;
+      gifStrip.innerHTML = "";
+    }
+    lastComposeH = -1;
+    ensureComposeSpacer();
+  };
+
+  const paintGifStrip = (items, query = "") => {
+    if (!gifStrip) return;
+    const label = String(query || "").trim()
+      ? `Results for “${String(query).trim()}”`
+      : "Trending GIFs";
+    if (!items?.length) {
+      gifStrip.innerHTML = `
+        <div class="wparty__gifs-head">
+          <strong>${escapeHtml(label)}</strong>
+          <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+        </div>
+        <p class="wparty__gifs-empty">No GIFs found</p>`;
+      gifStrip.hidden = false;
+      lastComposeH = -1;
+      ensureComposeSpacer();
+      return;
+    }
+    gifStrip.innerHTML = `
+      <div class="wparty__gifs-head">
+        <strong>${escapeHtml(label)}</strong>
+        <span class="wparty__gifs-via">GIPHY</span>
+        <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+      </div>
+      <div class="wparty__gifs-rail" role="presentation">
+        ${items
+          .map(
+            (g) => `
+          <button
+            type="button"
+            class="wparty__gif-pick"
+            role="option"
+            data-gif-url="${escapeHtml(g.url)}"
+            data-gif-id="${escapeHtml(g.id)}"
+            title="${escapeHtml(g.title)}"
+            aria-label="${escapeHtml(g.title)}"
+          >
+            <img src="${escapeHtml(g.preview)}" alt="" loading="lazy" decoding="async" />
+          </button>`
+          )
+          .join("")}
+      </div>`;
+    gifStrip.hidden = false;
+    gifOpen = true;
+    gifBtn?.setAttribute("aria-pressed", "true");
+    gifBtn?.classList.add("is-on");
+    lastComposeH = -1;
+    ensureComposeSpacer();
+  };
+
+  const loadGifs = async (query) => {
+    if (!hasGifApi() || !gifStrip) return;
+    const req = ++gifReq;
+    const q = String(query || "").trim();
+    gifStrip.hidden = false;
+    gifStrip.innerHTML = `
+      <div class="wparty__gifs-head">
+        <strong>${q ? `Results for “${escapeHtml(q)}”` : "Trending GIFs"}</strong>
+        <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+      </div>
+      <p class="wparty__gifs-empty">Searching…</p>`;
+    gifOpen = true;
+    gifBtn?.setAttribute("aria-pressed", "true");
+    gifBtn?.classList.add("is-on");
+    lastComposeH = -1;
+    ensureComposeSpacer();
+    try {
+      const items = await searchGifs(q);
+      if (req !== gifReq) return;
+      paintGifStrip(items, q);
+    } catch {
+      if (req !== gifReq) return;
+      gifStrip.innerHTML = `
+        <div class="wparty__gifs-head">
+          <strong>GIFs</strong>
+          <button type="button" class="wparty__gifs-close" data-gif-close aria-label="Close GIFs">✕</button>
+        </div>
+        <p class="wparty__gifs-empty">Couldn’t load GIFs</p>`;
+      lastComposeH = -1;
+      ensureComposeSpacer();
+    }
+  };
+
+  const scheduleGifSuggest = () => {
+    if (!hasGifApi()) return;
+    clearTimeout(gifTimer);
+    const q = String(composeInput?.value || "").trim();
+    if (!q) {
+      if (gifOpen) loadGifs("");
+      else hideGifStrip();
+      return;
+    }
+    if (
+      q.length < 2 ||
+      q.length > 40 ||
+      /\s{2,}/.test(q) ||
+      q.split(/\s+/).length > 4
+    ) {
+      if (gifOpen) hideGifStrip();
+      return;
+    }
+    gifTimer = setTimeout(() => loadGifs(q), 320);
+  };
 
   const keyboardInset = () => {
     const vv = window.visualViewport;
@@ -1414,6 +1555,8 @@ export async function WatchPartyView(root, params = {}) {
     if (party.status !== "active" && party.status !== "invited") return;
     sendingChat = true;
     stopTypingPing();
+    clearTimeout(gifTimer);
+    hideGifStrip();
     if (form.body) form.body.value = "";
     syncSendReady();
     comments.querySelector(".wparty__chat-empty")?.remove();
@@ -1421,7 +1564,7 @@ export async function WatchPartyView(root, params = {}) {
       const msg = await sendWatchPartyMessage(partyId, text);
       spawnComment(msg, { mine: true, name: "You" });
     } catch (err) {
-      if (form.body) form.body.value = text;
+      if (!parseGifMessage(text) && form.body) form.body.value = text;
       alert(err.message || "Could not send");
     } finally {
       sendingChat = false;
@@ -1436,10 +1579,49 @@ export async function WatchPartyView(root, params = {}) {
     await sendWpChat();
   });
 
+  gifBtn?.addEventListener("click", async () => {
+    if (!hasGifApi()) {
+      showNotice({
+        title: "GIFs",
+        message:
+          "Add VITE_GIPHY_API_KEY to your .env — create a free key at https://developers.giphy.com/dashboard/ then run npm run sync-env.",
+      });
+      return;
+    }
+    if (gifOpen) {
+      hideGifStrip();
+      syncWpartyKb();
+      return;
+    }
+    const q = String(composeInput?.value || "").trim();
+    await loadGifs(q.length >= 2 ? q : "");
+    syncWpartyKb();
+  });
+
+  gifStrip?.addEventListener("click", (e) => {
+    if (e.target.closest("[data-gif-close]")) {
+      e.preventDefault();
+      hideGifStrip();
+      syncWpartyKb();
+      return;
+    }
+    const pick = e.target.closest("[data-gif-url]");
+    if (!pick) return;
+    e.preventDefault();
+    const url = pick.getAttribute("data-gif-url");
+    if (!url) return;
+    registerGifShare(
+      pick.getAttribute("data-gif-id") || "",
+      String(composeInput?.value || "").trim()
+    );
+    sendWpChat(gifMessageBody(url));
+  });
+
   composeInput?.addEventListener("input", () => {
     syncSendReady();
     if (String(composeInput.value || "").trim()) pulseTyping();
     else stopTypingPing();
+    scheduleGifSuggest();
   });
 
   composeInput?.addEventListener("focus", () => {
@@ -1652,6 +1834,8 @@ export async function WatchPartyView(root, params = {}) {
       stopTypingPing();
       window.clearTimeout(typingHideTimer);
       window.clearTimeout(kbSettleTimer);
+      clearTimeout(gifTimer);
+      hideGifStrip();
       if (kbRaf) cancelAnimationFrame(kbRaf);
       kbRaf = 0;
       clearInterval(positionHeartbeat);
