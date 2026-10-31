@@ -264,39 +264,9 @@ export async function registerServiceWorker() {
   const base = getBasePath();
   const swUrl = `${base}/sw.js`;
   try {
-    // When a new SW takes control, reload once so phones get the deploy
-    // without a manual refresh / reinstall.
-    if (!window.__lantawSwReloadBound) {
-      window.__lantawSwReloadBound = true;
-      const hadController = Boolean(navigator.serviceWorker.controller);
-      let refreshing = false;
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        if (refreshing || !hadController) return;
-        refreshing = true;
-        window.location.reload();
-      });
-    }
-
     const reg = await navigator.serviceWorker.register(swUrl, {
       scope: base ? `${base}/` : "/",
-      updateViaCache: "none",
     });
-
-    const askUpdate = () => {
-      try {
-        reg.update();
-      } catch {
-        /* ignore */
-      }
-    };
-
-    // Pick up deploys while the installed app stays open
-    askUpdate();
-    setInterval(askUpdate, 5 * 60 * 1000);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") askUpdate();
-    });
-
     ready = true;
     notify();
     return reg;
