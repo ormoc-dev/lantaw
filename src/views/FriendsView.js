@@ -13,6 +13,7 @@ import {
   removeFriendship,
   respondToFriendRequest,
   searchProfiles,
+  listSuggestedProfiles,
   notifyFriendsBadge,
   sendFriendRequest,
   sendMessage,
@@ -28,6 +29,8 @@ import {
 import {
   isUserOnline,
   onPresenceChange,
+  presenceLabelFor,
+  rememberLastSeen,
   startPresence,
 } from "../services/presenceService.js";
 import { startVideoCall } from "../services/callService.js";
@@ -88,7 +91,8 @@ export async function FriendsView(root) {
 
   const syncPresenceUi = () => {
     page.querySelectorAll("[data-presence-id]").forEach((el) => {
-      const on = isUserOnline(el.dataset.presenceId);
+      const id = el.dataset.presenceId;
+      const on = isUserOnline(id);
       el.classList.toggle("is-online", on || peerIsTyping);
       const inThread = Boolean(el.closest(".fp-chat__head"));
       const onLabel =
@@ -97,13 +101,14 @@ export async function FriendsView(root) {
           : inThread
             ? "Active now"
             : "Online";
-      const offLabel = "Offline";
+      const offLabel = presenceLabelFor(id, { onlineText: "Online" });
       const showOn = on || (inThread && peerIsTyping);
-      el.setAttribute("title", showOn ? onLabel : offLabel);
-      el.setAttribute("aria-label", showOn ? onLabel : offLabel);
+      const text = showOn ? onLabel : offLabel === "Online" ? "Offline" : offLabel;
+      el.setAttribute("title", text);
+      el.setAttribute("aria-label", text);
       const label = el.querySelector("[data-presence-label]");
       if (label) {
-        label.textContent = showOn ? onLabel : offLabel;
+        label.textContent = text;
         label.classList.toggle("is-online", showOn);
         label.classList.toggle("is-typing", inThread && peerIsTyping);
       }
@@ -292,9 +297,13 @@ export async function FriendsView(root) {
                         on ? "is-online" : ""
                       }" data-presence-id="${escapeHtml(
                         f.other?.id || ""
-                      )}"><span data-presence-label>${
-                        on ? "Active now" : "Offline"
-                      }</span></em>`
+                      )}"><span data-presence-label>${escapeHtml(
+                        on
+                          ? "Active now"
+                          : presenceLabelFor(f.other?.id, {
+                              onlineText: "Active now",
+                            })
+                      )}</span></em>`
                 }
               </span>
             </span>
@@ -474,12 +483,14 @@ export async function FriendsView(root) {
     let reqSection = panel.querySelector("#requests-section");
     if (incoming.length || outgoing.length) {
       if (!reqSection) {
+        const friends = panel.querySelector("#friends-section");
         const find = panel.querySelector(".fp-find");
         reqSection = document.createElement("section");
-        reqSection.className = "fp-block";
+        reqSection.className = "fp-block fp-block--split";
         reqSection.id = "requests-section";
         reqSection.innerHTML = `<h2>Requests</h2><div class="fp-list" id="requests-list"></div>`;
-        find?.after(reqSection);
+        if (friends) friends.before(reqSection);
+        else find?.after(reqSection);
       }
       const reqBox = reqSection.querySelector("#requests-list");
       if (reqBox) {
@@ -515,7 +526,7 @@ export async function FriendsView(root) {
     if (!accepted.length) {
       friendsBox.innerHTML = emptyState(
         "No friends yet",
-        "Search by name or email above to send a request."
+        "Add someone from People you may know, or search by name or email."
       );
     } else {
       friendsBox.innerHTML = accepted
@@ -530,18 +541,36 @@ export async function FriendsView(root) {
     }
   };
 
-  const personRow = (p, actions = "") => {
+  const personRow = (p, actions = "", { compact = false } = {}) => {
+    if (p) rememberLastSeen([p]);
     const on = Boolean(p?.id && isUserOnline(p.id));
+    const name = p?.display_name || "User";
+    const email = p?.email || "";
+    const status = p?.id
+      ? presenceLabelFor(p.id, { onlineText: "Online" })
+      : "Offline";
+    const statusText = on ? "Online" : status === "Online" ? "Offline" : status;
     return `
-    <div class="fp-row">
-      ${presenceAvatarHtml(p)}
+    <div class="fp-row ${compact ? "fp-row--people" : ""}">
+      ${presenceAvatarHtml(p, compact ? "fp-avatar--md" : "")}
       <div class="fp-row__meta">
-        <strong>${escapeHtml(p?.display_name || "User")}</strong>
+        <strong>${escapeHtml(name)}</strong>
         <span
           class="fp-presence-label ${on ? "is-online" : ""}"
           data-presence-id="${escapeHtml(p?.id || "")}"
-        ><em data-presence-label>${on ? "Online" : "Offline"}</em></span>
-        ${p?.email ? `<span>${escapeHtml(p.email)}</span>` : ""}
+          ${
+            p?.last_seen_at
+              ? `data-last-seen="${escapeHtml(p.last_seen_at)}"`
+              : ""
+          }
+        ><em data-presence-label>${escapeHtml(statusText)}</em></span>
+        ${
+          email
+            ? `<span class="fp-row__email" title="${escapeHtml(email)}">${escapeHtml(
+                email
+              )}</span>`
+            : ""
+        }
       </div>
       <div class="fp-row__actions">${actions}</div>
     </div>
@@ -609,6 +638,7 @@ export async function FriendsView(root) {
 
   async function refreshData() {
     friendships = await listFriendships();
+    rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
     parties = await listWatchParties();
     activity = await getFriendsActivityCounts().catch(() => activity);
   }
@@ -629,10 +659,8 @@ export async function FriendsView(root) {
       panel.innerHTML = `
         <section class="fp-find">
           <div class="fp-find__head">
-            <div>
-              <h2>Find people</h2>
-              <p class="muted fp-lead">Search by name or email — profiles stay private until you look them up.</p>
-            </div>
+            <h2>Find people</h2>
+            <p class="muted fp-lead">Search by name or email to add someone.</p>
           </div>
           <div class="fp-search fp-find__search">
             <div class="fp-search__box">
@@ -647,26 +675,31 @@ export async function FriendsView(root) {
             </div>
           </div>
           <p class="fp-status muted" id="people-msg" hidden></p>
-          <div class="fp-suggest" id="suggest-list">
-            ${emptyState(
-              "Search to find people",
-              "Type a name or email to look someone up. We don’t list other users here."
-            )}
-          </div>
+          <div class="fp-search-results" id="search-results" hidden></div>
         </section>
 
         ${
           incoming.length || outgoing.length
-            ? `<section class="fp-block" id="requests-section">
+            ? `<section class="fp-block fp-block--split" id="requests-section">
                 <h2>Requests</h2>
                 <div class="fp-list" id="requests-list"></div>
               </section>`
             : ""
         }
 
-        <section class="fp-block">
+        <section class="fp-block fp-block--split" id="friends-section">
           <h2>Your friends</h2>
           <div class="fp-list" id="friends-list"></div>
+        </section>
+
+        <section class="fp-block fp-suggest-block fp-block--split" id="suggest-section">
+          <div class="fp-block__head">
+            <h2 id="suggest-heading">People you may know</h2>
+            <p class="muted fp-block__sub" id="suggest-sub">Suggested accounts on LANTAW</p>
+          </div>
+          <div class="fp-suggest" id="suggest-list">
+            ${loadingHtml({ className: "fp-suggest-loading" })}
+          </div>
         </section>
       `;
 
@@ -694,7 +727,7 @@ export async function FriendsView(root) {
       if (!accepted.length) {
         friendsBox.innerHTML = emptyState(
           "No friends yet",
-          "Search by name or email above to send a request."
+          "Add someone from People you may know, or search by name or email."
         );
       } else {
         friendsBox.innerHTML = accepted
@@ -708,36 +741,109 @@ export async function FriendsView(root) {
           .join("");
       }
 
+      const suggestSection = panel.querySelector("#suggest-section");
+      const suggestSub = panel.querySelector("#suggest-sub");
       const resultsBox = panel.querySelector("#suggest-list");
+      const searchResults = panel.querySelector("#search-results");
       const peopleSearch = panel.querySelector("#people-search");
       const peopleClear = panel.querySelector("#people-clear");
       const peopleMsg = panel.querySelector("#people-msg");
       let searchToken = 0;
       let searchTimer = null;
+      let suggestCache = [];
+      let suggestExpanded = false;
+      const SUGGEST_PREVIEW = 12;
 
-      const showPrivacyEmpty = () => {
-        resultsBox.innerHTML = emptyState(
-          "Search to find people",
-          "Type a name or email to look someone up. We don’t list other users here."
-        );
-      };
-
-      const paintResults = (rows) => {
+      const paintPeopleList = (
+        box,
+        rows,
+        { emptyTitle, emptyText, preview = false, moreId = "suggest" } = {}
+      ) => {
+        if (!box) return;
         if (!rows.length) {
-          resultsBox.innerHTML = emptyState(
-            "No matches",
-            "Try another name or the full email address."
+          box.innerHTML = emptyState(
+            emptyTitle || "No one new right now",
+            emptyText || "When more people join LANTAW, they’ll show up here."
           );
           return;
         }
-        resultsBox.innerHTML = `<div class="fp-list">${rows
-          .map((p) =>
-            personRow(
-              p,
-              `<button class="fp-btn fp-btn--solid" type="button" data-add="${p.id}">Add</button>`
+        const showAll =
+          !preview || suggestExpanded || rows.length <= SUGGEST_PREVIEW;
+        const visible = showAll ? rows : rows.slice(0, SUGGEST_PREVIEW);
+        const more = rows.length - visible.length;
+        box.innerHTML = `
+          <div class="fp-list fp-list--people">${visible
+            .map((p) =>
+              personRow(
+                p,
+                `<button class="fp-btn fp-btn--solid fp-btn--add" type="button" data-add="${p.id}">Add</button>`,
+                { compact: true }
+              )
             )
-          )
-          .join("")}</div>`;
+            .join("")}</div>
+          ${
+            more > 0
+              ? `<button type="button" class="fp-more" id="${moreId}-more">Show ${more} more</button>`
+              : suggestExpanded && preview && rows.length > SUGGEST_PREVIEW
+                ? `<button type="button" class="fp-more" id="${moreId}-less">Show less</button>`
+                : ""
+          }`;
+        box.querySelector(`#${moreId}-more`)?.addEventListener("click", () => {
+          suggestExpanded = true;
+          paintPeopleList(box, suggestCache, {
+            preview: true,
+            moreId,
+          });
+        });
+        box.querySelector(`#${moreId}-less`)?.addEventListener("click", () => {
+          suggestExpanded = false;
+          paintPeopleList(box, suggestCache, {
+            preview: true,
+            moreId,
+          });
+        });
+      };
+
+      const showBrowseMode = () => {
+        if (searchResults) {
+          searchResults.hidden = true;
+          searchResults.innerHTML = "";
+        }
+        if (suggestSection) suggestSection.hidden = false;
+        if (suggestSub) suggestSub.hidden = false;
+      };
+
+      const showSearchMode = () => {
+        if (searchResults) searchResults.hidden = false;
+        if (suggestSection) suggestSection.hidden = true;
+      };
+
+      const loadSuggestions = async () => {
+        const token = ++searchToken;
+        showBrowseMode();
+        try {
+          const rows = await listSuggestedProfiles({
+            limit: 48,
+            excludeIds: relatedIds,
+          });
+          if (token !== searchToken) return;
+          if (peopleSearch.value.trim().length >= 2) return;
+          rememberLastSeen(rows);
+          suggestCache = rows;
+          suggestExpanded = false;
+          paintPeopleList(resultsBox, rows, {
+            preview: true,
+            emptyTitle: "No one new right now",
+            emptyText:
+              "When more people join LANTAW, they’ll show up here.",
+          });
+        } catch (err) {
+          if (token !== searchToken) return;
+          resultsBox.innerHTML = emptyState(
+            "Couldn’t load suggestions",
+            err.message || "Try again in a moment."
+          );
+        }
       };
 
       const runSearch = async (query) => {
@@ -747,16 +853,24 @@ export async function FriendsView(root) {
 
         if (q.length < 2) {
           peopleMsg.hidden = true;
-          showPrivacyEmpty();
+          await loadSuggestions();
           return;
         }
 
+        showSearchMode();
         peopleMsg.hidden = false;
         peopleMsg.textContent = "Searching…";
         try {
           const rows = await searchProfiles(q, { limit: 16 });
           if (token !== searchToken) return;
-          paintResults(rows.filter((r) => !relatedIds.includes(r.id)));
+          paintPeopleList(
+            searchResults,
+            rows.filter((r) => !relatedIds.includes(r.id)),
+            {
+              emptyTitle: "No matches",
+              emptyText: "Try another name or the full email address.",
+            }
+          );
           peopleMsg.hidden = true;
         } catch (err) {
           if (token !== searchToken) return;
@@ -772,10 +886,11 @@ export async function FriendsView(root) {
         peopleSearch.value = "";
         peopleClear.hidden = true;
         peopleMsg.hidden = true;
-        showPrivacyEmpty();
+        loadSuggestions();
         peopleSearch.focus();
       });
 
+      loadSuggestions();
       return;
     }
 
@@ -2497,10 +2612,13 @@ export async function FriendsView(root) {
   );
   unsubPresence = onPresenceChange(() => syncPresenceUi());
   syncPresenceUi();
+  // Refresh “5m ago” labels while the page is open
+  const lastSeenTick = window.setInterval(() => syncPresenceUi(), 60_000);
 
   return {
     unmount() {
       clearTimeout(liveTimer);
+      clearInterval(lastSeenTick);
       peerIsTyping = false;
       unsubChat?.();
       unsubPage?.();

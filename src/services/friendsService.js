@@ -43,7 +43,7 @@ async function profilesByIds(ids) {
   if (!unique.length) return {};
   const { data, error } = await getSupabase()
     .from("profiles")
-    .select("id, email, display_name, avatar_url")
+    .select("id, email, display_name, avatar_url, last_seen_at")
     .in("id", unique);
   if (error) throw error;
   const map = {};
@@ -82,7 +82,7 @@ export async function searchProfiles(query, { limit = 8 } = {}) {
 
   const pattern = `%${safe}%`;
   const sb = getSupabase();
-  const select = "id, email, display_name, avatar_url";
+  const select = "id, email, display_name, avatar_url, last_seen_at";
 
   const [byName, byEmail] = await Promise.all([
     sb
@@ -110,26 +110,43 @@ export async function searchProfiles(query, { limit = 8 } = {}) {
 }
 
 /**
- * Browse people to add — excludes self and anyone already in a friendship row.
+ * People you may know — excludes self, optional extra IDs, and anyone already
+ * in a friendship row (accepted or pending either direction).
  */
-export async function listSuggestedProfiles({ limit = 24, excludeIds = [] } = {}) {
+export async function listSuggestedProfiles({ limit = 48, excludeIds = [] } = {}) {
   const user = await requireUser();
+  const sb = getSupabase();
+  const capped = Math.min(60, Math.max(1, Number(limit) || 48));
+
+  const { data: links, error: linkErr } = await sb
+    .from("friendships")
+    .select("requester_id, addressee_id")
+    .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
+
+  if (linkErr) throw linkErr;
+
   const blocked = new Set(
     [user.id, ...excludeIds].filter(Boolean).map(String)
   );
+  for (const row of links || []) {
+    if (row.requester_id) blocked.add(String(row.requester_id));
+    if (row.addressee_id) blocked.add(String(row.addressee_id));
+  }
 
-  const { data, error } = await getSupabase()
+  // Fetch extra rows so filtering friendships still fills the shelf
+  const fetchLimit = Math.min(120, Math.max(capped * 2, capped));
+  const { data, error } = await sb
     .from("profiles")
-    .select("id, email, display_name, avatar_url")
+    .select("id, email, display_name, avatar_url, last_seen_at")
     .neq("id", user.id)
     .order("display_name", { ascending: true })
-    .limit(Math.min(80, Math.max(limit * 3, limit)));
+    .limit(fetchLimit);
 
   if (error) throw error;
 
   return (data || [])
     .filter((row) => row?.id && !blocked.has(String(row.id)))
-    .slice(0, limit);
+    .slice(0, capped);
 }
 
 /** @deprecated Prefer searchProfiles — kept for exact single lookup. */

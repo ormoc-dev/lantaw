@@ -248,48 +248,32 @@ body:has(#view.view--auth) .app-shell {
   }
 
   .friends-page:not(.friends-page--chat) .fp-find {
-    grid-column: 1;
-    grid-row: 1 / span 8;
-    gap: 1rem;
-    padding: 1.35rem 1.4rem 1.45rem;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background:
-      linear-gradient(
-        165deg,
-        rgba(255, 255, 255, 0.045),
-        rgba(255, 255, 255, 0.015)
-      ),
-      rgba(8, 5, 7, 0.42);
+    grid-column: 1 / -1;
+    grid-row: auto;
+    gap: 0.75rem;
+    padding: 0 0 1rem;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0;
+    background: transparent;
   }
 
   .friends-page:not(.friends-page--chat) .fp-find__head h2 {
-    font-size: 1.35rem;
+    font-size: 1.28rem;
   }
 
   .friends-page:not(.friends-page--chat) .fp-find__head .fp-lead {
     max-width: 34rem;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     line-height: 1.45;
   }
 
-  /* Real search field on desktop (underline-only reads invisible) */
-  .friends-page:not(.friends-page--chat) .fp-find .fp-search,
   .friends-page:not(.friends-page--chat) .fp-find .fp-search__box {
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 14px !important;
-    background: rgba(0, 0, 0, 0.28) !important;
-    box-shadow: none !important;
-  }
-
-  .friends-page:not(.friends-page--chat) .fp-find .fp-search__box {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
     padding: 0.15rem 0.85rem;
   }
 
   .friends-page:not(.friends-page--chat) .fp-find .fp-search__box input {
     padding: 0.85rem 2.1rem 0.85rem 0.15rem !important;
-    font-size: 1rem !important;
   }
 
   .friends-page:not(.friends-page--chat) .fp-find .fp-search__clear {
@@ -297,28 +281,43 @@ body:has(#view.view--auth) .app-shell {
   }
 
   .friends-page:not(.friends-page--chat) .fp-block {
-    grid-column: 2;
-    padding: 1.2rem 1.3rem 1.3rem;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background:
-      linear-gradient(
-        165deg,
-        rgba(255, 255, 255, 0.04),
-        rgba(255, 255, 255, 0.012)
-      ),
-      rgba(8, 5, 7, 0.42);
+    grid-column: 1 / -1;
+    padding: 0;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
   }
 
-  .friends-page:not(.friends-page--chat) .fp-block h2 {
+  .friends-page:not(.friends-page--chat) #friends-section {
+    grid-column: 1;
+  }
+
+  .friends-page:not(.friends-page--chat) #requests-section {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .friends-page:not(.friends-page--chat) .fp-suggest-block {
+    grid-column: 1 / -1;
+  }
+
+  .friends-page:not(.friends-page--chat) .fp-block h2,
+  .friends-page:not(.friends-page--chat) .fp-block__head h2 {
     margin-bottom: 0.65rem;
     font-family: var(--font-display);
-    font-size: 1.12rem;
+    font-size: 1.05rem;
+    font-weight: 700;
     letter-spacing: -0.02em;
+    text-transform: none;
+    color: var(--text);
   }
 
   .friends-page:not(.friends-page--chat) .fp-row {
     padding: 0.85rem 0.15rem;
+  }
+
+  .friends-page:not(.friends-page--chat) .fp-row--people .fp-row__email {
+    display: block;
   }
 
   .friends-page:not(.friends-page--chat) .fp-empty {
@@ -348,7 +347,7 @@ body:has(#view.view--auth) .app-shell {
   }
 
   .friends-page:not(.friends-page--chat) .fp-find {
-    padding: 1.55rem 1.6rem 1.65rem;
+    padding: 0 0 1.15rem;
   }
 }
 
@@ -1648,9 +1647,10 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
 
 .fp-find {
   display: grid;
-  gap: 0.75rem;
-  padding: 0;
+  gap: 0.55rem;
+  padding: 0 0 0.85rem;
   border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0;
   background: transparent;
 }
@@ -1663,7 +1663,9 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
 }
 
 .fp-find__head .fp-lead {
-  margin: 0.25rem 0 0;
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .fp-find__search {
@@ -1680,7 +1682,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
 
 .fp-find .fp-search__box {
   border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
-  padding: 0.1rem 0;
+  padding: 0.1rem 0 !important;
 }
 
 .fp-find .fp-search__box input {
@@ -1688,6 +1690,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   border: 0 !important;
   border-radius: 0 !important;
   padding: 0.7rem 2rem 0.7rem 0 !important;
+  font-size: 1rem !important;
 }
 
 .fp-find .fp-search__clear {
@@ -1695,9 +1698,148 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   background: transparent;
 }
 
-.fp-suggest__loading {
+.fp-find .fp-status {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.fp-block__head {
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 0.45rem;
+}
+
+.fp-block__head h2,
+.fp-suggest-block > h2 {
+  margin: 0;
+}
+
+.fp-block__sub {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.fp-block--split {
+  margin-top: 0.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.fp-suggest-block {
+  min-width: 0;
+}
+
+.fp-search-results {
+  margin-top: 0.65rem;
+}
+
+.fp-search-results[hidden] {
+  display: none !important;
+}
+
+.fp-suggest-block[hidden] {
+  display: none !important;
+}
+
+.fp-suggest__loading,
+.fp-suggest-loading {
   margin: 0.35rem 0;
   font-size: 0.88rem;
+}
+
+.fp-list--people {
+  margin: 0;
+}
+
+.fp-row--people {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  padding: 0.55rem 0;
+  align-items: center;
+}
+
+.fp-row--people .fp-row__email {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.fp-btn--add {
+  min-width: 3.4rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+.fp-more {
+  appearance: none;
+  display: block;
+  width: 100%;
+  margin: 0.35rem 0 0;
+  padding: 0.65rem 0.5rem;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fp-more:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 639px) {
+  .friends-page .fp-panel {
+    display: grid;
+    gap: 0;
+  }
+
+  .friends-page .fp-find {
+    position: static;
+    margin: 0;
+    padding: 0 0 1rem;
+    border-bottom: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .friends-page .fp-block {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .friends-page .fp-block--split {
+    margin-top: 0.5rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .friends-page .fp-block h2,
+  .friends-page .fp-block__head h2 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .friends-page .fp-suggest-block {
+    margin-top: 0.65rem;
+    padding-top: 1.25rem;
+  }
+
+  .friends-page .fp-row--people .fp-row__email {
+    display: none;
+  }
+
+  .friends-page .fp-row--people .fp-presence-label {
+    font-size: 0.72rem;
+  }
 }
 
 .fp-list {
