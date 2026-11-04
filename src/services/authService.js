@@ -94,10 +94,46 @@ export async function recordLoginEvent(session) {
   return { ok: true };
 }
 
+/** Set only when the user taps Sign out — transient refresh blips must not stick. */
+let intentionalSignOut = false;
+
+export function markIntentionalSignOut() {
+  intentionalSignOut = true;
+}
+
+export function consumeIntentionalSignOut() {
+  const v = intentionalSignOut;
+  intentionalSignOut = false;
+  return v;
+}
+
 export async function getSession() {
   const { data, error } = await getSupabase().auth.getSession();
   if (error) throw error;
   return data.session;
+}
+
+/**
+ * Keep living-room / projector sessions alive.
+ * Wrong device clocks or brief network blips can make Supabase emit SIGNED_OUT —
+ * try local storage + refresh before we actually kick them to login.
+ * Google is not required once they signed in with email/password.
+ */
+export async function reviveSession() {
+  const supabase = getSupabase();
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (data?.session) return data.session;
+  } catch {
+    /* try refresh below */
+  }
+  try {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data?.session) return data.session;
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 /**
@@ -221,6 +257,7 @@ export async function updatePassword(password) {
 }
 
 export async function signOut() {
+  markIntentionalSignOut();
   const { error } = await getSupabase().auth.signOut();
   if (error) throw error;
 }
@@ -244,6 +281,7 @@ export async function deleteOwnAccount() {
   }
 
   try {
+    markIntentionalSignOut();
     await getSupabase().auth.signOut();
   } catch {
     /* session may already be invalid */

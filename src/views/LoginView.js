@@ -48,7 +48,7 @@ export async function LoginView(root) {
         <div class="auth-flow" id="auth-flow">
           <header class="auth-flow__head">
             <h1 id="auth-title">Welcome</h1>
-            <p class="auth-lead" id="auth-lead">One Google button for new and existing accounts. Or use email below.</p>
+            <p class="auth-lead" id="auth-lead">TV / projector? Use email below — you stay signed in, no Google needed. Phones can use Google or email.</p>
           </header>
 
           <div id="auth-oauth">
@@ -203,13 +203,13 @@ export async function LoginView(root) {
     } else if (signup) {
       titleEl.textContent = "Welcome";
       leadEl.textContent =
-        "One Google button for new and existing accounts. Or use email below.";
+        "Create an email account for TVs and projectors — stays signed in without Google.";
       submit.textContent = "Create account";
       foot.innerHTML = `Already have an email account? <button type="button" class="link-btn" id="switch-mode">Sign in</button>`;
     } else {
       titleEl.textContent = "Welcome";
       leadEl.textContent =
-        "One Google button for new and existing accounts. Or use email below.";
+        "TV / projector? Use email below — you stay signed in, no Google needed. Phones can use Google or email.";
       submit.textContent = "Sign in";
       foot.innerHTML = `New here? <button type="button" class="link-btn" id="switch-mode">Create an email account</button>`;
     }

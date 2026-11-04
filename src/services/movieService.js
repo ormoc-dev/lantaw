@@ -40,6 +40,31 @@ export async function getPopularMovies(page = 1) {
   return mapList(await tmdb.popular(page), "movie");
 }
 
+/** Category grids — TMDB is 20/page, so pull enough pages for a fuller shelf. */
+const CATEGORY_LIST_LIMIT = 100;
+
+async function collectPages(fetchPage, limit = CATEGORY_LIST_LIMIT) {
+  const pageCount = Math.max(1, Math.ceil(limit / 20));
+  const batches = await Promise.all(
+    Array.from({ length: pageCount }, (_, i) => fetchPage(i + 1))
+  );
+  const seen = new Set();
+  const results = [];
+  for (const batch of batches) {
+    for (const item of batch?.results || []) {
+      if (!item?.id) continue;
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(item);
+      if (results.length >= limit) {
+        return { results };
+      }
+    }
+  }
+  return { results };
+}
+
 export async function getTrendingMovies() {
   return mapList(await tmdb.trending("week"), "movie");
 }
@@ -176,23 +201,28 @@ export async function getRecommended() {
 }
 
 export async function getFilipino() {
-  const [movies, tv] = await Promise.all([
-    tmdb.discoverMovies({
-      with_origin_country: "PH",
-      page: 1,
-    }),
-    tmdb.discoverTv({
-      with_origin_country: "PH",
-      page: 1,
-    }),
-  ]);
-
-  const merged = [
-    ...mapList(movies, "movie").results,
-    ...mapList(tv, "tv").results,
-  ].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-
-  return { results: merged };
+  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+  const jobs = [];
+  for (let page = 1; page <= pageCount; page += 1) {
+    jobs.push(
+      tmdb.discoverMovies({ with_origin_country: "PH", page }),
+      tmdb.discoverTv({ with_origin_country: "PH", page })
+    );
+  }
+  const raw = await Promise.all(jobs);
+  const merged = [];
+  const seen = new Set();
+  for (let i = 0; i < raw.length; i += 1) {
+    const mediaType = i % 2 === 0 ? "movie" : "tv";
+    for (const item of mapList(raw[i], mediaType).results) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  merged.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
 }
 
 export async function getTvShows(page = 1) {
@@ -200,55 +230,77 @@ export async function getTvShows(page = 1) {
 }
 
 export async function getAnime() {
-  const [movies, tv] = await Promise.all([
-    tmdb.discoverMovies({
-      with_genres: 16,
-      with_original_language: "ja",
-      page: 1,
-    }),
-    tmdb.discoverTv({
-      with_genres: 16,
-      with_original_language: "ja",
-      page: 1,
-    }),
-  ]);
-
-  const merged = [
-    ...mapList(movies, "movie").results,
-    ...mapList(tv, "tv").results,
-  ].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-
-  return { results: merged };
+  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+  const jobs = [];
+  for (let page = 1; page <= pageCount; page += 1) {
+    jobs.push(
+      tmdb.discoverMovies({
+        with_genres: 16,
+        with_original_language: "ja",
+        page,
+      }),
+      tmdb.discoverTv({
+        with_genres: 16,
+        with_original_language: "ja",
+        page,
+      })
+    );
+  }
+  const raw = await Promise.all(jobs);
+  const merged = [];
+  const seen = new Set();
+  for (let i = 0; i < raw.length; i += 1) {
+    const mediaType = i % 2 === 0 ? "movie" : "tv";
+    for (const item of mapList(raw[i], mediaType).results) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  merged.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
 }
 
 /** Vivamax originals (TMDB company 149142) */
 export async function getVivamax() {
-  const [movies, tv] = await Promise.all([
-    tmdb.discoverMovies({
-      with_companies: 149142,
-      include_adult: true,
-      sort_by: "primary_release_date.desc",
-      page: 1,
-    }),
-    tmdb.discoverTv({
-      with_companies: 149142,
-      include_adult: true,
-      sort_by: "first_air_date.desc",
-      page: 1,
-    }),
-  ]);
-
-  const merged = [
-    ...mapList(movies, "movie").results,
-    ...mapList(tv, "tv").results,
-  ].sort((a, b) => {
+  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+  const jobs = [];
+  for (let page = 1; page <= pageCount; page += 1) {
+    jobs.push(
+      tmdb.discoverMovies({
+        with_companies: 149142,
+        include_adult: true,
+        sort_by: "primary_release_date.desc",
+        page,
+      }),
+      tmdb.discoverTv({
+        with_companies: 149142,
+        include_adult: true,
+        sort_by: "first_air_date.desc",
+        page,
+      })
+    );
+  }
+  const raw = await Promise.all(jobs);
+  const merged = [];
+  const seen = new Set();
+  for (let i = 0; i < raw.length; i += 1) {
+    const mediaType = i % 2 === 0 ? "movie" : "tv";
+    for (const item of mapList(raw[i], mediaType).results) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  merged.sort((a, b) => {
     const da = a.releaseDate || "";
     const db = b.releaseDate || "";
     if (da !== db) return db.localeCompare(da);
     return (b.rating || 0) - (a.rating || 0);
   });
-
-  return { results: merged };
+  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
 }
 
 /** Load titles for one category page */
@@ -261,9 +313,9 @@ export async function getCategoryItems(categoryId) {
     case "vivamax":
       return getVivamax();
     case "movies":
-      return getPopularMovies();
+      return collectPages((page) => getPopularMovies(page), CATEGORY_LIST_LIMIT);
     case "tv-show":
-      return getTvShows();
+      return collectPages((page) => getTvShows(page), CATEGORY_LIST_LIMIT);
     case "anime":
       return getAnime();
     default:

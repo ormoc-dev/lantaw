@@ -1,9 +1,15 @@
-import { getSession, onAuthChange } from "../services/authService.js";
+import {
+  consumeIntentionalSignOut,
+  getSession,
+  onAuthChange,
+  reviveSession,
+} from "../services/authService.js";
 
 const routes = [];
 let current = null;
 let outlet = null;
 let renderToken = 0;
+let authKickTimer = null;
 
 const PUBLIC_PATHS = new Set(["/login", "/privacy"]);
 const RETURN_KEY = "lantaw-return-path";
@@ -46,6 +52,16 @@ export function createRouter(rootEl) {
     render();
   });
 
+  const kickToLogin = (pathname) => {
+    if (PUBLIC_PATHS.has(pathname)) {
+      render();
+      return;
+    }
+    rememberReturnPath(pathname);
+    if (location.hash !== "#/login") location.hash = "#/login";
+    else render();
+  };
+
   onAuthChange((session, event) => {
     // These must not remount the page — remounting kills watch-party / stream iframes
     if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") return;
@@ -56,23 +72,34 @@ export function createRouter(rootEl) {
     // re-fetches CineSrc for watchers (see mountPlayer ← applyPlayback stack).
     if (event === "INITIAL_SESSION") {
       if (!session && !PUBLIC_PATHS.has(pathname)) {
-        rememberReturnPath(pathname);
-        if (location.hash !== "#/login") location.hash = "#/login";
-        else render();
+        // Projector / wrong-clock: give persisted email session a chance to revive
+        reviveSession().then((revived) => {
+          if (revived) return;
+          kickToLogin(pathname);
+        });
       }
       return;
     }
 
     if (event === "SIGNED_OUT" || !session) {
-      if (!PUBLIC_PATHS.has(pathname)) {
-        rememberReturnPath(pathname);
-        if (location.hash !== "#/login") location.hash = "#/login";
-        else render();
-      } else {
-        render();
+      // Real Sign out → leave. Accidental refresh blips → try to stay signed in.
+      if (consumeIntentionalSignOut()) {
+        window.clearTimeout(authKickTimer);
+        kickToLogin(pathname);
+        return;
       }
+      window.clearTimeout(authKickTimer);
+      authKickTimer = window.setTimeout(() => {
+        reviveSession().then((revived) => {
+          if (revived) return;
+          kickToLogin(pathname);
+        });
+      }, 400);
       return;
     }
+
+    // Session came back (revive / refresh) — cancel any pending kick to login
+    window.clearTimeout(authKickTimer);
 
     if (pathname === "/reset-password") {
       render();

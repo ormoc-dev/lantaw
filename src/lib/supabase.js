@@ -8,8 +8,11 @@ export function getSupabase() {
   if (!client) {
     client = createClient(env.supabaseUrl, env.supabaseAnonKey, {
       auth: {
+        // Stay signed in across reloads / projector restarts (localStorage)
         persistSession: true,
         autoRefreshToken: true,
+        storage: typeof localStorage !== "undefined" ? localStorage : undefined,
+        storageKey: "lantaw-auth",
         // recoverSession() exchanges ?code= — avoid double-consume with client init
         detectSessionInUrl: false,
         flowType: "pkce",
