@@ -294,7 +294,6 @@ body:has(#view.view--auth) .app-shell {
 
   .friends-page:not(.friends-page--chat) #requests-section {
     grid-column: 2;
-    grid-row: 2;
   }
 
   .friends-page:not(.friends-page--chat) .fp-suggest-block {
@@ -458,16 +457,20 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
 }
 
 @media (min-width: 768px) {
+  /* Split chat: keep the composer in the thread. A fixed full-width bar
+     covers the conversation list when the field is focused. */
   body.is-friends-chat-kb .friends-page--chat .fp-chat--split .fp-chat__composer {
-    /* Align compose with the thread column (after the rail) */
-    left: min(300px, 36vw);
-    width: auto;
-  }
-}
-
-@media (min-width: 1100px) {
-  body.is-friends-chat-kb .friends-page--chat .fp-chat--split .fp-chat__composer {
-    left: min(320px, 32vw);
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    transform: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
   }
 }
 
@@ -893,12 +896,20 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
     padding-inline: 1rem;
   }
 
-  .friends-page--chat .fp-msg .fp-bubble {
+  /* Cap the stack, not the bubble. A % max-width on the bubble resolves
+     against the stack, which is only as wide as the bubble, so short
+     messages like "hi" collapse to the padding and wrap per letter. */
+  .friends-page--chat .fp-msg__stack {
+    width: fit-content;
     max-width: min(72%, 28rem);
   }
 
+  .friends-page--chat .fp-msg .fp-bubble {
+    max-width: 100%;
+  }
+
   .friends-page--chat .fp-msg .fp-bubble.is-gif {
-    max-width: min(60%, 15.5rem);
+    max-width: min(100%, 15.5rem);
   }
 }
 
@@ -946,22 +957,29 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.55rem;
   margin-bottom: 0.15rem;
+  min-width: 0;
 }
 
 .fp-msg-head h1 {
   margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
   font-family: var(--font-display);
   font-size: clamp(1.55rem, 5vw, 1.85rem);
   font-weight: 800;
   letter-spacing: -0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fp-msg-actions {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  flex: 0 0 auto;
 }
 
 .fp-icon-btn {
@@ -1840,6 +1858,60 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   .friends-page .fp-row--people .fp-presence-label {
     font-size: 0.72rem;
   }
+
+  /* Watch together: keep tab icons + invite actions on-screen */
+  .friends-page .fp-msg-head {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .friends-page .fp-msg-head h1 {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 7.6rem);
+    font-size: clamp(1.25rem, 5.8vw, 1.5rem);
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    line-height: 1.12;
+  }
+
+  .friends-page .fp-msg-actions {
+    gap: 0.28rem;
+    margin-left: auto;
+    margin-top: 0.1rem;
+  }
+
+  .friends-page .fp-icon-btn {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .friends-page .fp-party {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 0.65rem;
+  }
+
+  .friends-page .fp-party img,
+  .friends-page .fp-party__ph {
+    width: 48px;
+    height: 72px;
+  }
+
+  .friends-page .fp-party__actions .fp-btn {
+    min-height: 2.15rem;
+    padding-inline: 0.7rem;
+  }
+
+  .friends-page .fp-watch .btn--primary {
+    width: 100%;
+    min-height: 2.85rem;
+  }
+
+  .friends-page .fp-lead {
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
 }
 
 .fp-list {
@@ -2332,7 +2404,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   line-height: 1.35;
   font-size: 0.95rem;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   word-break: normal;
 }
 
@@ -2863,8 +2935,12 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   grid-template-columns: 52px minmax(0, 1fr);
   gap: 0.75rem;
   align-items: start;
-  padding: 0.55rem 0.1rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
 }
 
 .fp-party:last-child {
@@ -2882,16 +2958,30 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
 
 .fp-party__body {
   display: grid;
-  gap: 0.2rem;
+  gap: 0.35rem;
   min-width: 0;
 }
 
 .fp-party__body strong {
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
 .fp-party__body .muted {
   font-size: 0.8rem;
+}
+
+.fp-party__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-start;
+  margin-top: 0.15rem;
+  max-width: 100%;
+}
+
+.fp-party__actions .fp-btn {
+  flex: 0 0 auto;
 }
 
 @media (min-width: 768px) {
@@ -3089,7 +3179,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
     padding: 0.4rem 0.75rem 0.45rem;
   }
 
-  body.is-friends-chat-kb .friends-page--chat .fp-chat__composer {
+  body.is-friends-chat-kb .friends-page--chat .fp-chat:not(.fp-chat--split) .fp-chat__composer {
     position: fixed !important;
     top: auto !important;
     bottom: var(--friends-kb-bottom, 0px) !important;
@@ -3461,14 +3551,26 @@ body.is-shorts {
   animation: me-in 0.55s var(--ease) both;
 }
 
+@media (min-width: 768px) {
+  /* Center Me in the space beside the side rail, not the full window */
+  body.has-mobile-nav #view:has(.me-page) {
+    max-width: none;
+    width: 100%;
+    margin-inline: 0;
+    padding-left: calc(var(--side-nav-width) + 1.75rem);
+    padding-right: 1.75rem;
+  }
+}
+
 @media (min-width: 900px) {
   body.has-mobile-nav #view:has(.me-page) {
-    max-width: min(720px, 100%);
     padding-top: 1.6rem;
   }
 
   .me-page {
-    max-width: 560px;
+    width: 100%;
+    max-width: 640px;
+    margin-inline: auto;
     gap: 2rem;
   }
 
@@ -3704,6 +3806,15 @@ body.is-shorts {
 .me-destinations {
   display: grid;
   gap: 0;
+}
+
+button.me-dest {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .me-dest {
@@ -4809,6 +4920,178 @@ body.is-halloween .home-sticky__mark::after {
 
 .category-page__head .muted {
   margin: 0.35rem 0 0.75rem;
+}
+
+/* Home — Facebook-style people cards */
+.pymk {
+  min-width: 0;
+  margin: 0.15rem 0 0.35rem;
+}
+
+.pymk__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+
+.pymk__head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 3.4vw, 1.2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.pymk__head p {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.pymk__all {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.pymk__rail {
+  display: flex;
+  gap: 0.7rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding: 0.1rem 0.05rem 0.45rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pymk__rail::-webkit-scrollbar {
+  display: none;
+}
+
+.pymk__card {
+  position: relative;
+  flex: 0 0 auto;
+  width: 168px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.35rem 0.75rem 0.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 10, 67, 0.16) 0 46px, transparent 46px),
+    color-mix(in srgb, var(--surface) 88%, #1a1014);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  text-align: center;
+}
+
+.pymk__dismiss {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.pymk__avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 3px solid color-mix(in srgb, var(--bg) 70%, #fff);
+  background: #2a1a22;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.pymk__avatar--fallback {
+  display: grid;
+  place-items: center;
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(160deg, #ff4d6d, #9b1230);
+}
+
+.pymk__card strong {
+  width: 100%;
+  min-height: 2.4em;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pymk__status {
+  min-height: 1.1em;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.pymk__add {
+  appearance: none;
+  width: 100%;
+  margin-top: auto;
+  min-height: 2.15rem;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pymk__add:hover,
+.pymk__add:focus-visible {
+  filter: brightness(1.08);
+  outline: none;
+}
+
+.pymk__add:disabled {
+  cursor: default;
+  filter: none;
+}
+
+.pymk__add.is-sent {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+@media (max-width: 639px) {
+  .pymk__card {
+    width: 148px;
+    padding-top: 1.2rem;
+  }
+
+  .pymk__avatar {
+    width: 64px;
+    height: 64px;
+  }
 }
 
 /* Recommend — TV Networks / Movie Studios logo rails */
@@ -6854,18 +7137,21 @@ body.is-halloween .home-sticky__mark::after {
 @media (min-width: 640px) {
   .detail__actions {
     grid-template-columns: auto 1fr;
-    align-items: center;
+    align-items: stretch;
     gap: 0.65rem 0.75rem;
   }
 
   .detail__watch-btn {
     width: auto;
     min-width: 11rem;
+    height: 100%;
   }
 
-  .detail__tools {
+  .detail__tools,
+  .detail__tools:has(> :nth-child(3)) {
     width: auto;
     justify-self: start;
+    align-self: stretch;
     grid-template-columns: repeat(3, auto);
   }
 
@@ -6875,6 +7161,7 @@ body.is-halloween .home-sticky__mark::after {
 
   .detail__chip {
     width: auto;
+    height: 100%;
     padding-inline: 1.05rem;
   }
 }
@@ -9536,10 +9823,16 @@ body.has-mobile-nav #view:has(.detail) {
 
 @media (min-width: 640px) {
   .detail {
-    gap: 1.35rem;
+    width: 100%;
+    max-width: 960px;
+    margin-inline: auto;
+    gap: 1.15rem 1.35rem;
+    grid-template-columns: 148px minmax(0, 1fr);
+    align-content: start;
   }
 
   .detail__hero {
+    grid-column: 1 / -1;
     margin: 0;
     width: 100%;
     height: clamp(200px, 28vw, 280px);
@@ -9547,6 +9840,7 @@ body.has-mobile-nav #view:has(.detail) {
   }
 
   .detail__head {
+    grid-column: 1 / -1;
     grid-template-columns: 148px minmax(0, 1fr);
     gap: 1.15rem 1.35rem;
     margin-top: -4.75rem;
@@ -9566,11 +9860,34 @@ body.has-mobile-nav #view:has(.detail) {
     font-size: clamp(1.55rem, 2.6vw, 2.05rem);
   }
 
+  /* CTAs + copy sit under the title column; player stays full width */
+  .detail__actions,
+  .detail__block,
+  .detail__omdb,
+  .detail__no-trailer,
+  .detail__together {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .detail__player {
+    grid-column: 1 / -1;
+  }
+
+  .detail__plot {
+    max-width: 62ch;
+  }
 }
 
-@media (min-width: 900px) {
+@media (min-width: 768px) {
+  /* Center the detail column in the space beside the side rail */
   body.has-mobile-nav #view:has(.detail) {
-    max-width: min(980px, 100%);
+    max-width: none;
+    width: 100%;
+    margin-inline: 0;
+    padding-left: calc(var(--side-nav-width) + 1.5rem);
+    padding-right: 1.5rem;
   }
 }
 

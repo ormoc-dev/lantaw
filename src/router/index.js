@@ -18,10 +18,18 @@ function currentPath() {
   return (location.hash.replace(/^#/, "") || "/").split("?")[0];
 }
 
+function currentHashPath() {
+  const raw = location.hash.replace(/^#/, "") || "/";
+  return raw.startsWith("/") ? raw : `/${raw}`;
+}
+
 function rememberReturnPath(pathname) {
-  if (!pathname || pathname === "/login" || PUBLIC_PATHS.has(pathname)) return;
+  const bare = (pathname || "/").split("?")[0];
+  if (!bare || bare === "/login" || PUBLIC_PATHS.has(bare)) return;
+  const full = currentHashPath();
+  const stored = full.split("?")[0] === bare ? full : pathname;
   try {
-    sessionStorage.setItem(RETURN_KEY, pathname);
+    sessionStorage.setItem(RETURN_KEY, stored);
   } catch {
     /* ignore */
   }

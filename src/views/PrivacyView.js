@@ -1,14 +1,17 @@
+import { getSession } from "../services/authService.js";
 import { linkTo } from "../router/index.js";
 
 export async function PrivacyView(root) {
   root.classList.add("view--auth");
+  const session = await getSession().catch(() => null);
+  const backHref = session?.user ? linkTo("/me") : linkTo("/login");
 
   root.innerHTML = `
     <section class="auth-page legal-page">
       <div class="auth-page__glow auth-page__glow--a" aria-hidden="true"></div>
       <div class="auth-page__glow auth-page__glow--b" aria-hidden="true"></div>
       <div class="auth-shell legal-shell">
-        <a class="back" href="${linkTo("/login")}">← Back</a>
+        <a class="back" href="${backHref}">← Back</a>
         <p class="auth-brand">LANTAW</p>
         <h1 class="legal-title">Privacy</h1>
         <div class="legal-copy">

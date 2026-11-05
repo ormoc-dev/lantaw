@@ -36,6 +36,7 @@ import {
 import { startVideoCall } from "../services/callService.js";
 import { showConfirm, showNotice } from "../lib/appModal.js";
 import { loadingHtml } from "../components/Loading.js";
+import { peopleCardsHtml } from "../components/PeopleYouMayKnow.js?v=132";
 import { linkTo } from "../router/index.js";
 import {
   featuredGifs,
@@ -69,11 +70,43 @@ export async function FriendsView(root) {
   } catch {
     /* ignore */
   }
+  try {
+    if (tab === "chat") {
+      const jump = sessionStorage.getItem("lantaw-friends-tab");
+      if (jump === "friends" || jump === "watch" || jump === "chat") {
+        sessionStorage.removeItem("lantaw-friends-tab");
+        tab = jump;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
   let friendships = [];
   let parties = [];
   let activity = { requests: 0, chats: 0, invites: 0, chatIds: [] };
   let chatPreviews = {};
-  let activeChatId = null;
+
+  function chatIdFromHash() {
+    const qs = (location.hash.replace(/^#/, "") || "").split("?")[1] || "";
+    const id = new URLSearchParams(qs).get("chat") || "";
+    return /^[A-Za-z0-9-]{8,80}$/.test(id) ? id : null;
+  }
+
+  let activeChatId = tab === "chat" ? chatIdFromHash() : null;
+
+  const syncChatUrl = () => {
+    const path = (location.hash.replace(/^#/, "") || "/").split("?")[0];
+    if (path !== "/friends") return;
+    const params = new URLSearchParams(
+      (location.hash.replace(/^#/, "") || "").split("?")[1] || ""
+    );
+    if (tab === "chat" && activeChatId) params.set("chat", activeChatId);
+    else params.delete("chat");
+    const qs = params.toString();
+    const next = `#/friends${qs ? `?${qs}` : ""}`;
+    if (location.hash === next) return;
+    history.replaceState(history.state, "", `${location.pathname}${location.search}${next}`);
+  };
   let unsubChat = null;
   let unsubPage = null;
   let unsubWatchDoc = null;
@@ -139,6 +172,7 @@ export async function FriendsView(root) {
     root.classList.toggle("view--friends-chat", locked);
     document.body.classList.toggle("is-friends-chat", locked);
     if (!locked) clearChatViewport();
+    syncChatUrl();
   };
 
   const avatarHtml = (p, sizeClass = "") => {
@@ -438,7 +472,7 @@ export async function FriendsView(root) {
               <span class="muted">${mineHost ? "You invited" : "Invite for you"} · ${escapeHtml(
                 p.status
               )}</span>
-              <div class="fp-row__actions">
+              <div class="fp-party__actions">
                 ${
                   p.status === "active" || p.status === "invited"
                     ? `<a class="fp-btn fp-btn--solid" href="${linkTo(
@@ -678,6 +712,16 @@ export async function FriendsView(root) {
           <div class="fp-search-results" id="search-results" hidden></div>
         </section>
 
+        <section class="fp-block fp-suggest-block" id="suggest-section">
+          <div class="fp-block__head">
+            <h2 id="suggest-heading">People you may know</h2>
+            <p class="muted fp-block__sub" id="suggest-sub">Suggested accounts on LANTAW</p>
+          </div>
+          <div class="fp-suggest" id="suggest-list">
+            ${loadingHtml({ className: "fp-suggest-loading" })}
+          </div>
+        </section>
+
         ${
           incoming.length || outgoing.length
             ? `<section class="fp-block fp-block--split" id="requests-section">
@@ -690,16 +734,6 @@ export async function FriendsView(root) {
         <section class="fp-block fp-block--split" id="friends-section">
           <h2>Your friends</h2>
           <div class="fp-list" id="friends-list"></div>
-        </section>
-
-        <section class="fp-block fp-suggest-block fp-block--split" id="suggest-section">
-          <div class="fp-block__head">
-            <h2 id="suggest-heading">People you may know</h2>
-            <p class="muted fp-block__sub" id="suggest-sub">Suggested accounts on LANTAW</p>
-          </div>
-          <div class="fp-suggest" id="suggest-list">
-            ${loadingHtml({ className: "fp-suggest-loading" })}
-          </div>
         </section>
       `;
 
@@ -831,12 +865,12 @@ export async function FriendsView(root) {
           rememberLastSeen(rows);
           suggestCache = rows;
           suggestExpanded = false;
-          paintPeopleList(resultsBox, rows, {
-            preview: true,
-            emptyTitle: "No one new right now",
-            emptyText:
-              "When more people join LANTAW, they’ll show up here.",
-          });
+          resultsBox.innerHTML = rows.length
+            ? peopleCardsHtml(rows.slice(0, 20))
+            : emptyState(
+                "No one new right now",
+                "When more people join LANTAW, they’ll show up here."
+              );
         } catch (err) {
           if (token !== searchToken) return;
           resultsBox.innerHTML = emptyState(
@@ -1733,12 +1767,24 @@ export async function FriendsView(root) {
 
       const keyboardInset = () => {
         const vv = window.visualViewport;
-        if (!vv) return 0;
-        // Layout bottom → visual bottom (keyboard / browser chrome overlay)
-        return Math.max(
-          0,
-          Math.round(window.innerHeight - vv.height - vv.offsetTop)
-        );
+        let fromVv = 0;
+        if (vv) {
+          // Layout bottom → visual bottom (keyboard overlay)
+          fromVv = Math.max(
+            0,
+            Math.round(window.innerHeight - vv.offsetTop - vv.height)
+          );
+        }
+        let fromVk = 0;
+        try {
+          const rect = navigator.virtualKeyboard?.boundingRect;
+          if (rect && rect.height > 0 && rect.top < window.innerHeight - 8) {
+            fromVk = Math.round(Math.min(rect.height, window.innerHeight * 0.7));
+          }
+        } catch {
+          /* unsupported */
+        }
+        return Math.max(fromVv, fromVk);
       };
 
       try {
@@ -1767,6 +1813,9 @@ export async function FriendsView(root) {
         form?.style.removeProperty("bottom");
         composer?.style.removeProperty("bottom");
         composer?.style.removeProperty("top");
+        composer?.style.removeProperty("left");
+        composer?.style.removeProperty("right");
+        composer?.style.removeProperty("width");
         composer?.style.removeProperty("transform");
         if (composeSpacer) composeSpacer.hidden = true;
       };
@@ -1775,13 +1824,15 @@ export async function FriendsView(root) {
         const vv = window.visualViewport;
         const layoutH = window.innerHeight;
         const inset = keyboardInset();
+        const split = window.matchMedia("(min-width: 768px)").matches;
         const baseline = focusBaselineH || layoutH;
         const shrinkFromFocus = vv
           ? Math.max(0, Math.round(baseline - vv.height))
           : 0;
-        // Real keyboard only — never treat URL-bar chrome as the keypad
-        const kbVisible = inset > 48 || shrinkFromFocus > 120;
-        const kbMode = inputFocused || kbVisible;
+        // Real on-screen keyboard only. A hardware keyboard (desktop) does not
+        // shrink the viewport, so focus alone must not detach the composer.
+        const kbVisible = inset > 60 || (inputFocused && shrinkFromFocus > 100);
+        const kbMode = kbVisible;
 
         document.body.classList.toggle("is-friends-chat-kb", kbMode);
 
@@ -1796,37 +1847,55 @@ export async function FriendsView(root) {
           return;
         }
 
-        // Ride the keyboard: bottom = inset. While focused but keypad still
-        // rising, sit at 0 (nav is hidden) so the bar isn't left mid-screen.
-        const bottom = kbVisible ? inset : 0;
+        const bottom = inset;
         document.documentElement.style.setProperty(
           "--friends-kb-bottom",
           `${bottom}px`
         );
 
-        if (composer) {
-          composer.style.setProperty("bottom", `${bottom}px`, "important");
-          composer.style.setProperty("top", "auto", "important");
-          composer.style.transform = "none";
-        }
-
-        // Only shrink the chat shell once the keyboard is actually up
-        if (kbVisible && vv) {
+        if (vv) {
           const chatVh = Math.max(220, Math.round(vv.height));
           root.style.setProperty("--friends-chat-vh", `${chatVh}px`);
           if (chatShell) {
             chatShell.style.height = `${chatVh}px`;
             chatShell.style.maxHeight = `${chatVh}px`;
           }
-        } else {
-          root.style.removeProperty("--friends-chat-vh");
-          chatShell?.style.removeProperty("height");
-          chatShell?.style.removeProperty("max-height");
+          const shift = Math.round(vv.offsetTop);
+          if (shift > 1) root.style.transform = `translateY(${shift}px)`;
+          else root.style.removeProperty("transform");
         }
 
-        if (composeSpacer) composeSpacer.hidden = false;
+        if (split) {
+          // Tablet/desktop split: stay inside the thread column. The shortened
+          // shell lifts the bar with the keyboard instead of covering the list.
+          composer?.style.removeProperty("bottom");
+          composer?.style.removeProperty("top");
+          composer?.style.removeProperty("left");
+          composer?.style.removeProperty("right");
+          composer?.style.removeProperty("width");
+          composer?.style.removeProperty("transform");
+          if (composeSpacer) composeSpacer.hidden = true;
+        } else if (composer && vv) {
+          composer.style.setProperty("bottom", `${bottom}px`, "important");
+          composer.style.setProperty("top", "auto", "important");
+          composer.style.setProperty("left", "0px", "important");
+          composer.style.setProperty("right", "0px", "important");
+          composer.style.setProperty("width", "100%", "important");
+          if (composeSpacer) composeSpacer.hidden = false;
+          // Measure against the visual viewport and nudge once. Fixed bars
+          // sit under the keypad on some phones until this correction.
+          const prev = composer.style.transform;
+          composer.style.transform = "none";
+          const rect = composer.getBoundingClientRect();
+          const visualBottom = vv.offsetTop + vv.height;
+          const delta = Math.round(rect.bottom - visualBottom);
+          const next =
+            Math.abs(delta) > 3 ? `translateY(${-delta}px)` : "none";
+          if (prev !== next) composer.style.transform = next;
+        }
 
-        lockPageScroll();
+        // Don't yank the page back to 0 on touch — that pins the field under the keypad.
+        if (split) lockPageScroll();
         requestAnimationFrame(() => {
           box.scrollTop = box.scrollHeight;
         });
@@ -1977,8 +2046,6 @@ export async function FriendsView(root) {
         inputFocused = true;
         const vv = window.visualViewport;
         focusBaselineH = Math.round(vv?.height || window.innerHeight);
-        document.body.classList.add("is-friends-chat-kb");
-        lockPageScroll();
         syncChatViewport();
         startKbPoll();
         [60, 140, 260, 420, 650, 900].forEach((ms) => {
@@ -2011,7 +2078,7 @@ export async function FriendsView(root) {
 
     panel.innerHTML = `
       <section class="fp-block">
-        <h2>Watch together</h2>
+        <h2>New invite</h2>
         <p class="muted fp-lead">Search a friend and a recent title, then send an invite.</p>
         <form class="fp-watch" id="watch-invite">
           <div class="fp-search" data-search="friend">
@@ -2333,6 +2400,22 @@ export async function FriendsView(root) {
     const t = e.target;
     if (!(t instanceof Element)) return;
 
+    const dismissCard = t.closest("[data-pymk-dismiss]");
+    if (dismissCard) {
+      const rail = dismissCard.closest(".pymk__rail");
+      dismissCard.closest(".pymk__card")?.remove();
+      if (rail && !rail.querySelector(".pymk__card")) {
+        const box = rail.parentElement;
+        if (box) {
+          box.innerHTML = emptyState(
+            "No one new right now",
+            "When more people join LANTAW, they’ll show up here."
+          );
+        }
+      }
+      return;
+    }
+
     const addBtn = t.closest("[data-add]");
     const acceptFriend = t.closest("[data-accept]");
     const declineFriend = t.closest("[data-decline]");
@@ -2379,12 +2462,14 @@ export async function FriendsView(root) {
       try {
         await sendFriendRequest(id);
         if (peopleMsg) peopleMsg.textContent = "Request sent.";
-        addBtn.closest(".fp-row")?.remove();
+        addBtn.closest(".pymk__card, .fp-row")?.remove();
         await afterPeopleChange();
       } catch (err) {
         if (peopleMsg) peopleMsg.textContent = err.message || "Could not send request";
         addBtn.disabled = false;
-        addBtn.textContent = "Add";
+        addBtn.textContent = addBtn.classList.contains("pymk__add")
+          ? "Add friend"
+          : "Add";
       }
       return;
     }

@@ -14,6 +14,7 @@ const ICONS = {
   friends: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 11a3.5 3.5 0 1 0-3.4-4.2M8.5 13A3.5 3.5 0 1 0 8.5 6M4 19c.4-2.6 2.4-4 4.5-4s4.1 1.4 4.5 4M13 15c1.8 0 3.6 1 4 3"/></svg>`,
   recent: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.2l2.8 1.6"/></svg>`,
   pen: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 5.5 18 11M4 20l1.2-5.3L16.4 3.5a2 2 0 0 1 2.8 0l1.3 1.3a2 2 0 0 1 0 2.8L9.3 18.8 4 20Z"/></svg>`,
+  privacy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3.5 5.5 6.2v5.1c0 4.2 2.7 7.2 6.5 8.7 3.8-1.5 6.5-4.5 6.5-8.7V6.2L12 3.5Z"/><path d="M9.2 12.1 11 13.9l3.8-3.8"/></svg>`,
 };
 
 export async function MeView(root) {
@@ -107,8 +108,20 @@ export async function MeView(root) {
         </div>
       </section>
 
-      <section class="me-section" aria-labelledby="me-account-title">
-        <h2 class="me-section__title" id="me-account-title">Account</h2>
+      <section class="me-section" aria-labelledby="me-settings-title">
+        <h2 class="me-section__title" id="me-settings-title">Settings</h2>
+        <nav class="me-destinations" aria-label="Settings">
+          <button type="button" class="me-dest" id="me-settings-edit">
+            <span class="me-dest__icon">${ICONS.pen}</span>
+            <span class="me-dest__label">Edit profile</span>
+            <span class="me-dest__chev" aria-hidden="true">›</span>
+          </button>
+          <a class="me-dest" href="${linkTo("/privacy")}">
+            <span class="me-dest__icon">${ICONS.privacy}</span>
+            <span class="me-dest__label">Privacy</span>
+            <span class="me-dest__chev" aria-hidden="true">›</span>
+          </a>
+        </nav>
         <div class="me-actions">
           <button type="button" class="me-signout" id="sign-out">Sign out</button>
         </div>
@@ -231,6 +244,7 @@ export async function MeView(root) {
   };
 
   root.querySelector("#me-edit-profile")?.addEventListener("click", openEditProfile);
+  root.querySelector("#me-settings-edit")?.addEventListener("click", openEditProfile);
   editProfileModal?.querySelectorAll("[data-close-edit-profile]").forEach((el) => {
     el.addEventListener("click", closeEditProfile);
   });

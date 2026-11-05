@@ -1,5 +1,5 @@
 /* __BUILD_ID__ replaced at deploy by scripts/stamp-build.mjs */
-const CACHE = "movie-v124";
+const CACHE = "movie-v127";
 const BUILD_ID = "__BUILD_ID__";
 
 function basePath() {
