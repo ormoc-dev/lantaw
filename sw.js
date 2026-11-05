@@ -1,5 +1,5 @@
 /* __BUILD_ID__ replaced at deploy by scripts/stamp-build.mjs */
-const CACHE = "movie-v145";
+const CACHE = "movie-v146";
 const BUILD_ID = "__BUILD_ID__";
 
 function basePath() {
@@ -66,6 +66,59 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") self.skipWaiting();
+});
+
+/** Closed-app Web Push from Supabase Edge Function `send-push`. */
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    try {
+      payload = { body: event.data?.text?.() || "" };
+    } catch {
+      payload = {};
+    }
+  }
+
+  const title = String(payload.title || "LANTAW");
+  const base = basePath();
+  const icon = `${base}/public/icons/LOGO.png`;
+  const data = {
+    url: payload.url || "#/friends",
+    kind: payload.kind || "generic",
+    ...(payload.data || {}),
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: String(payload.body || "").slice(0, 180),
+      icon,
+      badge: icon,
+      tag: payload.tag || data.kind || "lantaw",
+      renotify: true,
+      data,
+      requireInteraction: Boolean(
+        payload.requireInteraction || (payload.actions && payload.actions.length)
+      ),
+      actions: Array.isArray(payload.actions) ? payload.actions.slice(0, 2) : [],
+      vibrate: data.kind === "call" ? [200, 100, 200, 100, 200] : [120],
+    })
+  );
+});
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      for (const client of all) {
+        client.postMessage({ type: "lantaw-push-resubscribe" });
+      }
+    })()
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {

@@ -128,11 +128,18 @@ function dismissIfGone(row) {
   }
 }
 
-export async function acceptWatchInvite() {
-  if (!pending?.id || busy) return;
+export async function acceptWatchInvite(partyId = null) {
+  const id = partyId || pending?.id;
+  if (!id || busy) return;
   busy = true;
-  const id = pending.id;
   try {
+    if (!pending || pending.id !== id) {
+      try {
+        pending = await getWatchParty(id);
+      } catch {
+        pending = { id };
+      }
+    }
     await updateWatchPartyStatus(id, "active");
     hideInvite();
     notifyFriendsBadge();
@@ -142,10 +149,10 @@ export async function acceptWatchInvite() {
   }
 }
 
-export async function declineWatchInvite() {
-  if (!pending?.id || busy) return;
+export async function declineWatchInvite(partyId = null) {
+  const id = partyId || pending?.id;
+  if (!id || busy) return;
   busy = true;
-  const id = pending.id;
   try {
     await updateWatchPartyStatus(id, "declined");
     hideInvite();

@@ -6,6 +6,10 @@
   "type": "module",
   "scripts": {
     "sync-env": "node scripts/sync-env.mjs",
-    "stamp-build": "node scripts/stamp-build.mjs"
+    "stamp-build": "node scripts/stamp-build.mjs",
+    "generate-vapid": "node scripts/generate-vapid.mjs"
+  },
+  "devDependencies": {
+    "web-push": "^3.6.7"
   }
 }

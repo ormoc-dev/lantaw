@@ -279,7 +279,7 @@ export async function MeView(root) {
       await showNotice({
         title: "Notifications on",
         message:
-          "You’ll get alerts for friend requests, chats, Watch together, and video calls while LANTAW is open in Chrome.",
+          "Chrome can alert you for friend requests, chats, Watch together, and calls — even when LANTAW is closed (after push is set up on the server).",
       });
     } else if (perm === "denied") {
       await showNotice({

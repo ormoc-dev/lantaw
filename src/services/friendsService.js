@@ -229,6 +229,20 @@ export async function sendFriendRequest(addresseeId) {
     throw error;
   }
   notifyFriendsBadge();
+  import("./pushService.js")
+    .then(async ({ dispatchRemotePush }) => {
+      const name =
+        user.user_metadata?.display_name || user.email || "Someone";
+      await dispatchRemotePush({
+        targetUserId: addresseeId,
+        kind: "friend",
+        title: "Friend request",
+        body: `${name} sent you a friend request`,
+        url: "#/friends",
+        tag: `fr-${data.id}`,
+      });
+    })
+    .catch(() => {});
   return data;
 }
 
@@ -402,6 +416,27 @@ export async function sendMessage(friendshipId, body) {
 
   if (error) throw error;
   notifyFriendsBadge();
+  import("./pushService.js")
+    .then(async ({ dispatchRemotePush, otherUserIdInFriendship }) => {
+      const peerId = await otherUserIdInFriendship(friendshipId, user.id);
+      if (!peerId) return;
+      const name =
+        user.user_metadata?.display_name || user.email || "Friend";
+      let preview = text;
+      if (/^\[gif\]/i.test(text)) preview = "Sent a GIF";
+      else if (/^\[share\]/i.test(text)) preview = "Shared a title";
+      else if (preview.length > 90) preview = `${preview.slice(0, 89)}…`;
+      await dispatchRemotePush({
+        targetUserId: peerId,
+        kind: "chat",
+        title: name,
+        body: preview,
+        url: `#/friends?chat=${encodeURIComponent(friendshipId)}`,
+        tag: `chat-${friendshipId}`,
+        data: { chatId: friendshipId },
+      });
+    })
+    .catch(() => {});
   return data;
 }
 
@@ -546,6 +581,26 @@ export async function createWatchParty({
 
   if (error) throw error;
   notifyFriendsBadge();
+  import("./pushService.js")
+    .then(async ({ dispatchRemotePush }) => {
+      const name =
+        user.user_metadata?.display_name || user.email || "Friend";
+      await dispatchRemotePush({
+        targetUserId: guestId,
+        kind: "watch",
+        title: "Watch together",
+        body: `${name} invited you to ${title || "a title"}`,
+        url: "#/friends",
+        tag: `wt-${data.id}`,
+        requireInteraction: true,
+        actions: [
+          { action: "accept-watch", title: "Accept" },
+          { action: "decline-watch", title: "Decline" },
+        ],
+        data: { partyId: data.id },
+      });
+    })
+    .catch(() => {});
   return data;
 }
 

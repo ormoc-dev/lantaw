@@ -92,16 +92,22 @@ function bindServiceWorkerActions() {
   swBound = true;
   navigator.serviceWorker.addEventListener("message", (event) => {
     const msg = event.data;
+    if (msg?.type === "lantaw-push-resubscribe") {
+      import("./pushService.js")
+        .then((m) => m.ensurePushSubscription())
+        .catch(() => {});
+      return;
+    }
     if (!msg || msg.type !== "lantaw-notify-action") return;
     const { action, data } = msg;
     const kind = data?.kind;
 
-    if (action === "accept-watch" || (kind === "watch" && action === "accept-watch")) {
-      acceptWatchInvite().catch(() => {});
+    if (action === "accept-watch") {
+      acceptWatchInvite(data?.partyId || null).catch(() => {});
       return;
     }
     if (action === "decline-watch") {
-      declineWatchInvite().catch(() => {});
+      declineWatchInvite(data?.partyId || null).catch(() => {});
       return;
     }
     if (action === "accept-call") {
@@ -201,11 +207,10 @@ export async function startNotifyInbox() {
     return;
   }
 
-  // Soft-enable if already granted; otherwise wait for Me / Friends gesture
-  if (notificationPermission() === "default") {
-    /* keep listening setup after grant */
-  } else if (notificationPermission() === "granted") {
-    /* ok */
+  if (notificationPermission() === "granted") {
+    import("./pushService.js")
+      .then((m) => m.ensurePushSubscription())
+      .catch(() => {});
   }
 
   if (channel && myId === user.id) return;
@@ -258,11 +263,17 @@ export async function stopNotifyInbox() {
   myId = null;
 }
 
-/** Enable Chrome notifications from Settings / Friends. */
+/** Enable Chrome notifications from Settings / Friends (incl. closed-app push). */
 export async function enableNotifications() {
   const perm = await ensureNotifyPermission();
   if (perm === "granted") {
     await startNotifyInbox();
+    try {
+      const { ensurePushSubscription } = await import("./pushService.js");
+      await ensurePushSubscription();
+    } catch {
+      /* push optional until VAPID + edge function are set */
+    }
   }
   return perm;
 }

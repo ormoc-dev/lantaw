@@ -15,6 +15,7 @@ export const env = {
   tmdbImageBase: "https://image.tmdb.org/t/p",
   omdbApiKey: "419c2d70",
   giphyApiKey: "JBZCJrkClnaQwVKJ7QevPZfOsRYT891k",
+  vapidPublicKey: "BNYiGOby0UwJy-Gx5dC9qR-qB0j8ikeoB7mBOvDaNuMh3m8f4UZRzx0e00uQNvxzaEAU7r4G6dyioPlsWxqoN_o",
 };
 
 export function assertEnv() {

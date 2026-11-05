@@ -7,3 +7,6 @@ Thumbs.db
 node_modules/
 dist/
 .vercel/
+
+.vapid-private.local
+

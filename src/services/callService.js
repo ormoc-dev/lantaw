@@ -487,11 +487,31 @@ export async function startVideoCall({ friendshipId, peerId, peerName }) {
   try {
     await getLocalMedia();
     await joinSession(friendshipId);
+    const callerName =
+      user.user_metadata?.display_name || user.email || "Friend";
     await sendInbox(peerId, "invite", {
       friendshipId,
       from: myId,
-      name: user.user_metadata?.display_name || user.email || "Friend",
+      name: callerName,
     });
+    import("./pushService.js")
+      .then(({ dispatchRemotePush }) =>
+        dispatchRemotePush({
+          targetUserId: peerId,
+          kind: "call",
+          title: "Incoming video call",
+          body: `${callerName} is calling…`,
+          url: "#/friends",
+          tag: `call-${friendshipId}`,
+          requireInteraction: true,
+          actions: [
+            { action: "accept-call", title: "Open" },
+            { action: "decline-call", title: "Dismiss" },
+          ],
+          data: { friendshipId },
+        })
+      )
+      .catch(() => {});
   } catch (err) {
     await hangUp({ notify: true });
     throw err;

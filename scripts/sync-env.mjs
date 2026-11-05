@@ -46,6 +46,7 @@ const giphyApiKey = get("VITE_GIPHY_API_KEY");
 // Legacy alias if someone still has the old name
 const tenorApiKey = get("VITE_TENOR_API_KEY");
 const resolvedGiphyKey = giphyApiKey || tenorApiKey;
+const vapidPublicKey = get("VITE_VAPID_PUBLIC_KEY");
 
 const missing = [];
 if (!supabaseUrl || supabaseUrl.includes("YOUR_PROJECT")) missing.push("VITE_SUPABASE_URL");
@@ -80,6 +81,7 @@ export const env = {
   tmdbImageBase: ${esc(tmdbImageBase)},
   omdbApiKey: ${esc(omdbApiKey)},
   giphyApiKey: ${esc(resolvedGiphyKey)},
+  vapidPublicKey: ${esc(vapidPublicKey)},
 };
 
 export function assertEnv() {
