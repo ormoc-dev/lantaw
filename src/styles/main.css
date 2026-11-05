@@ -820,6 +820,8 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
     padding: 0.4rem 0.5rem 0.85rem;
     gap: 0.2rem;
     box-sizing: border-box;
+    align-content: start;
+    grid-auto-rows: max-content;
   }
 
   .friends-page--chat .fp-chat__rail .fp-convo-wrap {
@@ -828,12 +830,17 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
     border-radius: 12px;
     max-width: 100%;
     min-width: 0;
+    align-self: start;
+    width: 100%;
+    height: auto;
   }
 
   .friends-page--chat .fp-chat__rail .fp-convo {
     width: 100%;
     max-width: 100%;
     min-width: 0;
+    height: auto;
+    align-self: start;
     box-sizing: border-box;
     padding: 0.55rem 0.6rem;
     border-radius: 12px;
@@ -1180,6 +1187,9 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   display: grid;
   gap: 0.35rem;
   margin: 0 -0.15rem;
+  /* Don't stretch a single row to fill leftover rail/inbox height */
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 
 .fp-inbox__error {
