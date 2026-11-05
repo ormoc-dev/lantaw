@@ -4020,7 +4020,7 @@ button.me-dest {
 
 .me-dest {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.85rem;
   padding: 0.95rem 0;
@@ -4031,6 +4031,10 @@ button.me-dest {
   background: transparent;
   border-radius: 0;
   -webkit-tap-highlight-color: transparent;
+}
+
+.me-dest:not(:has(.me-dest__meta)) {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .me-dest:last-child {
@@ -4060,6 +4064,13 @@ button.me-dest {
 .me-dest__icon svg {
   width: 100%;
   height: 100%;
+}
+
+.me-dest__meta {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .me-dest__label {
@@ -5790,6 +5801,28 @@ body.is-halloween .home-sticky__mark::after {
   font-size: clamp(1rem, 3.6vw, 1.2rem);
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+.category-row__more {
+  appearance: none;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.2rem 0.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.category-row__more:hover,
+.category-row__more:focus-visible {
+  text-decoration: underline;
+  outline: none;
 }
 
 .category-row__rail {

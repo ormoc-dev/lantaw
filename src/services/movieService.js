@@ -41,7 +41,7 @@ export async function getPopularMovies(page = 1) {
 }
 
 /** Category grids — TMDB is 20/page, so pull enough pages for a fuller shelf. */
-const CATEGORY_LIST_LIMIT = 100;
+const CATEGORY_LIST_LIMIT = 200;
 
 async function collectPages(fetchPage, limit = CATEGORY_LIST_LIMIT) {
   const pageCount = Math.max(1, Math.ceil(limit / 20));
@@ -156,11 +156,13 @@ export async function getRecommended() {
       getAnime(),
     ]);
 
+  const topToday = trendingToday.results || [];
   const sections = [
     {
       id: "top10-us",
       title: "Top 10 Today · United States",
-      items: (trendingToday.results || []).slice(0, 10),
+      items: topToday.slice(0, 10),
+      moreItems: topToday.slice(10, 20),
     },
     {
       id: "trending-now",

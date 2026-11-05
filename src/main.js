@@ -1,4 +1,4 @@
-import { createApp } from "./App.js?v=142";
+import { createApp } from "./App.js?v=145";
 import { onAuthChange, recoverSession } from "./services/authService.js";
 import {
   startPresence,
@@ -12,6 +12,10 @@ import {
   startWatchInviteInbox,
   stopWatchInviteInbox,
 } from "./services/watchInviteService.js";
+import {
+  startNotifyInbox,
+  stopNotifyInbox,
+} from "./services/notifyService.js";
 import { initPwaInstall } from "./lib/pwaInstall.js";
 
 initPwaInstall();
@@ -51,21 +55,24 @@ async function boot() {
   const app = createApp(root);
   app.mount();
 
-  // Friend online/offline + call/watch-invite modals (while the app is open).
+  // Friend online/offline + call/watch-invite + Chrome notifications (while app is open).
   if (session) {
     startPresence().catch(() => {});
     startCallInbox().catch(() => {});
     startWatchInviteInbox().catch(() => {});
+    startNotifyInbox().catch(() => {});
   }
   onAuthChange((next) => {
     if (next) {
       startPresence().catch(() => {});
       startCallInbox().catch(() => {});
       startWatchInviteInbox().catch(() => {});
+      startNotifyInbox().catch(() => {});
     } else {
       stopPresence().catch(() => {});
       stopCallInbox().catch(() => {});
       stopWatchInviteInbox().catch(() => {});
+      stopNotifyInbox().catch(() => {});
     }
   });
 }

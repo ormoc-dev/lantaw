@@ -103,6 +103,18 @@ async function showInvite(partyId) {
     }
     pending = party;
     paintInvite(party);
+    const hostName =
+      party.host?.display_name || party.host?.email || "Friend";
+    import("./notifyService.js")
+      .then((m) =>
+        m.notifyWatchInvite({
+          partyId: party.id,
+          hostName,
+          title: party.title,
+          poster: party.poster,
+        })
+      )
+      .catch(() => {});
   } catch {
     /* ignore */
   }

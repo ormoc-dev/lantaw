@@ -394,6 +394,14 @@ export async function startCallInbox() {
     if (nameEl) nameEl.textContent = pendingInvite.peerName;
     showStage("incoming");
     setStatus("Incoming call…");
+    import("./notifyService.js")
+      .then((m) =>
+        m.notifyVideoCall({
+          friendshipId: pendingInvite.friendshipId,
+          peerName: pendingInvite.peerName,
+        })
+      )
+      .catch(() => {});
   });
 
   inboxChannel.on("broadcast", { event: "cancel" }, ({ payload }) => {

@@ -2,7 +2,7 @@ import { getCategoryById } from "../config/categories.js";
 import {
   getCategoryItems,
   searchMovies,
-} from "../services/movieService.js";
+} from "../services/movieService.js?v=144";
 import { CategoryChips } from "../components/CategoryChips.js";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
 import { HomeSticky } from "../components/HomeSticky.js";
@@ -104,6 +104,9 @@ export async function CategoryView(root, { categoryId } = {}) {
             id: section.id,
             title: section.title,
             movies: section.items,
+            moreMovies:
+              section.id === "top10-us" ? section.moreItems || [] : [],
+            seeMoreLabel: "See more",
           })
         );
 

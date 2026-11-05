@@ -48,12 +48,22 @@ import {
   searchGifs,
 } from "../lib/giphy.js";
 import { parseShareMessage } from "../lib/shareMessage.js";
+import {
+  enableNotifications,
+  notificationPermission,
+} from "../services/notifyService.js";
+import { wasNotifyAsked } from "../lib/appNotify.js";
 
 export async function FriendsView(root) {
   const me = await getUser();
   if (!me) {
     root.innerHTML = `<p class="muted">Sign in to use Friends.</p>`;
     return { unmount() {} };
+  }
+
+  // Ask once for Chrome notifications when opening Friends
+  if (notificationPermission() === "default" && !wasNotifyAsked()) {
+    enableNotifications().catch(() => {});
   }
 
   let tab = "chat";

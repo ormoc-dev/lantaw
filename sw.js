@@ -1,5 +1,5 @@
 /* __BUILD_ID__ replaced at deploy by scripts/stamp-build.mjs */
-const CACHE = "movie-v142";
+const CACHE = "movie-v145";
 const BUILD_ID = "__BUILD_ID__";
 
 function basePath() {
@@ -66,6 +66,51 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") self.skipWaiting();
+});
+
+self.addEventListener("notificationclick", (event) => {
+  const data = event.notification?.data || {};
+  const action = event.action || "";
+  event.notification.close();
+
+  event.waitUntil(
+    (async () => {
+      const base = basePath();
+      const all = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      let client = all.find((c) => c.focus) || all[0] || null;
+
+      if (client) {
+        try {
+          await client.focus();
+        } catch {
+          /* ignore */
+        }
+        client.postMessage({
+          type: "lantaw-notify-action",
+          action,
+          data,
+        });
+        return;
+      }
+
+      let targetHash = "#/friends";
+      if (data.chatId) {
+        targetHash = `#/friends?chat=${encodeURIComponent(data.chatId)}`;
+      } else if (data.url) {
+        targetHash = String(data.url).startsWith("#")
+          ? String(data.url)
+          : `#${String(data.url).replace(/^\//, "")}`;
+      }
+      const openUrl = `${self.location.origin}${base || ""}/${targetHash}`.replace(
+        /([^:]\/)\/+/g,
+        "$1"
+      );
+      await self.clients.openWindow(openUrl);
+    })()
+  );
 });
 
 self.addEventListener("fetch", (event) => {

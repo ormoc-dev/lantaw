@@ -8,6 +8,12 @@ import {
 import { listWatchlist } from "../services/watchlistService.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
+import {
+  enableNotifications,
+  notificationPermission,
+} from "../services/notifyService.js";
+import { notificationsSupported } from "../lib/appNotify.js";
+import { showNotice } from "../lib/appModal.js";
 
 const ICONS = {
   watchlist: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H17a2 2 0 0 1 2 2v13.2l-6.2-3.4a2 2 0 0 0-1.9 0L5 19.2V5.5z"/></svg>`,
@@ -15,6 +21,7 @@ const ICONS = {
   recent: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.2l2.8 1.6"/></svg>`,
   pen: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 5.5 18 11M4 20l1.2-5.3L16.4 3.5a2 2 0 0 1 2.8 0l1.3 1.3a2 2 0 0 1 0 2.8L9.3 18.8 4 20Z"/></svg>`,
   privacy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3.5 5.5 6.2v5.1c0 4.2 2.7 7.2 6.5 8.7 3.8-1.5 6.5-4.5 6.5-8.7V6.2L12 3.5Z"/><path d="M9.2 12.1 11 13.9l3.8-3.8"/></svg>`,
+  bell: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3.8a4.4 4.4 0 0 0-4.4 4.4v2.1c0 .9-.3 1.7-.9 2.4L5.4 14.4c-.5.6-.1 1.6.7 1.6h11.8c.8 0 1.2-1 .7-1.6l-1.3-1.7c-.6-.7-.9-1.5-.9-2.4V8.2A4.4 4.4 0 0 0 12 3.8Z"/><path d="M10 17.2a2.2 2.2 0 0 0 4 0"/></svg>`,
 };
 
 export async function MeView(root) {
@@ -116,6 +123,22 @@ export async function MeView(root) {
             <span class="me-dest__label">Edit profile</span>
             <span class="me-dest__chev" aria-hidden="true">›</span>
           </button>
+          ${
+            notificationsSupported()
+              ? `<button type="button" class="me-dest" id="me-settings-notify">
+            <span class="me-dest__icon">${ICONS.bell}</span>
+            <span class="me-dest__label">Notifications</span>
+            <span class="me-dest__meta" id="me-notify-status">${
+              notificationPermission() === "granted"
+                ? "On"
+                : notificationPermission() === "denied"
+                  ? "Blocked"
+                  : "Off"
+            }</span>
+            <span class="me-dest__chev" aria-hidden="true">›</span>
+          </button>`
+              : ""
+          }
           <a class="me-dest" href="${linkTo("/privacy")}">
             <span class="me-dest__icon">${ICONS.privacy}</span>
             <span class="me-dest__label">Privacy</span>
@@ -245,6 +268,27 @@ export async function MeView(root) {
 
   root.querySelector("#me-edit-profile")?.addEventListener("click", openEditProfile);
   root.querySelector("#me-settings-edit")?.addEventListener("click", openEditProfile);
+  root.querySelector("#me-settings-notify")?.addEventListener("click", async () => {
+    const statusEl = root.querySelector("#me-notify-status");
+    const perm = await enableNotifications();
+    if (statusEl) {
+      statusEl.textContent =
+        perm === "granted" ? "On" : perm === "denied" ? "Blocked" : "Off";
+    }
+    if (perm === "granted") {
+      await showNotice({
+        title: "Notifications on",
+        message:
+          "You’ll get alerts for friend requests, chats, Watch together, and video calls while LANTAW is open in Chrome.",
+      });
+    } else if (perm === "denied") {
+      await showNotice({
+        title: "Notifications blocked",
+        message:
+          "Allow notifications for this site in Chrome settings (lock icon → Site settings).",
+      });
+    }
+  });
   editProfileModal?.querySelectorAll("[data-close-edit-profile]").forEach((el) => {
     el.addEventListener("click", closeEditProfile);
   });
