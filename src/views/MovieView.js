@@ -7,6 +7,12 @@ import {
   isInWatchlist,
   removeByTmdbId,
 } from "../services/watchlistService.js";
+import {
+  listFriendships,
+  sendMessage,
+} from "../services/friendsService.js";
+import { shareMessageBody } from "../lib/shareMessage.js";
+import { showNotice } from "../lib/appModal.js";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
   bindStreamControls,
@@ -316,6 +322,27 @@ async function renderMediaDetail(root, params, mediaType) {
       tools.appendChild(trailerBtn);
     }
 
+    const shareBtn = document.createElement("button");
+    shareBtn.type = "button";
+    shareBtn.className = "detail__chip";
+    shareBtn.innerHTML = `<span aria-hidden="true">↗</span><span>Share</span>`;
+    shareBtn.addEventListener("click", async () => {
+      const user = await getUser();
+      if (!user) {
+        location.hash = linkTo("/login");
+        return;
+      }
+      const item = {
+        id: Number(id),
+        mediaType,
+        title: movie.title || "Untitled",
+        poster: movie.poster || null,
+      };
+      addRecentMovie(item);
+      await openShareToChat(item);
+    });
+    tools.appendChild(shareBtn);
+
     const togetherBtn = document.createElement("button");
     togetherBtn.type = "button";
     togetherBtn.className = "detail__chip detail__chip--together";
@@ -394,6 +421,134 @@ function shortRatingSource(source = "") {
   if (/rotten tomatoes/i.test(s)) return "Rotten Tomatoes";
   if (/metacritic/i.test(s)) return "Metacritic";
   return s;
+}
+
+function shareAvatarHtml(p) {
+  const name = p?.display_name || p?.email || "?";
+  const initial = name.slice(0, 1).toUpperCase();
+  if (p?.avatar_url) {
+    return `<img class="fp-avatar fp-avatar--sm" src="${escapeAttr(
+      p.avatar_url
+    )}" alt="" referrerpolicy="no-referrer" />`;
+  }
+  return `<span class="fp-avatar fp-avatar--fallback fp-avatar--sm">${escapeHtml(
+    initial
+  )}</span>`;
+}
+
+/**
+ * Pick a friend and post a share card into their chat.
+ * @param {{ id: number, mediaType: string, title: string, poster: string|null }} item
+ */
+async function openShareToChat(item) {
+  let friends = [];
+  try {
+    const rows = await listFriendships();
+    friends = rows.filter((f) => f.status === "accepted");
+  } catch (err) {
+    await showNotice({
+      title: "Share",
+      message: err.message || "Could not load friends.",
+    });
+    return;
+  }
+
+  if (!friends.length) {
+    await showNotice({
+      title: "Share",
+      message: "Add a friend first to share titles in chat.",
+    });
+    return;
+  }
+
+  return new Promise((resolve) => {
+    let host = document.getElementById("app-modal-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "app-modal-host";
+      document.body.appendChild(host);
+    }
+
+    const wrap = document.createElement("div");
+    wrap.className = "me-modal app-modal share-pick";
+    wrap.innerHTML = `
+      <div class="me-modal__backdrop" data-share-cancel></div>
+      <div
+        class="me-modal__dialog share-pick__dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-pick-title"
+      >
+        <h2 id="share-pick-title">Share in chat</h2>
+        <p class="me-modal__lead">Send <strong>${escapeHtml(
+          item.title || "this title"
+        )}</strong> to a friend. They’ll see Watch together under the card.</p>
+        <div class="share-pick__list" role="list">
+          ${friends
+            .map(
+              (f) => `
+            <button type="button" class="share-pick__row" data-share-friend="${escapeAttr(
+              f.id
+            )}" role="listitem">
+              ${shareAvatarHtml(f.other)}
+              <span class="share-pick__name">${escapeHtml(
+                f.other?.display_name || f.other?.email || "Friend"
+              )}</span>
+            </button>`
+            )
+            .join("")}
+        </div>
+        <div class="me-modal__actions me-modal__actions--single">
+          <button type="button" class="me-modal__btn" data-share-cancel>Cancel</button>
+        </div>
+      </div>
+    `;
+
+    const finish = () => {
+      document.body.classList.remove("me-modal-open");
+      wrap.remove();
+      window.removeEventListener("keydown", onKey);
+      resolve();
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        finish();
+      }
+    };
+
+    wrap.querySelectorAll("[data-share-cancel]").forEach((el) => {
+      el.addEventListener("click", finish);
+    });
+
+    wrap.querySelectorAll("[data-share-friend]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const friendshipId = btn.getAttribute("data-share-friend");
+        if (!friendshipId) return;
+        wrap.querySelectorAll("[data-share-friend]").forEach((b) => {
+          b.disabled = true;
+        });
+        try {
+          await sendMessage(friendshipId, shareMessageBody(item));
+          finish();
+          location.hash = linkTo(`/friends?chat=${encodeURIComponent(friendshipId)}`);
+        } catch (err) {
+          wrap.querySelectorAll("[data-share-friend]").forEach((b) => {
+            b.disabled = false;
+          });
+          await showNotice({
+            title: "Share",
+            message: err.message || "Could not send.",
+          });
+        }
+      });
+    });
+
+    window.addEventListener("keydown", onKey);
+    host.appendChild(wrap);
+    document.body.classList.add("me-modal-open");
+  });
 }
 
 function escapeHtml(str = "") {

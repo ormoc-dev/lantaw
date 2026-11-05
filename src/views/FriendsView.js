@@ -9,6 +9,7 @@ import {
   listMessages,
   listWatchParties,
   markChatRead,
+  getPeerChatReadAt,
   partyWatchPath,
   removeFriendship,
   respondToFriendRequest,
@@ -36,7 +37,7 @@ import {
 import { startVideoCall } from "../services/callService.js";
 import { showConfirm, showNotice } from "../lib/appModal.js";
 import { loadingHtml } from "../components/Loading.js";
-import { peopleCardsHtml } from "../components/PeopleYouMayKnow.js?v=132";
+import { peopleCardsHtml } from "../components/PeopleYouMayKnow.js?v=141";
 import { linkTo } from "../router/index.js";
 import {
   featuredGifs,
@@ -46,6 +47,7 @@ import {
   registerGifShare,
   searchGifs,
 } from "../lib/giphy.js";
+import { parseShareMessage } from "../lib/shareMessage.js";
 
 export async function FriendsView(root) {
   const me = await getUser();
@@ -93,6 +95,8 @@ export async function FriendsView(root) {
   }
 
   let activeChatId = tab === "chat" ? chatIdFromHash() : null;
+  /** Peer’s last_read_at for the open thread (synced seen receipts). */
+  let peerReadAt = null;
 
   const syncChatUrl = () => {
     const path = (location.hash.replace(/^#/, "") || "/").split("?")[0];
@@ -247,6 +251,12 @@ export async function FriendsView(root) {
     }
     if (parseGifMessage(preview.body)) {
       return mine ? "You: GIF" : "GIF";
+    }
+    const shared = parseShareMessage(preview.body);
+    if (shared) {
+      const label = shared.title || "a title";
+      const clipped = label.length > 40 ? `${label.slice(0, 39)}…` : label;
+      return mine ? `You: Shared ${clipped}` : `Shared ${clipped}`;
     }
     const text = String(preview.body).replace(/\s+/g, " ").trim();
     if (!text) return "Tap to say hi";
@@ -1193,19 +1203,22 @@ export async function FriendsView(root) {
       let threadFetchQueued = false;
       let threadPoll = null;
       let sending = false;
+      peerReadAt = null;
 
       const paint = (messages) => {
         if (!box.isConnected) return;
         threadMessages = Array.isArray(messages) ? messages : [];
-        const paintKey = threadMessages
-          .map(
-            (m) =>
-              `${m.id}:${m.body}:${m.edited_at || ""}:${(m.reactions || [])
-                .map((r) => `${r.emoji}:${r.user_id}`)
-                .sort()
-                .join(",")}`
-          )
-          .join("|");
+        const paintKey =
+          `${peerReadAt || ""}::` +
+          threadMessages
+            .map(
+              (m) =>
+                `${m.id}:${m.body}:${m.edited_at || ""}:${(m.reactions || [])
+                  .map((r) => `${r.emoji}:${r.user_id}`)
+                  .sort()
+                  .join(",")}`
+            )
+            .join("|");
         if (paintKey && paintKey === lastThreadPaintKey) {
           const latestSame = threadMessages[threadMessages.length - 1];
           markChatRead(activeChatId, latestSame?.created_at);
@@ -1225,6 +1238,22 @@ export async function FriendsView(root) {
             </div>`;
           markChatRead(activeChatId);
           return;
+        }
+
+        // Last message from me that the peer has already opened/read
+        let seenMsgId = null;
+        if (peerReadAt) {
+          for (let i = threadMessages.length - 1; i >= 0; i -= 1) {
+            const row = threadMessages[i];
+            if (
+              row.sender_id === me.id &&
+              !row.deleted_at &&
+              String(row.created_at) <= String(peerReadAt)
+            ) {
+              seenMsgId = row.id;
+              break;
+            }
+          }
         }
 
         const CLUSTER_MS = 2 * 60 * 1000;
@@ -1254,10 +1283,26 @@ export async function FriendsView(root) {
             const groups = groupReactions(m.reactions);
             const deleted = Boolean(m.deleted_at);
             const gifUrl = deleted ? null : parseGifMessage(m.body);
+            const share = deleted || gifUrl ? null : parseShareMessage(m.body);
             const timeLabel = new Date(m.created_at).toLocaleTimeString([], {
               hour: "numeric",
               minute: "2-digit",
             });
+            const sharePath = share
+              ? share.mediaType === "tv"
+                ? `/tv/${share.id}`
+                : `/movie/${share.id}`
+              : "";
+            const sharePayload = share
+              ? escapeAttr(
+                  JSON.stringify({
+                    id: share.id,
+                    mediaType: share.mediaType,
+                    title: share.title,
+                    poster: share.poster,
+                  })
+                )
+              : "";
 
             return `
           <div
@@ -1279,7 +1324,7 @@ export async function FriendsView(root) {
             <div class="fp-msg__stack">
               <div class="fp-bubble ${mine ? "is-me" : ""} ${cluster}${
                 gifUrl ? " is-gif" : ""
-              }${deleted ? " is-deleted" : ""}">
+              }${share ? " is-share" : ""}${deleted ? " is-deleted" : ""}">
                 ${
                   deleted
                     ? `<p class="fp-bubble__text fp-bubble__deleted">This message was deleted</p>`
@@ -1287,7 +1332,32 @@ export async function FriendsView(root) {
                       ? `<img class="fp-bubble__gif" src="${escapeHtml(
                           gifUrl
                         )}" alt="GIF" loading="lazy" decoding="async" />`
-                      : `<p class="fp-bubble__text">${escapeHtml(m.body)}</p>`
+                      : share
+                        ? `<div class="fp-share-card">
+                            <a class="fp-share-card__media" href="${escapeAttr(
+                              linkTo(sharePath)
+                            )}">
+                              ${
+                                share.poster
+                                  ? `<img class="fp-share-card__poster" src="${escapeAttr(
+                                      share.poster
+                                    )}" alt="" loading="lazy" decoding="async" />`
+                                  : `<div class="fp-share-card__poster fp-share-card__poster--ph"></div>`
+                              }
+                              <span class="fp-share-card__meta">
+                                <strong>${escapeHtml(share.title)}</strong>
+                                <em>${escapeHtml(
+                                  share.mediaType === "tv" ? "TV" : "Movie"
+                                )}</em>
+                              </span>
+                            </a>
+                            <button
+                              type="button"
+                              class="fp-share-card__watch"
+                              data-share-watch="${sharePayload}"
+                            >Watch together</button>
+                          </div>`
+                        : `<p class="fp-bubble__text">${escapeHtml(m.body)}</p>`
                 }
                 ${
                   !deleted && groups.length
@@ -1315,10 +1385,27 @@ export async function FriendsView(root) {
               </div>
               ${
                 showTime
-                  ? `<time class="fp-msg__time">${escapeHtml(timeLabel)}${
-                      !deleted && m.edited_at ? " · Edited" : ""
-                    }</time>`
-                  : ""
+                  ? `<div class="fp-msg__meta">
+                      <time class="fp-msg__time">${escapeHtml(timeLabel)}${
+                        !deleted && m.edited_at ? " · Edited" : ""
+                      }</time>
+                      ${
+                        mine && seenMsgId === m.id
+                          ? `<span class="fp-msg__seen" title="Seen">${avatarHtml(
+                              current.other,
+                              "fp-avatar--seen"
+                            )}</span>`
+                          : ""
+                      }
+                    </div>`
+                  : mine && seenMsgId === m.id
+                    ? `<div class="fp-msg__meta fp-msg__meta--seen-only">
+                        <span class="fp-msg__seen" title="Seen">${avatarHtml(
+                          current.other,
+                          "fp-avatar--seen"
+                        )}</span>
+                      </div>`
+                    : ""
               }
               ${
                 deleted
@@ -1334,7 +1421,7 @@ export async function FriendsView(root) {
                 </div>
                 <div class="fp-bubble__actions">
                   ${
-                    mine && !gifUrl
+                    mine && !gifUrl && !share
                       ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
                           m.id
                         )}">Edit</button>`
@@ -1415,6 +1502,10 @@ export async function FriendsView(root) {
         try {
           do {
             threadFetchQueued = false;
+            peerReadAt = await getPeerChatReadAt(
+              chatId,
+              current.otherId
+            ).catch(() => peerReadAt);
             paintFromServer(await listMessages(chatId));
           } while (threadFetchQueued && box.isConnected);
         } finally {
@@ -1425,6 +1516,58 @@ export async function FriendsView(root) {
       box.addEventListener("click", async (e) => {
         const t = e.target;
         if (!(t instanceof Element)) return;
+
+        const shareWatch = t.closest("[data-share-watch]");
+        if (shareWatch) {
+          e.preventDefault();
+          e.stopPropagation();
+          let media = null;
+          try {
+            media = JSON.parse(shareWatch.getAttribute("data-share-watch") || "");
+          } catch {
+            media = null;
+          }
+          if (!media?.id || !current?.otherId) {
+            await showNotice({
+              title: "Watch together",
+              message: "Could not start from this share.",
+            });
+            return;
+          }
+          shareWatch.disabled = true;
+          try {
+            const item = {
+              id: Number(media.id),
+              mediaType: media.mediaType === "tv" ? "tv" : "movie",
+              title: media.title || "Untitled",
+              poster: media.poster || null,
+            };
+            addRecentMovie(item);
+            const party = await createWatchParty({
+              friendshipId: chatId,
+              guestId: current.otherId,
+              mediaType: item.mediaType,
+              tmdbId: item.id,
+              title: item.title,
+              poster: item.poster,
+            });
+            location.hash = linkTo(partyWatchPath(party));
+          } catch (err) {
+            shareWatch.disabled = false;
+            await showNotice({
+              title: "Watch together",
+              message: err.message || "Could not start watch party.",
+            });
+          }
+          return;
+        }
+
+        if (t.closest(".fp-share-card")) {
+          // Let poster link navigate; don't open bubble tools
+          if (t.closest("a.fp-share-card__media")) return;
+          e.stopPropagation();
+          return;
+        }
 
         const reactBtn = t.closest("[data-react]");
         if (reactBtn) {
@@ -1513,6 +1656,10 @@ export async function FriendsView(root) {
       });
 
       try {
+        peerReadAt = await getPeerChatReadAt(
+          activeChatId,
+          current.otherId
+        ).catch(() => null);
         paint(await listMessages(activeChatId));
         activity = await getFriendsActivityCounts().catch(() => activity);
       } catch (err) {
@@ -1740,24 +1887,6 @@ export async function FriendsView(root) {
         }
       };
 
-      const scheduleGifSuggest = () => {
-        if (!hasGifApi()) return;
-        clearTimeout(gifTimer);
-        const q = String(input?.value || "").trim();
-        // Auto-suggest for short reactions / keywords — skip long messages
-        if (!q) {
-          if (gifOpen) loadGifs("");
-          else hideGifStrip();
-          return;
-        }
-        if (q.length < 2 || q.length > 40 || /\s{2,}/.test(q) || q.split(/\s+/).length > 4) {
-          if (!gifOpen) return;
-          hideGifStrip();
-          return;
-        }
-        gifTimer = setTimeout(() => loadGifs(q), 320);
-      };
-
       const lockPageScroll = () => {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
@@ -1941,7 +2070,6 @@ export async function FriendsView(root) {
         syncSendEnabled();
         if (String(input?.value || "").trim()) pulseTyping();
         else stopTypingPing();
-        scheduleGifSuggest();
       });
 
       const sendChat = async (rawBody) => {
@@ -1976,7 +2104,9 @@ export async function FriendsView(root) {
           await sendMessage(chatId, text);
           await refreshThread();
         } catch (err) {
-          if (input && !parseGifMessage(text)) input.value = text;
+          if (input && !parseGifMessage(text) && !parseShareMessage(text)) {
+            input.value = text;
+          }
           paint(threadMessages.filter((m) => m.id !== optimistic.id));
           alert(err.message);
         } finally {
@@ -2611,12 +2741,23 @@ export async function FriendsView(root) {
       if (tab === "chat" && activeChatId && chatPaint) {
         const row = payload?.new;
         const msgEvent = table === "friend_messages";
+        const readEvent = table === "friend_chat_reads";
         const forThis =
-          !msgEvent ||
+          !(msgEvent || readEvent) ||
           !row?.friendship_id ||
           row.friendship_id === activeChatId;
-        if (forThis && (msgEvent || isSoft || !table)) {
+        if (forThis && (msgEvent || readEvent || isSoft || !table)) {
           try {
+            if (readEvent || isSoft || !table) {
+              const peerId =
+                friendships.find((f) => f.id === activeChatId)?.otherId || null;
+              if (peerId) {
+                peerReadAt = await getPeerChatReadAt(
+                  activeChatId,
+                  peerId
+                ).catch(() => peerReadAt);
+              }
+            }
             chatPaint(await listMessages(activeChatId));
           } catch (_) {
             /* ignore */
@@ -2657,7 +2798,11 @@ export async function FriendsView(root) {
   function scheduleLiveRefresh(payload) {
     clearTimeout(liveTimer);
     // Message events should paint ASAP; polls can debounce a bit
-    const delay = payload?.table === "friend_messages" ? 40 : 180;
+    const delay =
+      payload?.table === "friend_messages" ||
+      payload?.table === "friend_chat_reads"
+        ? 40
+        : 180;
     liveTimer = setTimeout(() => {
       applyLiveUpdate(payload).catch(() => {});
     }, delay);
@@ -2723,4 +2868,13 @@ function escapeHtml(str = "") {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function escapeAttr(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("'", "&#39;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }

@@ -257,12 +257,12 @@ export async function WatchPartyView(root, params = {}) {
             <input
               type="text"
               name="body"
-              maxlength="280"
+              id="wp-input"
               placeholder="Aa"
-              aria-label="Type a message"
+              autocomplete="off"
               enterkeyhint="send"
               inputmode="text"
-              autocomplete="off"
+              aria-label="Message"
             />
             <button type="submit" class="wparty__send" id="wp-send" aria-label="Send">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1383,27 +1383,6 @@ export async function WatchPartyView(root, params = {}) {
     }
   };
 
-  const scheduleGifSuggest = () => {
-    if (!hasGifApi()) return;
-    clearTimeout(gifTimer);
-    const q = String(composeInput?.value || "").trim();
-    if (!q) {
-      if (gifOpen) loadGifs("");
-      else hideGifStrip();
-      return;
-    }
-    if (
-      q.length < 2 ||
-      q.length > 40 ||
-      /\s{2,}/.test(q) ||
-      q.split(/\s+/).length > 4
-    ) {
-      if (gifOpen) hideGifStrip();
-      return;
-    }
-    gifTimer = setTimeout(() => loadGifs(q), 320);
-  };
-
   const keyboardInset = () => {
     const vv = window.visualViewport;
     if (!vv) return 0;
@@ -1621,7 +1600,6 @@ export async function WatchPartyView(root, params = {}) {
     syncSendReady();
     if (String(composeInput.value || "").trim()) pulseTyping();
     else stopTypingPing();
-    scheduleGifSuggest();
   });
 
   composeInput?.addEventListener("focus", () => {

@@ -911,6 +911,10 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   .friends-page--chat .fp-msg .fp-bubble.is-gif {
     max-width: min(100%, 15.5rem);
   }
+
+  .friends-page--chat .fp-msg .fp-bubble.is-share {
+    max-width: min(100%, 16.5rem);
+  }
 }
 
 @media (min-width: 1100px) {
@@ -2327,14 +2331,48 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   align-items: flex-start;
 }
 
+.fp-msg__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-inline: 0.2rem;
+  max-width: 100%;
+}
+
+.fp-msg.is-me .fp-msg__meta {
+  justify-content: flex-end;
+}
+
+.fp-msg.is-them .fp-msg__meta {
+  justify-content: flex-start;
+}
+
+.fp-msg__meta--seen-only {
+  margin-top: 0.15rem;
+}
+
 .fp-msg__time {
   display: block;
-  padding-inline: 0.45rem;
+  padding-inline: 0.25rem;
   font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--muted);
   opacity: 0.9;
+}
+
+.fp-msg__seen {
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.fp-avatar--seen {
+  width: 0.9rem !important;
+  height: 0.9rem !important;
+  font-size: 0.48rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 
 .fp-bubble {
@@ -2754,6 +2792,159 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   object-fit: cover;
   vertical-align: middle;
   background: none;
+}
+
+/* Shared title cards in chat */
+.fp-bubble.is-share {
+  padding: 0 !important;
+  overflow: hidden;
+  max-width: min(82%, 16.5rem);
+  background: color-mix(in srgb, var(--surface, #1a1a1f) 92%, #fff 8%) !important;
+}
+
+.fp-bubble.is-share.is-me {
+  background: color-mix(in srgb, var(--accent) 18%, #1a1216) !important;
+}
+
+.fp-share-card {
+  display: grid;
+  gap: 0;
+  width: 100%;
+  min-width: 12.5rem;
+}
+
+.fp-share-card__media {
+  display: grid;
+  grid-template-columns: 4.25rem 1fr;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.fp-share-card__poster {
+  width: 4.25rem;
+  height: 6.1rem;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.fp-share-card__poster--ph {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.02)
+  );
+}
+
+.fp-share-card__meta {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.fp-share-card__meta strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fp-share-card__meta em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fp-share-card__watch {
+  appearance: none;
+  width: 100%;
+  min-height: 2.35rem;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.18s var(--ease);
+}
+
+.fp-share-card__watch:hover,
+.fp-share-card__watch:focus-visible {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  outline: none;
+}
+
+.fp-share-card__watch:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.share-pick__dialog {
+  max-width: min(22rem, calc(100vw - 2rem));
+}
+
+.share-pick__list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: min(16rem, 42vh);
+  overflow: auto;
+  margin: 0.35rem 0 0.85rem;
+  padding-right: 0.15rem;
+}
+
+.share-pick__row {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ease),
+    border-color 0.18s var(--ease);
+}
+
+.share-pick__row:hover,
+.share-pick__row:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
+.share-pick__row:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.share-pick__name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fp-watch {
@@ -7039,7 +7230,8 @@ body.is-halloween .home-sticky__mark::after {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.detail__tools:has(> :nth-child(3)) > :last-child {
+/* Only stretch the last chip when the row count is odd (e.g. 3 tools) */
+.detail__tools:has(> :nth-child(3):last-child) > :last-child {
   grid-column: 1 / -1;
 }
 
@@ -7155,7 +7347,11 @@ body.is-halloween .home-sticky__mark::after {
     grid-template-columns: repeat(3, auto);
   }
 
-  .detail__tools:has(> :nth-child(3)) > :last-child {
+  .detail__tools:has(> :nth-child(4)) {
+    grid-template-columns: repeat(4, auto);
+  }
+
+  .detail__tools:has(> :nth-child(3):last-child) > :last-child {
     grid-column: auto;
   }
 
@@ -8536,15 +8732,15 @@ body.is-wparty-kb .wparty__gifs:not([hidden]) {
 .wparty__gif-btn {
   appearance: none;
   flex-shrink: 0;
-  min-width: 2.35rem;
-  height: 2.35rem;
-  padding: 0 0.35rem;
+  min-width: 2.55rem;
+  height: 2.55rem;
+  padding: 0 0.45rem;
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--muted);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -8559,31 +8755,36 @@ body.is-wparty-kb .wparty__gifs:not([hidden]) {
 .wparty__compose {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.35rem;
+  gap: 0.45rem;
   align-items: center;
-  padding: 0.35rem 0.1rem 0.45rem;
+  margin: 0;
+  padding: 0.4rem 0.55rem 0.45rem;
 }
 
 .wparty__compose input {
   width: 100%;
-  min-height: 2.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
+  min-width: 0;
+  min-height: 2.55rem;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text);
   border-radius: 999px;
-  padding: 0.5rem 0.9rem;
+  padding: 0.65rem 1.05rem;
   font: inherit;
   font-size: 16px; /* avoid iOS focus zoom */
-  /* Keep caret stable — no transform/filter on the field itself */
   appearance: none;
   -webkit-appearance: none;
   outline: none;
 }
 
+.wparty__compose input::placeholder {
+  color: color-mix(in srgb, var(--muted) 85%, transparent);
+}
+
 .wparty__compose input:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  /* Do not animate border/background on focus — causes blink on mobile */
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
   transition: none;
 }
 
@@ -8621,8 +8822,8 @@ body.is-wparty-kb .wparty__gifs:not([hidden]) {
 
 .wparty__send {
   appearance: none;
-  width: 2.45rem;
-  height: 2.45rem;
+  width: 2.55rem;
+  height: 2.55rem;
   flex-shrink: 0;
   display: grid;
   place-items: center;
@@ -8663,8 +8864,8 @@ body.is-wparty-kb .wparty__gifs:not([hidden]) {
 }
 
 .wparty__send svg {
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1.15rem;
+  height: 1.15rem;
   display: block;
   margin-left: 0.1rem;
 }

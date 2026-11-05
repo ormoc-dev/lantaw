@@ -1,4 +1,4 @@
-import { createApp } from "./App.js?v=134";
+import { createApp } from "./App.js?v=141";
 import { onAuthChange, recoverSession } from "./services/authService.js";
 import {
   startPresence,

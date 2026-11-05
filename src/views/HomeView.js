@@ -1,4 +1,4 @@
-import { CategoryView } from "./CategoryView.js?v=132";
+import { CategoryView } from "./CategoryView.js?v=141";
 
 /**
  * Home opens the Recommend experience (brand rails + curated rows).

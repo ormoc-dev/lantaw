@@ -32,6 +32,52 @@ export function markChatRead(friendshipId, at = new Date().toISOString()) {
     saveChatReadMap(map);
   }
   notifyFriendsBadge();
+  syncChatReadRemote(friendshipId, at).catch(() => {});
+}
+
+/** Persist read cursor so the other person can show a “seen” avatar. */
+async function syncChatReadRemote(friendshipId, at) {
+  const user = await getUser();
+  if (!user || !friendshipId) return;
+  const { error } = await getSupabase()
+    .from("friend_chat_reads")
+    .upsert(
+      {
+        friendship_id: friendshipId,
+        user_id: user.id,
+        last_read_at: at,
+      },
+      { onConflict: "friendship_id,user_id" }
+    );
+  if (
+    error &&
+    !/friend_chat_reads|schema cache|does not exist/i.test(error.message || "")
+  ) {
+    throw error;
+  }
+}
+
+/**
+ * When the peer last read this thread (ISO), or null if unknown / table missing.
+ * @param {string} friendshipId
+ * @param {string} peerUserId
+ */
+export async function getPeerChatReadAt(friendshipId, peerUserId) {
+  if (!friendshipId || !peerUserId) return null;
+  await requireUser();
+  const { data, error } = await getSupabase()
+    .from("friend_chat_reads")
+    .select("last_read_at")
+    .eq("friendship_id", friendshipId)
+    .eq("user_id", peerUserId)
+    .maybeSingle();
+  if (error) {
+    if (/friend_chat_reads|schema cache|does not exist/i.test(error.message || "")) {
+      return null;
+    }
+    return null;
+  }
+  return data?.last_read_at || null;
 }
 
 export function notifyFriendsBadge() {
@@ -955,6 +1001,11 @@ export function subscribeFriendsRealtime(onChange, opts = {}) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "watch_parties" },
+        (payload) => emit(payload)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "friend_chat_reads" },
         (payload) => emit(payload)
       )
       .subscribe((status) => {
