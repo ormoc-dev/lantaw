@@ -17,6 +17,8 @@ import {
   getTvDefaults,
   renderStreamPlayer,
   renderTvEpisodeControls,
+  movieTvOrigin,
+  providerSupportsRemoteSync,
   seekCineSrcPlayer,
   streamContentKey,
 } from "../lib/streamEmbed.js";
@@ -507,12 +509,25 @@ export async function WatchPartyView(root, params = {}) {
         (mediaType === "tv" ? getTvDefaults(movie).episode : 1),
     });
 
-  /** Same title already loaded → seek/play in place (no CineSrc remount / refetch). */
+  /** Same title already loaded → seek/play in place (no remount / refetch). */
   const syncInPlace = (timeSec, { syncKey, contentKey } = {}) => {
     if (mediaType === "anime") return false;
     if (!hasLivePlayer()) return false;
     if (contentKey && lastContentKey && contentKey !== lastContentKey) {
       return false;
+    }
+    // YapGrid has no seek API. Keep the live iframe so Sync does not restart at 0.
+    if (!providerSupportsRemoteSync()) {
+      if (syncKey) {
+        lastMountedKey = syncKey;
+        lastAppliedKey = syncKey;
+        mountInFlightKey = "";
+      }
+      if (contentKey) lastContentKey = contentKey;
+      if (party.isGuest) lastFollowedToken = syncTokenOf(party);
+      waiting.hidden = true;
+      setSyncTipVisible(true);
+      return true;
     }
     const iframe = playerEl.querySelector("#stream-iframe");
     if (!seekCineSrcPlayer(iframe, timeSec)) return false;
@@ -556,7 +571,8 @@ export async function WatchPartyView(root, params = {}) {
     unsubTime = null;
     if (!party.isHost) return;
     const onMessage = (event) => {
-      if (event.origin !== "https://cinesrc.st") return;
+      if (!providerSupportsRemoteSync()) return;
+      if (event.origin !== movieTvOrigin()) return;
       const type = event.data?.type;
       if (type === "cinesrc:timeupdate" || type === "cinesrc:seeked") {
         const t = Number(event.data?.currentTime);

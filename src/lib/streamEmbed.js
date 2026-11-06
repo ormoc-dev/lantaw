@@ -1,9 +1,27 @@
 /** Shared stream embed helpers for detail + watch-party pages.
- * Movies/TV → CineSrc (cinesrc.st). Anime stays on zoryva.
- * Docs: https://cinesrc.st/docs
+ * Movies/TV use YapGrid while CineSrc (cinesrc.st) is down.
+ * Flip MOVIE_TV_PROVIDER back to "cinesrc" when that host recovers.
+ * Anime stays on zoryva.
+ * YapGrid: https://yapgrid.com/embed/movie/{tmdbId}
+ *          https://yapgrid.com/embed/tv/{tmdbId}/{season}/{episode}
  */
 
+/** "yapgrid" (backup, live) or "cinesrc" (primary, currently down). */
+export const MOVIE_TV_PROVIDER = "yapgrid";
+
+export const CINESRC_ORIGIN = "https://cinesrc.st";
+export const YAPGRID_ORIGIN = "https://yapgrid.com";
+
 const ACCENT = "%23ff0a43";
+
+export function movieTvOrigin(provider = MOVIE_TV_PROVIDER) {
+  return provider === "cinesrc" ? CINESRC_ORIGIN : YAPGRID_ORIGIN;
+}
+
+/** CineSrc exposes seek/play/time via postMessage. YapGrid does not. */
+export function providerSupportsRemoteSync(provider = MOVIE_TV_PROVIDER) {
+  return provider === "cinesrc";
+}
 
 export function getTvDefaults(movie) {
   const firstSeason =
@@ -35,11 +53,12 @@ export function streamContentKey({
 
 /** CineSrc postMessage API — seek/play without tearing down the iframe. */
 export function sendCineSrcCommand(iframe, command, args = []) {
+  if (!providerSupportsRemoteSync()) return false;
   if (!iframe?.contentWindow || typeof command !== "string") return false;
   try {
     iframe.contentWindow.postMessage(
       { type: "cinesrc:command", command, args },
-      "https://cinesrc.st"
+      CINESRC_ORIGIN
     );
     return true;
   } catch {
@@ -49,10 +68,27 @@ export function sendCineSrcCommand(iframe, command, args = []) {
 
 /** Jump an already-loaded CineSrc player — avoids full media refetch. */
 export function seekCineSrcPlayer(iframe, timeSec = 0) {
+  if (!providerSupportsRemoteSync()) return false;
   const t = Math.max(0, Math.floor(Number(timeSec) || 0));
   const okSeek = sendCineSrcCommand(iframe, "seek", [t]);
   sendCineSrcCommand(iframe, "play");
   return okSeek;
+}
+
+function buildCineSrcUrl({ mediaType, id, s, e, play, seek }) {
+  if (mediaType === "tv") {
+    return `${CINESRC_ORIGIN}/embed/tv/${id}?s=${s}&e=${e}&color=${ACCENT}&back=close${play}${seek}`;
+  }
+  return `${CINESRC_ORIGIN}/embed/movie/${id}?color=${ACCENT}&back=close${play}${seek}`;
+}
+
+/** YapGrid ignores unknown query params, including CineSrc's `t=` start time. */
+function buildYapGridUrl({ mediaType, id, s, e, autoplay }) {
+  const qs = autoplay ? "?autoplay=1" : "";
+  if (mediaType === "tv") {
+    return `${YAPGRID_ORIGIN}/embed/tv/${id}/${s}/${e}${qs}`;
+  }
+  return `${YAPGRID_ORIGIN}/embed/movie/${id}${qs}`;
 }
 
 export function buildStreamUrl({
@@ -63,6 +99,7 @@ export function buildStreamUrl({
   anilistId,
   autoplay = false,
   startAt = 0,
+  provider = MOVIE_TV_PROVIDER,
 }) {
   const id = encodeURIComponent(tmdbId);
   const s = encodeURIComponent(Math.max(1, Number(season) || 1));
@@ -72,19 +109,19 @@ export function buildStreamUrl({
   // Prefer postMessage seek when the iframe is already up. URL `t=` is only for
   // the first load (guest join mid-stream) — remounting with a new `t=` refetches.
   const seek =
-    t > 0 && mediaType !== "anime"
+    t > 0 && mediaType !== "anime" && provider === "cinesrc"
       ? `&t=${encodeURIComponent(t)}&continueprompt=false`
       : "";
 
-  if (mediaType === "tv") {
-    return `https://cinesrc.st/embed/tv/${id}?s=${s}&e=${e}&color=${ACCENT}&back=close${play}${seek}`;
-  }
   if (mediaType === "anime") {
     return `https://zoryva.me/embed/anime/${encodeURIComponent(
       anilistId || tmdbId
     )}/${s}/${e}?color=${ACCENT}${play}`;
   }
-  return `https://cinesrc.st/embed/movie/${id}?color=${ACCENT}&back=close${play}${seek}`;
+  if (provider === "cinesrc") {
+    return buildCineSrcUrl({ mediaType, id, s, e, play, seek });
+  }
+  return buildYapGridUrl({ mediaType, id, s, e, autoplay });
 }
 
 function iframeAttrs(streamUrl, { deferSrc = false } = {}) {
@@ -100,6 +137,7 @@ function iframeAttrs(streamUrl, { deferSrc = false } = {}) {
           frameborder="0"
           style="border: 0; border-radius: 12px;"
           allow="autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
+          allowfullscreen
           sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
   `.trim();
 }
