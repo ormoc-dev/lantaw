@@ -1,9 +1,9 @@
-import { getCategoryById } from "../config/categories.js";
+import { getCategoryById } from "../config/categories.js?v=147";
 import {
   getCategoryItems,
   searchMovies,
-} from "../services/movieService.js?v=144";
-import { CategoryChips } from "../components/CategoryChips.js";
+} from "../services/movieService.js?v=150";
+import { CategoryChips } from "../components/CategoryChips.js?v=147";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
 import { HomeSticky } from "../components/HomeSticky.js";
 import { MediaGrid } from "../components/MediaGrid.js";

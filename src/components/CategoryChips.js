@@ -1,4 +1,4 @@
-import { CATEGORIES } from "../config/categories.js";
+import { CATEGORIES } from "../config/categories.js?v=147";
 import { linkTo } from "../router/index.js";
 
 /**

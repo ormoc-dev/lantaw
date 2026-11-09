@@ -146,15 +146,23 @@ function mergeByRating(...lists) {
  * (TV Networks + Movie Studios are logo rails above the list.)
  */
 export async function getRecommended() {
-  const [trendingToday, trendingNow, popularMovies, popularTv, nowPlaying, anime] =
-    await Promise.all([
-      mapList(await tmdb.trendingAll("day")),
-      mapList(await tmdb.trendingAll("week")),
-      getPopularMovies(),
-      getTvShows(),
-      getNowPlayingMovies(),
-      getAnime(),
-    ]);
+  const [
+    trendingToday,
+    trendingNow,
+    popularMovies,
+    popularTv,
+    nowPlaying,
+    anime,
+    kdrama,
+  ] = await Promise.all([
+    mapList(await tmdb.trendingAll("day")),
+    mapList(await tmdb.trendingAll("week")),
+    getPopularMovies(),
+    getTvShows(),
+    getNowPlayingMovies(),
+    getAnime(),
+    getKdrama(),
+  ]);
 
   const topToday = trendingToday.results || [];
   const sections = [
@@ -188,6 +196,11 @@ export async function getRecommended() {
       id: "popular-anime",
       title: "Popular anime",
       items: (anime.results || []).slice(0, 18),
+    },
+    {
+      id: "popular-kdrama",
+      title: "Popular Kdrama",
+      items: (kdrama.results || []).slice(0, 18),
     },
   ].filter((s) => s.items.length);
 
@@ -264,6 +277,36 @@ export async function getAnime() {
   return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
 }
 
+/** Korean dramas — KR TV in Korean, Drama genre (skip variety / talk). */
+export async function getKdrama() {
+  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+  const jobs = [];
+  for (let page = 1; page <= pageCount; page += 1) {
+    jobs.push(
+      tmdb.discoverTv({
+        with_original_language: "ko",
+        with_origin_country: "KR",
+        with_genres: 18,
+        without_genres: "10764,10767,10763",
+        page,
+      })
+    );
+  }
+  // Keep TMDB popularity order (page 1 first) so familiar dramas surface.
+  const raw = await Promise.all(jobs);
+  const merged = [];
+  const seen = new Set();
+  for (const batch of raw) {
+    for (const item of mapList(batch, "tv").results) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
+}
+
 /** Vivamax originals (TMDB company 149142) */
 export async function getVivamax() {
   const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
@@ -320,6 +363,8 @@ export async function getCategoryItems(categoryId) {
       return collectPages((page) => getTvShows(page), CATEGORY_LIST_LIMIT);
     case "anime":
       return getAnime();
+    case "kdrama":
+      return getKdrama();
     default:
       return { results: [] };
   }
@@ -358,20 +403,23 @@ function pickHeroes(...lists) {
 
 /** Home: hero carousel + separate sections per category */
 export async function getHomeCatalog() {
-  const [recommend, filipino, vivamax, movies, tv, anime] = await Promise.all([
-    getRecommended(),
-    getFilipino(),
-    getVivamax(),
-    getPopularMovies(),
-    getTvShows(),
-    getAnime(),
-  ]);
+  const [recommend, filipino, vivamax, movies, tv, anime, kdrama] =
+    await Promise.all([
+      getRecommended(),
+      getFilipino(),
+      getVivamax(),
+      getPopularMovies(),
+      getTvShows(),
+      getAnime(),
+      getKdrama(),
+    ]);
 
   const heroes = pickHeroes(
     recommend.results,
     movies.results,
     tv.results,
     anime.results,
+    kdrama.results,
     filipino.results
   );
   const hero = heroes[0] || null;
@@ -414,6 +462,13 @@ export async function getHomeCatalog() {
         description: "Japanese animation movies and series.",
         path: "/anime",
         items: previewList(anime.results, heroes),
+      },
+      {
+        id: "kdrama",
+        title: "Kdrama",
+        description: "Korean dramas and series.",
+        path: "/kdrama",
+        items: previewList(kdrama.results, heroes),
       },
       {
         id: "vivamax",

@@ -31,6 +31,12 @@ export const CATEGORIES = [
     description: "Japanese animation movies and series.",
   },
   {
+    id: "kdrama",
+    path: "/kdrama",
+    title: "Kdrama",
+    description: "Korean dramas and series.",
+  },
+  {
     id: "vivamax",
     path: "/vivamax",
     title: "Vivamax",

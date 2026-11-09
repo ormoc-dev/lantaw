@@ -1,6 +1,6 @@
 import { createRouter } from "./router/index.js";
 import { createBottomNav } from "./components/BottomNav.js";
-import { HomeView } from "./views/HomeView.js?v=144";
+import { HomeView } from "./views/HomeView.js?v=150";
 import { MovieView, TvView } from "./views/MovieView.js?v=141";
 import { LoginView } from "./views/LoginView.js";
 import { PrivacyView } from "./views/PrivacyView.js?v=141";
@@ -13,12 +13,13 @@ import { MeView } from "./views/MeView.js?v=146";
 import { FriendsView } from "./views/FriendsView.js?v=146";
 import { WatchPartyView } from "./views/WatchPartyView.js?v=141";
 import { RecentView } from "./views/RecentView.js";
-import { RecommendView } from "./views/categories/RecommendView.js?v=144";
-import { FilipinoView } from "./views/categories/FilipinoView.js?v=144";
-import { MoviesView } from "./views/categories/MoviesView.js?v=144";
-import { TvShowView } from "./views/categories/TvShowView.js?v=144";
-import { AnimeView } from "./views/categories/AnimeView.js?v=144";
-import { VivamaxView } from "./views/categories/VivamaxView.js?v=144";
+import { RecommendView } from "./views/categories/RecommendView.js?v=150";
+import { FilipinoView } from "./views/categories/FilipinoView.js?v=148";
+import { MoviesView } from "./views/categories/MoviesView.js?v=148";
+import { TvShowView } from "./views/categories/TvShowView.js?v=148";
+import { AnimeView } from "./views/categories/AnimeView.js?v=148";
+import { KdramaView } from "./views/categories/KdramaView.js?v=149";
+import { VivamaxView } from "./views/categories/VivamaxView.js?v=148";
 import { BrandView } from "./views/BrandView.js";
 
 export function createApp(root) {
@@ -44,6 +45,7 @@ export function createApp(root) {
   router.add("/movies", MoviesView);
   router.add("/tv-show", TvShowView);
   router.add("/anime", AnimeView);
+  router.add("/kdrama", KdramaView);
   router.add("/shorts", ShortsView);
   router.add("/rankings", RankingsView);
   router.add("/discover", DiscoverView);
