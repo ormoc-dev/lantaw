@@ -1,5 +1,115 @@
 import { env } from "../config/env.js";
 
+const TTL_MS = 15 * 60 * 1000;
+const STALE_MS = 60 * 60 * 1000;
+const TIMEOUT_MS = 12_000;
+const MAX_RETRIES = 1;
+const STORAGE_KEY = "lantaw-tmdb-v1";
+const MAX_STORE_ENTRIES = 48;
+const MAX_STORE_VALUE = 160_000;
+
+const memCache = new Map();
+const inflight = new Map();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readStore() {
+  try {
+    return JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeStore(all) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function pruneStore(all) {
+  const now = Date.now();
+  const entries = Object.entries(all).filter(([, hit]) => hit?.expires > now);
+  entries.sort((a, b) => (b[1].expires || 0) - (a[1].expires || 0));
+  return Object.fromEntries(entries.slice(0, MAX_STORE_ENTRIES));
+}
+
+function getCached(key) {
+  const mem = memCache.get(key);
+  if (mem && mem.freshUntil > Date.now()) {
+    return { data: mem.data, fresh: true };
+  }
+  if (mem && mem.staleUntil > Date.now()) {
+    return { data: mem.data, fresh: false };
+  }
+
+  const hit = readStore()[key];
+  if (!hit?.data) return null;
+  if (hit.freshUntil > Date.now()) {
+    memCache.set(key, {
+      data: hit.data,
+      freshUntil: hit.freshUntil,
+      staleUntil: hit.staleUntil,
+    });
+    return { data: hit.data, fresh: true };
+  }
+  if (hit.staleUntil > Date.now()) {
+    memCache.set(key, {
+      data: hit.data,
+      freshUntil: 0,
+      staleUntil: hit.staleUntil,
+    });
+    return { data: hit.data, fresh: false };
+  }
+  return null;
+}
+
+function setCached(key, data) {
+  const now = Date.now();
+  const entry = {
+    data,
+    freshUntil: now + TTL_MS,
+    staleUntil: now + STALE_MS,
+  };
+  memCache.set(key, entry);
+
+  try {
+    const raw = JSON.stringify(data);
+    if (raw.length > MAX_STORE_VALUE) return;
+    const all = pruneStore(readStore());
+    all[key] = {
+      data,
+      freshUntil: entry.freshUntil,
+      staleUntil: entry.staleUntil,
+      expires: entry.staleUntil,
+    };
+    writeStore(all);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function fetchJson(url, headers) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers, signal: controller.signal });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const err = new Error(`TMDB ${res.status}: ${body || res.statusText}`);
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function tmdbFetch(path, params = {}) {
   const url = new URL(`${env.tmdbBaseUrl}${path}`);
   const headers = { Accept: "application/json" };
@@ -18,12 +128,37 @@ async function tmdbFetch(path, params = {}) {
     }
   }
 
-  const res = await fetch(url.toString(), { headers });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`TMDB ${res.status}: ${body || res.statusText}`);
+  const cacheKey = url.toString();
+  const cached = getCached(cacheKey);
+  if (cached?.fresh) return cached.data;
+  if (inflight.has(cacheKey)) return inflight.get(cacheKey);
+
+  const pending = (async () => {
+    let lastErr;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      try {
+        const data = await fetchJson(cacheKey, headers);
+        setCached(cacheKey, data);
+        return data;
+      } catch (err) {
+        lastErr = err;
+        const status = err?.status;
+        // Don't retry hard client errors except timeouts / network / 429 / 5xx
+        if (status && status < 500 && status !== 429) break;
+        if (attempt < MAX_RETRIES) await sleep(400 * (attempt + 1));
+      }
+    }
+    // Weak signal: serve stale cache rather than a blank page
+    if (cached?.data) return cached.data;
+    throw lastErr || new Error("TMDB request failed");
+  })();
+
+  inflight.set(cacheKey, pending);
+  try {
+    return await pending;
+  } finally {
+    inflight.delete(cacheKey);
   }
-  return res.json();
 }
 
 export function posterUrl(path, size = "w342") {

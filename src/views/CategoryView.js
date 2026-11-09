@@ -1,8 +1,9 @@
 import { getCategoryById } from "../config/categories.js?v=147";
 import {
   getCategoryItems,
+  peekCategoryItems,
   searchMovies,
-} from "../services/movieService.js?v=150";
+} from "../services/movieService.js?v=151";
 import { CategoryChips } from "../components/CategoryChips.js?v=147";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
 import { HomeSticky } from "../components/HomeSticky.js";
@@ -11,7 +12,7 @@ import { CategoryRow } from "../components/CategoryRow.js";
 import {
   MovieStudiosRail,
   TvNetworksRail,
-} from "../components/BrandRails.js";
+} from "../components/BrandRails.js?v=151";
 import { FeaturedHero } from "../components/FeaturedHero.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
@@ -70,10 +71,10 @@ export async function CategoryView(root, { categoryId } = {}) {
   root.innerHTML = "";
   root.appendChild(page);
 
-  try {
-    const data = await getCategoryItems(category.id);
-    const results = data.results || [];
-    const sections = data.sections || [];
+  const paintCatalog = (data) => {
+    const results = data?.results || [];
+    const sections = data?.sections || [];
+    body.querySelector(".home-hero")?._unmountFeatured?.();
     body.innerHTML = "";
 
     if (results.length) {
@@ -123,11 +124,29 @@ export async function CategoryView(root, { categoryId } = {}) {
         })
       );
     }
-  } catch (err) {
-    body.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+  };
+
+  // Show last visit instantly on weak networks, then refresh in background.
+  const cached = peekCategoryItems(category.id);
+  if (cached?.results?.length || cached?.sections?.length) {
+    paintCatalog(cached);
   }
 
-  return { unmount: () => top.unmount() };
+  try {
+    const data = await getCategoryItems(category.id);
+    paintCatalog(data);
+  } catch (err) {
+    if (!cached?.results?.length && !cached?.sections?.length) {
+      body.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  return {
+    unmount: () => {
+      body.querySelector(".home-hero")?._unmountFeatured?.();
+      top.unmount();
+    },
+  };
 }
 
 function escapeHtml(str = "") {

@@ -1,4 +1,4 @@
-import { tmdb, posterUrl, backdropUrl } from "../lib/tmdb.js";
+import { tmdb, posterUrl, backdropUrl } from "../lib/tmdb.js?v=151";
 import { getOmdbByImdbId, getOmdbByTitle } from "../lib/omdb.js";
 
 function mapTitle(m) {
@@ -40,8 +40,12 @@ export async function getPopularMovies(page = 1) {
   return mapList(await tmdb.popular(page), "movie");
 }
 
-/** Category grids — TMDB is 20/page, so pull enough pages for a fuller shelf. */
-const CATEGORY_LIST_LIMIT = 200;
+/** Category grids — TMDB is 20/page. Keep shelves full without over-fetching. */
+const CATEGORY_LIST_LIMIT = 60;
+/** Recommend rows only need one page each. */
+const RECOMMEND_ROW_LIMIT = 20;
+const CATEGORY_CACHE_TTL = 10 * 60 * 1000;
+const categoryMem = new Map();
 
 async function collectPages(fetchPage, limit = CATEGORY_LIST_LIMIT) {
   const pageCount = Math.max(1, Math.ceil(limit / 20));
@@ -146,6 +150,7 @@ function mergeByRating(...lists) {
  * (TV Networks + Movie Studios are logo rails above the list.)
  */
 export async function getRecommended() {
+  // Truly parallel — never `await` inside the Promise.all array.
   const [
     trendingToday,
     trendingNow,
@@ -155,13 +160,13 @@ export async function getRecommended() {
     anime,
     kdrama,
   ] = await Promise.all([
-    mapList(await tmdb.trendingAll("day")),
-    mapList(await tmdb.trendingAll("week")),
+    tmdb.trendingAll("day").then((data) => mapList(data)),
+    tmdb.trendingAll("week").then((data) => mapList(data)),
     getPopularMovies(),
     getTvShows(),
     getNowPlayingMovies(),
-    getAnime(),
-    getKdrama(),
+    getAnime({ limit: RECOMMEND_ROW_LIMIT }),
+    getKdrama({ limit: RECOMMEND_ROW_LIMIT }),
   ]);
 
   const topToday = trendingToday.results || [];
@@ -215,8 +220,8 @@ export async function getRecommended() {
   return { results, sections };
 }
 
-export async function getFilipino() {
-  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+export async function getFilipino({ limit = CATEGORY_LIST_LIMIT } = {}) {
+  const pageCount = Math.max(1, Math.ceil(limit / 20));
   const jobs = [];
   for (let page = 1; page <= pageCount; page += 1) {
     jobs.push(
@@ -237,15 +242,15 @@ export async function getFilipino() {
     }
   }
   merged.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
+  return { results: merged.slice(0, limit) };
 }
 
 export async function getTvShows(page = 1) {
   return mapList(await tmdb.popularTv(page), "tv");
 }
 
-export async function getAnime() {
-  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+export async function getAnime({ limit = CATEGORY_LIST_LIMIT } = {}) {
+  const pageCount = Math.max(1, Math.ceil(limit / 20));
   const jobs = [];
   for (let page = 1; page <= pageCount; page += 1) {
     jobs.push(
@@ -274,12 +279,12 @@ export async function getAnime() {
     }
   }
   merged.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
+  return { results: merged.slice(0, limit) };
 }
 
 /** Korean dramas — KR TV in Korean, Drama genre (skip variety / talk). */
-export async function getKdrama() {
-  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+export async function getKdrama({ limit = CATEGORY_LIST_LIMIT } = {}) {
+  const pageCount = Math.max(1, Math.ceil(limit / 20));
   const jobs = [];
   for (let page = 1; page <= pageCount; page += 1) {
     jobs.push(
@@ -304,12 +309,12 @@ export async function getKdrama() {
       merged.push(item);
     }
   }
-  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
+  return { results: merged.slice(0, limit) };
 }
 
 /** Vivamax originals (TMDB company 149142) */
-export async function getVivamax() {
-  const pageCount = Math.ceil(CATEGORY_LIST_LIMIT / 20);
+export async function getVivamax({ limit = CATEGORY_LIST_LIMIT } = {}) {
+  const pageCount = Math.max(1, Math.ceil(limit / 20));
   const jobs = [];
   for (let page = 1; page <= pageCount; page += 1) {
     jobs.push(
@@ -345,11 +350,42 @@ export async function getVivamax() {
     if (da !== db) return db.localeCompare(da);
     return (b.rating || 0) - (a.rating || 0);
   });
-  return { results: merged.slice(0, CATEGORY_LIST_LIMIT) };
+  return { results: merged.slice(0, limit) };
 }
 
-/** Load titles for one category page */
-export async function getCategoryItems(categoryId) {
+function readCategoryCache(categoryId) {
+  const hit = categoryMem.get(categoryId);
+  if (hit && hit.expires > Date.now()) return hit.data;
+  try {
+    const raw = sessionStorage.getItem(`lantaw-cat-${categoryId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.expires || parsed.expires < Date.now() || !parsed.data) {
+      return null;
+    }
+    categoryMem.set(categoryId, parsed);
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCategoryCache(categoryId, data) {
+  const entry = { expires: Date.now() + CATEGORY_CACHE_TTL, data };
+  categoryMem.set(categoryId, entry);
+  try {
+    sessionStorage.setItem(`lantaw-cat-${categoryId}`, JSON.stringify(entry));
+  } catch {
+    /* quota */
+  }
+}
+
+/** Instant paint from last visit (may be slightly stale). */
+export function peekCategoryItems(categoryId) {
+  return readCategoryCache(categoryId);
+}
+
+async function loadCategoryItems(categoryId) {
   switch (categoryId) {
     case "recommend":
       return getRecommended();
@@ -367,6 +403,21 @@ export async function getCategoryItems(categoryId) {
       return getKdrama();
     default:
       return { results: [] };
+  }
+}
+
+/** Load titles for one category page (cached ~10 min). */
+export async function getCategoryItems(categoryId) {
+  const cached = readCategoryCache(categoryId);
+  try {
+    const data = await loadCategoryItems(categoryId);
+    if (data?.results?.length || data?.sections?.length) {
+      writeCategoryCache(categoryId, data);
+    }
+    return data;
+  } catch (err) {
+    if (cached) return cached;
+    throw err;
   }
 }
 

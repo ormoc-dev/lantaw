@@ -7,18 +7,18 @@ import {
   isInWatchlist,
   removeByTmdbId,
 } from "../services/watchlistService.js";
-import {
-  listFriendships,
-  sendMessage,
-} from "../services/friendsService.js";
-import { shareMessageBody } from "../lib/shareMessage.js";
-import { showNotice } from "../lib/appModal.js";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
   bindStreamControls,
   renderStreamPlayer,
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
+import {
+  closeMiniPlayer,
+  consumeMiniExpand,
+  dockMiniPlayer,
+  takeMiniPlayer,
+} from "../lib/miniPlayer.js?v=156";
 
 export async function MovieView(root, params = {}) {
   return renderMediaDetail(root, params, "movie");
@@ -46,6 +46,8 @@ async function renderMediaDetail(root, params, mediaType) {
   const id = params.id;
   let cleanupPlayerHistory = () => {};
   let cleanupStreamGuard = () => {};
+  let playerOpen = false;
+  let minimizePlayer = () => {};
 
   root.innerHTML = loadingHtml();
 
@@ -190,9 +192,19 @@ async function renderMediaDetail(root, params, mediaType) {
       `;
     }
 
-    let playerOpen = false;
     let pushedPlayerState = false;
     let ignoreNextPop = false;
+    const streamKey = `${mediaType}:${id}`;
+    const returnHref = linkTo(mediaType === "tv" ? `/tv/${id}` : `/movie/${id}`);
+
+    const liveStreamFrame = () => {
+      const iframe = player.querySelector("#stream-iframe");
+      if (!iframe) return null;
+      const src = iframe.getAttribute("src") || "";
+      if (!src || src === "about:blank") return null;
+      return iframe;
+    };
+
     const onPopState = () => {
       if (ignoreNextPop) {
         ignoreNextPop = false;
@@ -200,19 +212,26 @@ async function renderMediaDetail(root, params, mediaType) {
         return;
       }
       if (!playerOpen) return;
-      hidePlayer();
+      minimizePlayer();
       pushedPlayerState = false;
     };
+    const onMiniExpand = () => {
+      if (!consumeMiniExpand(streamKey)) return;
+      openStream();
+    };
     window.addEventListener("popstate", onPopState);
+    window.addEventListener("lantaw-mini-expand", onMiniExpand);
     cleanupPlayerHistory = () => {
       window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("lantaw-mini-expand", onMiniExpand);
     };
 
     const closePlayerSafely = () => {
       if (!playerOpen) return;
-      // Blank the embed first so its ← / unload hooks can't open ads.
+      // Explicit Close stops playback. Back shrinks it to the corner instead.
       const iframe = player.querySelector("#stream-iframe");
       if (iframe) iframe.src = "about:blank";
+      closeMiniPlayer();
       cleanupStreamGuard();
       cleanupStreamGuard = () => {};
       player.hidden = true;
@@ -225,22 +244,39 @@ async function renderMediaDetail(root, params, mediaType) {
       }
     };
 
-    const hidePlayer = () => {
+    minimizePlayer = () => {
       if (!playerOpen) return;
-      const iframe = player.querySelector("#stream-iframe");
-      if (iframe) iframe.src = "about:blank";
+      const iframe = liveStreamFrame();
       cleanupStreamGuard();
       cleanupStreamGuard = () => {};
+      if (iframe) {
+        dockMiniPlayer({
+          iframe,
+          title: movie.title || "Now playing",
+          href: returnHref,
+          key: streamKey,
+        });
+      }
       player.hidden = true;
       player.innerHTML = "";
       playerOpen = false;
+    };
+
+    const minimizeFromBack = () => {
+      if (!playerOpen) return;
+      minimizePlayer();
+      if (pushedPlayerState) {
+        ignoreNextPop = true;
+        pushedPlayerState = false;
+        history.back();
+      }
     };
 
     const mountStreamGuard = () => {
       cleanupStreamGuard();
       cleanupStreamGuard = attachStreamAdGuard(
         player.querySelector(".detail__player-frame--embed"),
-        { onSafeExit: closePlayerSafely }
+        { onSafeExit: minimizeFromBack }
       );
     };
 
@@ -273,7 +309,14 @@ async function renderMediaDetail(root, params, mediaType) {
     };
 
     const openStream = () => {
+      const reused = takeMiniPlayer(streamKey);
+      if (!reused) closeMiniPlayer();
       showPlayer(renderStreamPlayer(movie, mediaType), () => {
+        if (reused) {
+          const slot = player.querySelector("#stream-iframe");
+          reused.id = "stream-iframe";
+          slot?.replaceWith(reused);
+        }
         mountStreamGuard();
         bindStreamControls(player, movie, mediaType, {
           onReload: () => mountStreamGuard(),
@@ -339,7 +382,12 @@ async function renderMediaDetail(root, params, mediaType) {
         poster: movie.poster || null,
       };
       addRecentMovie(item);
-      await openShareToChat(item);
+      try {
+        sessionStorage.setItem("lantaw-share-pending", JSON.stringify(item));
+      } catch {
+        /* ignore */
+      }
+      location.hash = linkTo("/friends");
     });
     tools.appendChild(shareBtn);
 
@@ -401,6 +449,7 @@ async function renderMediaDetail(root, params, mediaType) {
       }
     });
     tools.appendChild(watchBtn);
+    if (consumeMiniExpand(streamKey)) openStream();
   } catch (err) {
     root.innerHTML = `
       <p class="muted">${escapeHtml(err.message)}</p>
@@ -409,6 +458,7 @@ async function renderMediaDetail(root, params, mediaType) {
 
   return {
     unmount() {
+      if (playerOpen) minimizePlayer();
       cleanupStreamGuard();
       cleanupPlayerHistory();
     },
@@ -421,134 +471,6 @@ function shortRatingSource(source = "") {
   if (/rotten tomatoes/i.test(s)) return "Rotten Tomatoes";
   if (/metacritic/i.test(s)) return "Metacritic";
   return s;
-}
-
-function shareAvatarHtml(p) {
-  const name = p?.display_name || p?.email || "?";
-  const initial = name.slice(0, 1).toUpperCase();
-  if (p?.avatar_url) {
-    return `<img class="fp-avatar fp-avatar--sm" src="${escapeAttr(
-      p.avatar_url
-    )}" alt="" referrerpolicy="no-referrer" />`;
-  }
-  return `<span class="fp-avatar fp-avatar--fallback fp-avatar--sm">${escapeHtml(
-    initial
-  )}</span>`;
-}
-
-/**
- * Pick a friend and post a share card into their chat.
- * @param {{ id: number, mediaType: string, title: string, poster: string|null }} item
- */
-async function openShareToChat(item) {
-  let friends = [];
-  try {
-    const rows = await listFriendships();
-    friends = rows.filter((f) => f.status === "accepted");
-  } catch (err) {
-    await showNotice({
-      title: "Share",
-      message: err.message || "Could not load friends.",
-    });
-    return;
-  }
-
-  if (!friends.length) {
-    await showNotice({
-      title: "Share",
-      message: "Add a friend first to share titles in chat.",
-    });
-    return;
-  }
-
-  return new Promise((resolve) => {
-    let host = document.getElementById("app-modal-host");
-    if (!host) {
-      host = document.createElement("div");
-      host.id = "app-modal-host";
-      document.body.appendChild(host);
-    }
-
-    const wrap = document.createElement("div");
-    wrap.className = "me-modal app-modal share-pick";
-    wrap.innerHTML = `
-      <div class="me-modal__backdrop" data-share-cancel></div>
-      <div
-        class="me-modal__dialog share-pick__dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="share-pick-title"
-      >
-        <h2 id="share-pick-title">Share in chat</h2>
-        <p class="me-modal__lead">Send <strong>${escapeHtml(
-          item.title || "this title"
-        )}</strong> to a friend. They’ll see Watch together under the card.</p>
-        <div class="share-pick__list" role="list">
-          ${friends
-            .map(
-              (f) => `
-            <button type="button" class="share-pick__row" data-share-friend="${escapeAttr(
-              f.id
-            )}" role="listitem">
-              ${shareAvatarHtml(f.other)}
-              <span class="share-pick__name">${escapeHtml(
-                f.other?.display_name || f.other?.email || "Friend"
-              )}</span>
-            </button>`
-            )
-            .join("")}
-        </div>
-        <div class="me-modal__actions me-modal__actions--single">
-          <button type="button" class="me-modal__btn" data-share-cancel>Cancel</button>
-        </div>
-      </div>
-    `;
-
-    const finish = () => {
-      document.body.classList.remove("me-modal-open");
-      wrap.remove();
-      window.removeEventListener("keydown", onKey);
-      resolve();
-    };
-
-    const onKey = (e) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        finish();
-      }
-    };
-
-    wrap.querySelectorAll("[data-share-cancel]").forEach((el) => {
-      el.addEventListener("click", finish);
-    });
-
-    wrap.querySelectorAll("[data-share-friend]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const friendshipId = btn.getAttribute("data-share-friend");
-        if (!friendshipId) return;
-        wrap.querySelectorAll("[data-share-friend]").forEach((b) => {
-          b.disabled = true;
-        });
-        try {
-          await sendMessage(friendshipId, shareMessageBody(item));
-          finish();
-          location.hash = linkTo(`/friends?chat=${encodeURIComponent(friendshipId)}`);
-        } catch (err) {
-          wrap.querySelectorAll("[data-share-friend]").forEach((b) => {
-            b.disabled = false;
-          });
-          await showNotice({
-            title: "Share",
-            message: err.message || "Could not send.",
-          });
-        }
-      });
-    });
-
-    window.addEventListener("keydown", onKey);
-    host.appendChild(wrap);
-    document.body.classList.add("me-modal-open");
-  });
 }
 
 function escapeHtml(str = "") {

@@ -1,6 +1,6 @@
 import { TV_NETWORKS, MOVIE_STUDIOS } from "../config/brands.js";
 import { linkTo } from "../router/index.js";
-import { tmdb, posterUrl } from "../lib/tmdb.js";
+import { tmdb, posterUrl } from "../lib/tmdb.js?v=151";
 
 function initials(name = "") {
   const parts = String(name).replace(/\+/g, " ").split(/\s+/).filter(Boolean);
@@ -26,36 +26,38 @@ function brandTile(brand, kind) {
 }
 
 async function hydrateLogos(root, brands, kind) {
-  for (const brand of brands) {
-    try {
-      const data =
-        kind === "network"
-          ? await tmdb.network(brand.id)
-          : await tmdb.company(brand.id);
-      const src = posterUrl(data?.logo_path, "w154");
-      if (!src) continue;
-      const marks = root.querySelectorAll(
-        `[data-brand-id="${brand.id}"][data-brand-kind="${kind}"] .brand-tile__mark`
-      );
-      marks.forEach((mark) => {
-        if (mark.querySelector(".brand-tile__logo")) return;
-        const img = document.createElement("img");
-        img.src = src;
-        img.alt = "";
-        img.loading = "lazy";
-        img.className = "brand-tile__logo";
-        img.referrerPolicy = "no-referrer";
-        img.onload = () => {
-          mark.classList.add("has-logo");
-          mark.querySelector(".brand-tile__fallback")?.remove();
-        };
-        img.onerror = () => img.remove();
-        mark.appendChild(img);
-      });
-    } catch {
-      /* keep fallback initials */
-    }
-  }
+  await Promise.all(
+    brands.map(async (brand) => {
+      try {
+        const data =
+          kind === "network"
+            ? await tmdb.network(brand.id)
+            : await tmdb.company(brand.id);
+        const src = posterUrl(data?.logo_path, "w154");
+        if (!src) return;
+        const marks = root.querySelectorAll(
+          `[data-brand-id="${brand.id}"][data-brand-kind="${kind}"] .brand-tile__mark`
+        );
+        marks.forEach((mark) => {
+          if (mark.querySelector(".brand-tile__logo")) return;
+          const img = document.createElement("img");
+          img.src = src;
+          img.alt = "";
+          img.loading = "lazy";
+          img.className = "brand-tile__logo";
+          img.referrerPolicy = "no-referrer";
+          img.onload = () => {
+            mark.classList.add("has-logo");
+            mark.querySelector(".brand-tile__fallback")?.remove();
+          };
+          img.onerror = () => img.remove();
+          mark.appendChild(img);
+        });
+      } catch {
+        /* keep fallback initials */
+      }
+    })
+  );
 }
 
 /** One logo rail (TV Networks or Movie Studios). */

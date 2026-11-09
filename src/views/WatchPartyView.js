@@ -11,6 +11,12 @@ import {
   updateWatchPartyStatus,
 } from "../services/friendsService.js";
 import { linkTo } from "../router/index.js";
+import {
+  closeMiniPlayer,
+  dockMiniPlayer,
+  peekMiniPlayer,
+  takeMiniPlayer,
+} from "../lib/miniPlayer.js?v=156";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
   bindStreamControls,
@@ -38,6 +44,10 @@ import {
  */
 export async function WatchPartyView(root, params = {}) {
   const partyId = params.id;
+  const partyKey = partyId ? `party:${partyId}` : "";
+  const parkedMatches = () => peekMiniPlayer()?.key === partyKey;
+  // A different title's corner player must stop. This room's own picture stays.
+  if (!parkedMatches()) closeMiniPlayer();
   let cleanupStreamGuard = () => {};
   let unsubTime = null;
   let partySub = null;
@@ -660,13 +670,67 @@ export async function WatchPartyView(root, params = {}) {
     }
   };
 
+  /** Put the corner picture back in this room without reloading it. */
+  const adoptParkedStream = () => {
+    if (!parkedMatches()) return false;
+    const iframe = takeMiniPlayer(partyKey);
+    if (!iframe) return false;
+    cleanupStreamGuard();
+    cleanupStreamGuard = () => {};
+    stripPlayerDom();
+    waiting.hidden = true;
+    setSyncTipVisible(true);
+    const wrap = document.createElement("div");
+    wrap.className = "detail__player-frame detail__player-frame--embed";
+    iframe.id = "stream-iframe";
+    wrap.appendChild(iframe);
+    waiting.insertAdjacentElement("afterend", wrap);
+    cleanupStreamGuard = attachStreamAdGuard(wrap, {
+      skipShield: true,
+      showExit: false,
+    });
+    bindHostTimeTracking();
+    if (party.isHost && mediaType === "tv") paintEpisodeRow();
+    const key = playbackKey(party);
+    lastMountedKey = key;
+    lastAppliedKey = key;
+    mountInFlightKey = "";
+    lastContentKey = contentKeyFor(party);
+    if (party.isGuest) lastFollowedToken = syncTokenOf(party);
+    return true;
+  };
+
+  const parkLiveStream = () => {
+    const iframe = playerEl?.querySelector("#stream-iframe");
+    const src = iframe?.getAttribute("src") || "";
+    if (!iframe || !src || src === "about:blank" || !partyKey) return false;
+    cleanupStreamGuard();
+    cleanupStreamGuard = () => {};
+    unsubTime?.();
+    unsubTime = null;
+    return dockMiniPlayer({
+      iframe,
+      title: movie?.title || "Watch together",
+      href: linkTo(`/watch-party/${partyId}`),
+      key: partyKey,
+    });
+  };
+
   const applyPlayback = (row = party, { force = false } = {}) => {
-    if (!row || row.status !== "active") return;
+    if (!row || row.status !== "active") {
+      if (parkedMatches()) closeMiniPlayer();
+      return;
+    }
     const state = row.playback_state || "idle";
     const key = playbackKey(row);
     const token = syncTokenOf(row);
     const contentKey = contentKeyFor(row);
     const startAt = estimatePositionSec(row);
+
+    if (parkedMatches()) {
+      if (state === "playing" && adoptParkedStream()) return;
+      closeMiniPlayer();
+    }
 
     if (state === "playing") {
       // Host loads only via Start / Sync / Continue / episode Load (force).
@@ -1401,12 +1465,23 @@ export async function WatchPartyView(root, params = {}) {
 
   const keyboardInset = () => {
     const vv = window.visualViewport;
-    if (!vv) return 0;
-    // Space covered by the keyboard (layout bottom → visual bottom)
-    return Math.max(
-      0,
-      Math.round(window.innerHeight - vv.height - vv.offsetTop)
-    );
+    let fromVv = 0;
+    if (vv) {
+      fromVv = Math.max(
+        0,
+        Math.round(window.innerHeight - vv.offsetTop - vv.height)
+      );
+    }
+    let fromVk = 0;
+    try {
+      const rect = navigator.virtualKeyboard?.boundingRect;
+      if (rect && rect.height > 0) {
+        fromVk = Math.round(Math.min(rect.height, window.innerHeight * 0.72));
+      }
+    } catch {
+      /* unsupported */
+    }
+    return Math.max(fromVv, fromVk);
   };
 
   // Prefer overlay keyboard so visualViewport reports the real inset
@@ -1417,6 +1492,16 @@ export async function WatchPartyView(root, params = {}) {
   } catch {
     /* unsupported */
   }
+
+  const lockPageScroll = () => {
+    if (window.scrollY || document.documentElement.scrollTop || document.body.scrollTop) {
+      window.scrollTo(0, 0);
+    }
+  };
+
+  let focusBaselineH = 0;
+  let kbPollTimer = 0;
+  let lastComposerShift = "";
 
   const syncSendReady = () => {
     if (!composeSend) return;
@@ -1444,43 +1529,96 @@ export async function WatchPartyView(root, params = {}) {
   };
   ensureComposeSpacer();
 
+  const clearComposerPin = () => {
+    lastKbBottom = 0;
+    lastComposerShift = "";
+    document.documentElement.style.setProperty("--wparty-kb-bottom", "0px");
+    composer?.style.removeProperty("bottom");
+    composer?.style.removeProperty("top");
+    composer?.style.removeProperty("transform");
+    form?.style.removeProperty("bottom");
+  };
+
   /**
-   * Pin compose above the keypad — only write styles when the inset changes.
-   * Avoid scroll locking / polling / sticky↔fixed flips (those blink the caret on iOS/Android).
+   * Keep the player + chat shell locked. Only the compose bar rides the keypad.
+   * iOS pans the visual viewport (player jumps up). Android overlays the keys
+   * and leaves a fixed bottom:0 bar hidden. Measure the bar and nudge it.
    */
   const syncWpartyKb = () => {
     if (kbRaf) return;
     kbRaf = requestAnimationFrame(() => {
       kbRaf = 0;
+      const vv = window.visualViewport;
       const inset = keyboardInset();
-      const kbOpen = inset > 48;
+      const baseline = focusBaselineH || window.innerHeight;
+      const shrink = vv ? Math.max(0, Math.round(baseline - vv.height)) : 0;
+      const kbOpen = inputFocused && (inset > 24 || shrink > 72);
 
-      if (!inputFocused && !kbOpen) {
+      if (!inputFocused && inset < 24) {
         document.body.classList.remove("is-wparty-kb");
-        if (lastKbBottom !== 0) {
-          lastKbBottom = 0;
-          document.documentElement.style.setProperty("--wparty-kb-bottom", "0px");
-          composer?.style.removeProperty("bottom");
-          form?.style.removeProperty("bottom");
-        }
+        clearComposerPin();
         ensureComposeSpacer();
         return;
       }
 
+      // Freeze the room as soon as the field is focused so iOS can't pan the player.
       document.body.classList.add("is-wparty-kb");
-      // While the keyboard is animating open, keep bottom at 0 until inset is real —
-      // jumping early causes the input to blink under the rising keypad.
-      const bottom = kbOpen ? inset : 0;
+      if (!document.documentElement.style.getPropertyValue("--wparty-lock-h")) {
+        document.documentElement.style.setProperty(
+          "--wparty-lock-h",
+          `${Math.round(window.innerHeight)}px`
+        );
+      }
+      lockPageScroll();
+      if (!kbOpen) {
+        ensureComposeSpacer();
+        return;
+      }
+
+      const bottom = Math.max(inset, shrink > 72 ? shrink : 0);
       if (bottom !== lastKbBottom) {
         lastKbBottom = bottom;
         document.documentElement.style.setProperty(
           "--wparty-kb-bottom",
           `${bottom}px`
         );
-        if (composer) composer.style.bottom = `${bottom}px`;
+      }
+      if (composer) {
+        composer.style.setProperty("bottom", `${bottom}px`, "important");
+        composer.style.setProperty("top", "auto", "important");
+        composer.style.setProperty("left", "0px", "important");
+        composer.style.setProperty("right", "0px", "important");
+        composer.style.setProperty("width", "100%", "important");
+        composer.style.transform = "none";
+        if (vv) {
+          const rect = composer.getBoundingClientRect();
+          const delta = Math.round(rect.bottom - vv.height);
+          const shift =
+            Math.abs(delta) > 2 ? `translate3d(0, ${-delta}px, 0)` : "none";
+          if (shift !== lastComposerShift) {
+            lastComposerShift = shift;
+            composer.style.transform = shift;
+          } else if (shift !== "none") {
+            composer.style.transform = shift;
+          }
+        }
       }
       ensureComposeSpacer();
+      lockPageScroll();
     });
+  };
+
+  const startKbPoll = () => {
+    window.clearInterval(kbPollTimer);
+    let ticks = 0;
+    kbPollTimer = window.setInterval(() => {
+      syncWpartyKb();
+      ticks += 1;
+      if (ticks >= 28 || (!inputFocused && keyboardInset() < 24)) {
+        window.clearInterval(kbPollTimer);
+        kbPollTimer = 0;
+      }
+    }, 50);
   };
 
   const stopTypingPing = () => {
@@ -1620,30 +1758,54 @@ export async function WatchPartyView(root, params = {}) {
 
   composeInput?.addEventListener("focus", () => {
     inputFocused = true;
+    focusBaselineH = Math.round(
+      window.visualViewport?.height || window.innerHeight
+    );
+    document.documentElement.style.setProperty(
+      "--wparty-lock-h",
+      `${window.innerHeight}px`
+    );
     document.body.classList.add("is-wparty-kb");
+    lockPageScroll();
     syncWpartyKb();
-    // One settle after the OS keyboard animation — no poll / no scroll spam
+    startKbPoll();
     window.clearTimeout(kbSettleTimer);
     kbSettleTimer = window.setTimeout(() => {
       if (!inputFocused) return;
+      lockPageScroll();
       syncWpartyKb();
       comments.scrollTop = comments.scrollHeight;
-    }, 280);
+    }, 320);
   });
 
   composeInput?.addEventListener("blur", () => {
     inputFocused = false;
     stopTypingPing();
     window.clearTimeout(kbSettleTimer);
+    window.clearInterval(kbPollTimer);
+    kbPollTimer = 0;
     kbSettleTimer = window.setTimeout(() => {
       if (inputFocused) return;
+      focusBaselineH = 0;
+      document.documentElement.style.removeProperty("--wparty-lock-h");
       syncWpartyKb();
-    }, 160);
+    }, 180);
   });
 
-  // resize = keyboard height changes; skip scroll — iOS fires it constantly while typing
+  const onViewportScroll = () => {
+    if (!inputFocused) return;
+    lockPageScroll();
+    syncWpartyKb();
+  };
+
   window.visualViewport?.addEventListener("resize", syncWpartyKb);
+  window.visualViewport?.addEventListener("scroll", onViewportScroll);
   window.addEventListener("resize", syncWpartyKb);
+  try {
+    navigator.virtualKeyboard?.addEventListener("geometrychange", syncWpartyKb);
+  } catch {
+    /* unsupported */
+  }
 
   // Mobile freezes/reloads embeds when switching apps. We can't keep the
   // iframe playing in the background, but we can resume at the right time.
@@ -1825,9 +1987,11 @@ export async function WatchPartyView(root, params = {}) {
 
   return {
     unmount() {
+      const parked = parkLiveStream();
       stopTypingPing();
       window.clearTimeout(typingHideTimer);
       window.clearTimeout(kbSettleTimer);
+      window.clearInterval(kbPollTimer);
       clearTimeout(gifTimer);
       hideGifStrip();
       if (kbRaf) cancelAnimationFrame(kbRaf);
@@ -1839,17 +2003,25 @@ export async function WatchPartyView(root, params = {}) {
       partySub?.stop?.();
       unsubTime?.();
       window.visualViewport?.removeEventListener("resize", syncWpartyKb);
+      window.visualViewport?.removeEventListener("scroll", onViewportScroll);
       window.removeEventListener("resize", syncWpartyKb);
+      try {
+        navigator.virtualKeyboard?.removeEventListener(
+          "geometrychange",
+          syncWpartyKb
+        );
+      } catch {
+        /* unsupported */
+      }
       window.removeEventListener("resize", onChatLayoutMq);
       document.body.classList.remove("is-wparty-kb");
       wpartyShell?.style.removeProperty("height");
       wpartyShell?.style.removeProperty("max-height");
-      form?.style.removeProperty("bottom");
-      composer?.style.removeProperty("bottom");
-      document.documentElement.style.removeProperty("--wparty-kb-bottom");
+      clearComposerPin();
+      document.documentElement.style.removeProperty("--wparty-lock-h");
       document.documentElement.style.removeProperty("--wparty-compose-h");
       if (composeSpacer) composeSpacer.hidden = true;
-      clearStream();
+      if (!parked) clearStream();
       teardownChrome();
     },
   };

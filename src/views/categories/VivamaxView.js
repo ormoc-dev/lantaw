@@ -1,4 +1,4 @@
-import { CategoryView } from "../CategoryView.js?v=148";
+import { CategoryView } from "../CategoryView.js?v=151";
 import { linkTo } from "../../router/index.js";
 
 const AGE_KEY = "lantaw-vivamax-18";

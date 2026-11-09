@@ -47,7 +47,7 @@ import {
   registerGifShare,
   searchGifs,
 } from "../lib/giphy.js";
-import { parseShareMessage } from "../lib/shareMessage.js";
+import { parseShareMessage, shareMessageBody } from "../lib/shareMessage.js";
 import {
   enableNotifications,
   notificationPermission,
@@ -68,6 +68,7 @@ export async function FriendsView(root) {
 
   let tab = "chat";
   let pendingWatchMedia = null;
+  let pendingShare = null;
   try {
     const fromShorts = sessionStorage.getItem("lantaw-shorts-watch");
     if (fromShorts) {
@@ -82,6 +83,25 @@ export async function FriendsView(root) {
   } catch {
     /* ignore */
   }
+  try {
+    const rawShare = sessionStorage.getItem("lantaw-share-pending");
+    if (rawShare) {
+      pendingShare = JSON.parse(rawShare);
+      if (!pendingShare?.id) pendingShare = null;
+      else tab = "chat";
+    }
+  } catch {
+    pendingShare = null;
+  }
+
+  const clearPendingShare = () => {
+    pendingShare = null;
+    try {
+      sessionStorage.removeItem("lantaw-share-pending");
+    } catch {
+      /* ignore */
+    }
+  };
   try {
     if (tab === "chat") {
       const jump = sessionStorage.getItem("lantaw-friends-tab");
@@ -963,6 +983,20 @@ export async function FriendsView(root) {
       if (!activeChatId) {
         if (!accepted.length) {
           panel.innerHTML = `
+            ${
+              pendingShare?.id
+                ? `<div class="fp-share-banner" role="status">
+                    <span class="fp-share-banner__ph" aria-hidden="true">↗</span>
+                    <span class="fp-share-banner__copy">
+                      <strong>Sharing ${escapeHtml(
+                        pendingShare.title || "this title"
+                      )}</strong>
+                      <em>Add a friend first, then open their chat</em>
+                    </span>
+                    <button type="button" class="fp-text-btn" data-share-cancel>Cancel</button>
+                  </div>`
+                : ""
+            }
             ${emptyState(
               "No conversations yet",
               "Add a friend from People, then start chatting."
@@ -971,6 +1005,10 @@ export async function FriendsView(root) {
               Find people
             </button>
           `;
+          panel.querySelector("[data-share-cancel]")?.addEventListener("click", () => {
+            clearPendingShare();
+            renderPanel();
+          });
           panel.querySelector("[data-tab]")?.addEventListener("click", () => {
             tab = "friends";
             renderShell();
@@ -980,8 +1018,28 @@ export async function FriendsView(root) {
         }
 
         // Paint friends immediately (cached previews) — no loading flash
+        const shareBanner = pendingShare?.id
+          ? `<div class="fp-share-banner" role="status">
+              ${
+                pendingShare.poster
+                  ? `<img class="fp-share-banner__poster" src="${escapeHtml(
+                      pendingShare.poster
+                    )}" alt="" />`
+                  : `<span class="fp-share-banner__ph" aria-hidden="true">↗</span>`
+              }
+              <span class="fp-share-banner__copy">
+                <strong>Sharing ${escapeHtml(
+                  pendingShare.title || "this title"
+                )}</strong>
+                <em>Open a chat, then tap Send</em>
+              </span>
+              <button type="button" class="fp-text-btn" data-share-cancel>Cancel</button>
+            </div>`
+          : "";
+
         panel.innerHTML = `
           <div class="fp-inbox">
+            ${shareBanner}
             ${
               openInvites.length
                 ? `<section class="fp-invite-strip" aria-label="Watch together">
@@ -1025,6 +1083,10 @@ export async function FriendsView(root) {
           </div>
         `;
 
+        panel.querySelector("[data-share-cancel]")?.addEventListener("click", () => {
+          clearPendingShare();
+          renderPanel();
+        });
         panel.querySelectorAll("[data-tab]").forEach((btn) => {
           btn.addEventListener("click", () => {
             tab = btn.dataset.tab;
@@ -1113,6 +1175,27 @@ export async function FriendsView(root) {
                 role="listbox"
                 aria-label="GIF suggestions"
               ></div>
+              ${
+                pendingShare?.id
+                  ? `<div class="fp-share-draft" id="share-draft">
+                      ${
+                        pendingShare.poster
+                          ? `<img class="fp-share-draft__poster" src="${escapeHtml(
+                              pendingShare.poster
+                            )}" alt="" />`
+                          : `<span class="fp-share-draft__ph" aria-hidden="true">↗</span>`
+                      }
+                      <div class="fp-share-draft__meta">
+                        <strong>${escapeHtml(
+                          pendingShare.title || "Untitled"
+                        )}</strong>
+                        <em>Share in this chat</em>
+                      </div>
+                      <button type="button" class="fp-btn fp-btn--solid" id="share-draft-send">Send</button>
+                      <button type="button" class="fp-text-btn" id="share-draft-cancel" aria-label="Cancel share">✕</button>
+                    </div>`
+                  : ""
+              }
               <form class="fp-chat__compose" id="chat-form" autocomplete="off">
                 <button
                   type="button"
@@ -1804,6 +1887,36 @@ export async function FriendsView(root) {
       const composer = panel.querySelector("#chat-composer");
       const composeSpacer = panel.querySelector("#chat-compose-spacer");
       const chatShell = panel.querySelector(".fp-chat--thread");
+      const shareDraft = panel.querySelector("#share-draft");
+      const shareDraftSend = panel.querySelector("#share-draft-send");
+      const shareDraftCancel = panel.querySelector("#share-draft-cancel");
+
+      shareDraftCancel?.addEventListener("click", () => {
+        clearPendingShare();
+        shareDraft?.remove();
+        requestAnimationFrame(() => syncChatViewport?.());
+      });
+
+      shareDraftSend?.addEventListener("click", async () => {
+        if (!pendingShare?.id || !chatId) return;
+        shareDraftSend.disabled = true;
+        try {
+          await sendMessage(chatId, shareMessageBody(pendingShare));
+          clearPendingShare();
+          shareDraft?.remove();
+          requestAnimationFrame(() => {
+            syncChatViewport?.();
+            box?.scrollTo?.({ top: box.scrollHeight, behavior: "smooth" });
+          });
+        } catch (err) {
+          shareDraftSend.disabled = false;
+          await showNotice({
+            title: "Share",
+            message: err.message || "Could not send.",
+          });
+        }
+      });
+
       let inputFocused = false;
       let focusBaselineH = 0;
       let kbPollTimer = null;
