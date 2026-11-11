@@ -5330,6 +5330,69 @@ body.is-halloween .home-sticky__mark::after {
   margin: 0.35rem 0 0.75rem;
 }
 
+.pbb-live {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.7rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pbb-live__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.pbb-live__badge {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: #ff0a43;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pbb-live__titles {
+  min-width: 0;
+}
+
+.pbb-live__titles h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: -0.03em;
+}
+
+.pbb-live__titles p {
+  margin: 0.2rem 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.pbb-live__frame {
+  position: relative;
+  height: 12rem;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+
+.pbb-live__frame iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+}
+
 /* Home — Facebook-style people cards */
 .pymk {
   min-width: 0;

@@ -16,6 +16,7 @@ import {
 import { FeaturedHero } from "../components/FeaturedHero.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
+import { createPbbLive, stopPbbLive } from "../components/PbbLive.js?v=167";
 
 /**
  * Separate page for one category (Recommend, Filipino, Movies, TV Show, Anime).
@@ -74,8 +75,13 @@ export async function CategoryView(root, { categoryId } = {}) {
   const paintCatalog = (data) => {
     const results = data?.results || [];
     const sections = data?.sections || [];
+    const existingLive = body.querySelector("#pbb-live");
     body.querySelector(".home-hero")?._unmountFeatured?.();
     body.innerHTML = "";
+
+    if (category.id === "filipino") {
+      body.appendChild(existingLive || createPbbLive());
+    }
 
     if (results.length) {
       body.appendChild(
@@ -143,6 +149,7 @@ export async function CategoryView(root, { categoryId } = {}) {
 
   return {
     unmount: () => {
+      stopPbbLive(body);
       body.querySelector(".home-hero")?._unmountFeatured?.();
       top.unmount();
     },
