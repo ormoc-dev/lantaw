@@ -14,7 +14,7 @@ import { FriendsView } from "./views/FriendsView.js?v=152";
 import { WatchPartyView } from "./views/WatchPartyView.js?v=156";
 import { RecentView } from "./views/RecentView.js";
 import { RecommendView } from "./views/categories/RecommendView.js?v=151";
-import { FilipinoView } from "./views/categories/FilipinoView.js?v=167";
+import { FilipinoView } from "./views/categories/FilipinoView.js?v=168";
 import { MoviesView } from "./views/categories/MoviesView.js?v=151";
 import { TvShowView } from "./views/categories/TvShowView.js?v=151";
 import { AnimeView } from "./views/categories/AnimeView.js?v=151";

@@ -16,7 +16,7 @@ import {
 import { FeaturedHero } from "../components/FeaturedHero.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
-import { createPbbLive, stopPbbLive } from "../components/PbbLive.js?v=167";
+import { createPbbLive, stopPbbLive } from "../components/PbbLive.js?v=168";
 
 /**
  * Separate page for one category (Recommend, Filipino, Movies, TV Show, Anime).

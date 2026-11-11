@@ -5331,20 +5331,23 @@ body.is-halloween .home-sticky__mark::after {
 }
 
 .pbb-live {
-  display: grid;
-  gap: 0.55rem;
+  position: relative;
   min-width: 0;
-  padding: 0.7rem;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-inline: -0.85rem;
+  width: calc(100% + 1.7rem);
 }
 
 .pbb-live__head {
+  position: absolute;
+  z-index: 2;
+  top: 0.55rem;
+  left: 0.7rem;
+  right: 0.7rem;
   display: flex;
   align-items: flex-start;
   gap: 0.65rem;
   min-width: 0;
+  pointer-events: none;
 }
 
 .pbb-live__badge {
@@ -5369,19 +5372,16 @@ body.is-halloween .home-sticky__mark::after {
   font-family: var(--font-display);
   font-size: 1.05rem;
   letter-spacing: -0.03em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
 }
 
 .pbb-live__titles p {
-  margin: 0.2rem 0 0;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 0.82rem;
-  line-height: 1.35;
+  display: none;
 }
 
 .pbb-live__frame {
   position: relative;
   height: 12rem;
-  border-radius: 12px;
   overflow: hidden;
   background: #000;
 }
@@ -5391,6 +5391,20 @@ body.is-halloween .home-sticky__mark::after {
   top: 0;
   left: 0;
   border: 0;
+}
+
+@media (min-width: 640px) {
+  .pbb-live {
+    margin-inline: -1.25rem;
+    width: calc(100% + 2.5rem);
+  }
+}
+
+@media (min-width: 1024px) {
+  .pbb-live {
+    margin-inline: -1.5rem;
+    width: calc(100% + 3rem);
+  }
 }
 
 /* Home — Facebook-style people cards */
