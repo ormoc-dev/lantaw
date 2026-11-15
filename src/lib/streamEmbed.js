@@ -1,26 +1,94 @@
 /** Shared stream embed helpers for detail + watch-party pages.
- * Movies/TV use YapGrid while CineSrc (cinesrc.st) is down.
- * Flip MOVIE_TV_PROVIDER back to "cinesrc" when that host recovers.
+ * Movies/TV use the user-selected provider (Me → Settings → Stream provider).
  * Anime stays on zoryva.
- * YapGrid: https://yapgrid.com/embed/movie/{tmdbId}
- *          https://yapgrid.com/embed/tv/{tmdbId}/{season}/{episode}
+ *
+ * CineSrc:      https://cinesrc.st/embed/movie/{tmdbId}
+ * VidCore:      https://vidcore.org/embed/movie/{tmdbId}
+ * Braflix:      https://braflix.dev/embed/movie/{tmdbId}
  */
 
-/** "yapgrid" (backup, live) or "cinesrc" (primary, currently down). */
-export const MOVIE_TV_PROVIDER = "yapgrid";
+const STORAGE_KEY = "lantaw-stream-provider";
+const ACCENT_HEX = "ff0a43";
+const ACCENT_QS = `%23${ACCENT_HEX}`;
+
+/** @typedef {"cinesrc"|"vidcore"|"braflix"} StreamProviderId */
+
+/** @type {Array<{id: StreamProviderId, label: string, origin: string, hint: string, remoteSync: boolean, allowSandbox: boolean}>} */
+export const STREAM_PROVIDERS = [
+  {
+    id: "cinesrc",
+    label: "Philippines",
+    origin: "https://cinesrc.st",
+    hint: "Recommended · best for Watch together",
+    remoteSync: true,
+    allowSandbox: true,
+  },
+  {
+    id: "vidcore",
+    label: "Singapore",
+    origin: "https://vidcore.org",
+    hint: "Backup server",
+    remoteSync: false,
+    allowSandbox: true,
+  },
+  {
+    id: "braflix",
+    label: "Thailand",
+    origin: "https://braflix.dev",
+    hint: "Multi-source backup",
+    remoteSync: false,
+    allowSandbox: true,
+  },
+];
+
+export const DEFAULT_STREAM_PROVIDER = "cinesrc";
+
+/** @deprecated Use getStreamProvider() — kept as the default fallback id. */
+export const MOVIE_TV_PROVIDER = DEFAULT_STREAM_PROVIDER;
 
 export const CINESRC_ORIGIN = "https://cinesrc.st";
-export const YAPGRID_ORIGIN = "https://yapgrid.com";
+export const VIDCORE_ORIGIN = "https://vidcore.org";
+export const BRAFLIX_ORIGIN = "https://braflix.dev";
 
-const ACCENT = "%23ff0a43";
-
-export function movieTvOrigin(provider = MOVIE_TV_PROVIDER) {
-  return provider === "cinesrc" ? CINESRC_ORIGIN : YAPGRID_ORIGIN;
+function isProviderId(value) {
+  return STREAM_PROVIDERS.some((p) => p.id === value);
 }
 
-/** CineSrc exposes seek/play/time via postMessage. YapGrid does not. */
-export function providerSupportsRemoteSync(provider = MOVIE_TV_PROVIDER) {
-  return provider === "cinesrc";
+export function getStreamProviderMeta(provider = getStreamProvider()) {
+  return (
+    STREAM_PROVIDERS.find((p) => p.id === provider) ||
+    STREAM_PROVIDERS.find((p) => p.id === DEFAULT_STREAM_PROVIDER)
+  );
+}
+
+/** Active movie/TV embed provider (persisted in localStorage). */
+export function getStreamProvider() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (isProviderId(saved)) return saved;
+  } catch {
+    /* private mode */
+  }
+  return DEFAULT_STREAM_PROVIDER;
+}
+
+export function setStreamProvider(providerId) {
+  const id = isProviderId(providerId) ? providerId : DEFAULT_STREAM_PROVIDER;
+  try {
+    localStorage.setItem(STORAGE_KEY, id);
+  } catch {
+    /* private mode */
+  }
+  return id;
+}
+
+export function movieTvOrigin(provider = getStreamProvider()) {
+  return getStreamProviderMeta(provider).origin;
+}
+
+/** Only CineSrc exposes seek/play/time via postMessage today. */
+export function providerSupportsRemoteSync(provider = getStreamProvider()) {
+  return Boolean(getStreamProviderMeta(provider).remoteSync);
 }
 
 export function getTvDefaults(movie) {
@@ -77,18 +145,34 @@ export function seekCineSrcPlayer(iframe, timeSec = 0) {
 
 function buildCineSrcUrl({ mediaType, id, s, e, play, seek }) {
   if (mediaType === "tv") {
-    return `${CINESRC_ORIGIN}/embed/tv/${id}?s=${s}&e=${e}&color=${ACCENT}&back=close${play}${seek}`;
+    return `${CINESRC_ORIGIN}/embed/tv/${id}?s=${s}&e=${e}&color=${ACCENT_QS}&back=close${play}${seek}`;
   }
-  return `${CINESRC_ORIGIN}/embed/movie/${id}?color=${ACCENT}&back=close${play}${seek}`;
+  return `${CINESRC_ORIGIN}/embed/movie/${id}?color=${ACCENT_QS}&back=close${play}${seek}`;
 }
 
-/** YapGrid ignores unknown query params, including CineSrc's `t=` start time. */
-function buildYapGridUrl({ mediaType, id, s, e, autoplay }) {
-  const qs = autoplay ? "?autoplay=1" : "";
+/** Shared path-style embeds: /embed/movie/{id} and /embed/tv/{id}/{s}/{e} */
+function buildPathEmbedUrl(origin, { mediaType, id, s, e, params }) {
+  const qs = params?.toString() ? `?${params.toString()}` : "";
   if (mediaType === "tv") {
-    return `${YAPGRID_ORIGIN}/embed/tv/${id}/${s}/${e}${qs}`;
+    return `${origin}/embed/tv/${id}/${s}/${e}${qs}`;
   }
-  return `${YAPGRID_ORIGIN}/embed/movie/${id}${qs}`;
+  return `${origin}/embed/movie/${id}${qs}`;
+}
+
+function buildVidCoreUrl({ mediaType, id, s, e, autoplay }) {
+  const params = new URLSearchParams();
+  params.set("theme", ACCENT_HEX);
+  if (autoplay) params.set("autoplay", "true");
+  return buildPathEmbedUrl(VIDCORE_ORIGIN, { mediaType, id, s, e, params });
+}
+
+function buildBraflixUrl({ mediaType, id, s, e, autoplay, startAt }) {
+  const params = new URLSearchParams();
+  params.set("primaryColor", ACCENT_HEX);
+  params.set("color", ACCENT_HEX);
+  if (autoplay) params.set("autoplay", "true");
+  if (startAt > 0) params.set("startAt", String(startAt));
+  return buildPathEmbedUrl(BRAFLIX_ORIGIN, { mediaType, id, s, e, params });
 }
 
 export function buildStreamUrl({
@@ -99,7 +183,7 @@ export function buildStreamUrl({
   anilistId,
   autoplay = false,
   startAt = 0,
-  provider = MOVIE_TV_PROVIDER,
+  provider = getStreamProvider(),
 }) {
   const id = encodeURIComponent(tmdbId);
   const s = encodeURIComponent(Math.max(1, Number(season) || 1));
@@ -116,20 +200,31 @@ export function buildStreamUrl({
   if (mediaType === "anime") {
     return `https://zoryva.me/embed/anime/${encodeURIComponent(
       anilistId || tmdbId
-    )}/${s}/${e}?color=${ACCENT}${play}`;
+    )}/${s}/${e}?color=${ACCENT_QS}${play}`;
   }
+
   if (provider === "cinesrc") {
     return buildCineSrcUrl({ mediaType, id, s, e, play, seek });
   }
-  return buildYapGridUrl({ mediaType, id, s, e, autoplay });
+  if (provider === "vidcore") {
+    return buildVidCoreUrl({ mediaType, id, s, e, autoplay });
+  }
+  if (provider === "braflix") {
+    return buildBraflixUrl({ mediaType, id, s, e, autoplay, startAt: t });
+  }
+  return buildCineSrcUrl({ mediaType, id, s, e, play, seek });
 }
 
-function iframeAttrs(streamUrl, { deferSrc = false } = {}) {
+function iframeAttrs(streamUrl, { deferSrc = false, provider = getStreamProvider() } = {}) {
   // No allow-popups — block third-party pop-unders. First-click shield in streamGuard.
   // deferSrc: keep about:blank until the user taps Sync / unlock (no media fetch yet).
   const srcAttr = deferSrc
     ? `src="about:blank" data-src="${streamUrl}"`
     : `src="${streamUrl}"`;
+  const allowSandbox = getStreamProviderMeta(provider).allowSandbox;
+  const sandboxAttr = allowSandbox
+    ? `sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"`
+    : "";
   return `
           id="stream-iframe"
           ${srcAttr}
@@ -138,7 +233,7 @@ function iframeAttrs(streamUrl, { deferSrc = false } = {}) {
           style="border: 0; border-radius: 12px;"
           allow="autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
           allowfullscreen
-          sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+          ${sandboxAttr}
   `.trim();
 }
 
@@ -184,6 +279,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
   const omitControls = Boolean(opts.omitControls);
   const deferSrc = Boolean(opts.deferSrc);
   const startAt = Math.max(0, Number(opts.startAt) || 0);
+  const provider = opts.provider || getStreamProvider();
 
   if (mediaType === "tv") {
     const defaults = getTvDefaults(movie);
@@ -197,6 +293,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
       episode: episodeNum,
       autoplay,
       startAt,
+      provider,
     });
 
     return `
@@ -210,7 +307,7 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
       }
       <div class="detail__player-frame detail__player-frame--embed">
         <iframe
-          ${iframeAttrs(streamUrl, { deferSrc })}
+          ${iframeAttrs(streamUrl, { deferSrc, provider })}
         ></iframe>
       </div>
     `;
@@ -221,11 +318,12 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
     tmdbId: movie.id,
     autoplay,
     startAt,
+    provider,
   });
   return `
     <div class="detail__player-frame detail__player-frame--embed">
       <iframe
-        ${iframeAttrs(streamUrl, { deferSrc })}
+        ${iframeAttrs(streamUrl, { deferSrc, provider })}
       ></iframe>
     </div>
   `;
@@ -238,6 +336,10 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
     typeof hooks === "function" ? null : hooks.onEpisodeChange;
   const autoplay =
     typeof hooks === "function" ? false : Boolean(hooks.autoplay);
+  const provider =
+    typeof hooks === "function"
+      ? getStreamProvider()
+      : hooks.provider || getStreamProvider();
 
   const seasonEl = player.querySelector("#stream-season");
   const episodeEl = player.querySelector("#stream-episode");
@@ -269,6 +371,7 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
         season,
         episode,
         autoplay,
+        provider,
       });
     }
     onReload?.();

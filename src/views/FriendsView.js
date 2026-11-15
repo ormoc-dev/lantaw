@@ -1205,16 +1205,16 @@ export async function FriendsView(root) {
                   aria-pressed="false"
                   title="GIFs"
                 >GIF</button>
-                <input
-                  type="text"
+                <textarea
                   name="body"
                   id="chat-input"
+                  rows="1"
                   placeholder="Aa"
                   autocomplete="off"
                   enterkeyhint="send"
                   inputmode="text"
                   aria-label="Message"
-                />
+                ></textarea>
                 <button class="fp-chat__send" type="button" id="chat-send" aria-label="Send">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3.4 11.2 20.2 3.8c.7-.3 1.4.4 1.1 1.1L13.9 21.7c-.3.8-1.5.7-1.7-.1l-1.7-7.1-7.1-1.7c-.8-.2-.9-1.4-.1-1.7Z" fill="currentColor"/>
@@ -2188,9 +2188,24 @@ export async function FriendsView(root) {
         sendBtn.disabled = sending || !hasText;
         sendBtn.classList.toggle("is-ready", hasText && !sending);
       };
+
+      const autosizeChatInput = () => {
+        if (!input) return;
+        input.style.height = "auto";
+        const max = Math.round(
+          Math.min(window.innerHeight * 0.32, 148) || 148
+        );
+        const next = Math.min(input.scrollHeight, max);
+        input.style.height = `${Math.max(next, 40)}px`;
+        input.style.overflowY = input.scrollHeight > max ? "auto" : "hidden";
+      };
+
       syncSendEnabled();
+      autosizeChatInput();
       input?.addEventListener("input", () => {
         syncSendEnabled();
+        autosizeChatInput();
+        syncChatViewport?.();
         if (String(input?.value || "").trim()) pulseTyping();
         else stopTypingPing();
       });
@@ -2206,9 +2221,9 @@ export async function FriendsView(root) {
         stopTypingPing();
         clearTimeout(gifTimer);
         hideGifStrip();
-        if (input && rawBody == null) input.value = "";
-        else if (input && rawBody != null) input.value = "";
+        if (input) input.value = "";
         syncSendEnabled();
+        autosizeChatInput();
         // Show the bubble immediately — don't wait on the network round-trip
         const optimistic = {
           id: `local-${Date.now()}`,
@@ -2229,6 +2244,7 @@ export async function FriendsView(root) {
         } catch (err) {
           if (input && !parseGifMessage(text) && !parseShareMessage(text)) {
             input.value = text;
+            autosizeChatInput();
           }
           paint(threadMessages.filter((m) => m.id !== optimistic.id));
           alert(err.message);
@@ -2289,7 +2305,7 @@ export async function FriendsView(root) {
       });
 
       input?.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           sendChat();
         }

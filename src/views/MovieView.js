@@ -9,8 +9,14 @@ import {
 } from "../services/watchlistService.js";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
+  STREAM_PROVIDERS,
   bindStreamControls,
+  buildStreamUrl,
+  getStreamProvider,
+  getStreamProviderMeta,
+  getTvDefaults,
   renderStreamPlayer,
+  setStreamProvider,
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
 import {
@@ -280,7 +286,136 @@ async function renderMediaDetail(root, params, mediaType) {
       );
     };
 
-    const showPlayer = (html, afterMount) => {
+    const readEpisodeSelection = () => {
+      const defaults = getTvDefaults(movie);
+      const seasonEl = player.querySelector("#stream-season");
+      const episodeEl = player.querySelector("#stream-episode");
+      return {
+        season: Math.max(
+          1,
+          Number(seasonEl?.value) || defaults.season
+        ),
+        episode: Math.max(
+          1,
+          Number(episodeEl?.value) || defaults.episode
+        ),
+      };
+    };
+
+    const providerModalHtml = () => {
+      const active = getStreamProvider();
+      return `
+        <div class="detail__provider-modal" id="player-provider-modal" hidden>
+          <div class="detail__provider-modal__backdrop" data-close-player-provider></div>
+          <div
+            class="detail__provider-modal__dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="player-provider-title"
+          >
+            <h2 id="player-provider-title">Try another server</h2>
+            <p class="detail__provider-modal__lead">
+              Not playing? Switch region for this title. Your choice is saved for next time.
+            </p>
+            <div class="me-provider-list" role="radiogroup" aria-label="Server regions">
+              ${STREAM_PROVIDERS.map(
+                (p) => `
+                <button
+                  type="button"
+                  class="me-provider-option${p.id === active ? " is-active" : ""}"
+                  role="radio"
+                  aria-checked="${p.id === active ? "true" : "false"}"
+                  data-player-provider="${escapeHtml(p.id)}"
+                >
+                  <span class="me-provider-option__copy">
+                    <span class="me-provider-option__label">${escapeHtml(p.label)}</span>
+                    <span class="me-provider-option__hint">${escapeHtml(p.hint)}</span>
+                  </span>
+                  <span class="me-provider-option__check" aria-hidden="true"></span>
+                </button>`
+              ).join("")}
+            </div>
+            <div class="detail__provider-modal__actions">
+              <button type="button" class="detail__icon-btn" data-close-player-provider>Cancel</button>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const syncPlayerProviderUi = () => {
+      const active = getStreamProvider();
+      player.querySelectorAll("[data-player-provider]").forEach((btn) => {
+        const on = btn.getAttribute("data-player-provider") === active;
+        btn.classList.toggle("is-active", on);
+        btn.setAttribute("aria-checked", on ? "true" : "false");
+      });
+    };
+
+    const closePlayerProviderModal = () => {
+      const modal = player.querySelector("#player-provider-modal");
+      if (modal) modal.hidden = true;
+    };
+
+    const openPlayerProviderModal = () => {
+      syncPlayerProviderUi();
+      const modal = player.querySelector("#player-provider-modal");
+      if (modal) modal.hidden = false;
+    };
+
+    const switchStreamProvider = (providerId) => {
+      const next = setStreamProvider(providerId);
+      const { season, episode } = readEpisodeSelection();
+      const iframe = player.querySelector("#stream-iframe");
+      if (iframe) {
+        iframe.removeAttribute("data-src");
+        iframe.src = buildStreamUrl({
+          mediaType,
+          tmdbId: movie.id,
+          season,
+          episode,
+          provider: next,
+          autoplay: true,
+        });
+        const allowSandbox = getStreamProviderMeta(next).allowSandbox;
+        if (allowSandbox) {
+          iframe.setAttribute(
+            "sandbox",
+            "allow-scripts allow-same-origin allow-forms allow-presentation"
+          );
+        } else {
+          iframe.removeAttribute("sandbox");
+        }
+        iframe.setAttribute(
+          "allow",
+          "autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
+        );
+      }
+      syncPlayerProviderUi();
+      closePlayerProviderModal();
+      mountStreamGuard();
+    };
+
+    const bindPlayerProviderModal = () => {
+      player
+        .querySelectorAll("[data-close-player-provider]")
+        .forEach((el) => el.addEventListener("click", closePlayerProviderModal));
+      player.querySelectorAll("[data-player-provider]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.getAttribute("data-player-provider");
+          if (!id || id === getStreamProvider()) {
+            closePlayerProviderModal();
+            return;
+          }
+          switchStreamProvider(id);
+        });
+      });
+      player
+        .querySelector("#player-provider-open")
+        ?.addEventListener("click", openPlayerProviderModal);
+    };
+
+    const showPlayer = (html, afterMount, { allowProviderSwitch = false } = {}) => {
       cleanupStreamGuard();
       cleanupStreamGuard = () => {};
       player.hidden = false;
@@ -288,16 +423,28 @@ async function renderMediaDetail(root, params, mediaType) {
       player.innerHTML = `
         <div class="detail__player-head">
           <p class="detail__player-label">Now playing</p>
-          <button class="detail__icon-btn" id="player-close" type="button" aria-label="Close player">
-            <span aria-hidden="true">✕</span>
-            <span>Close</span>
-          </button>
+          <div class="detail__player-head-actions">
+            ${
+              allowProviderSwitch
+                ? `<button class="detail__icon-btn" id="player-provider-open" type="button" aria-label="Try another server" title="Try another server">
+              <span aria-hidden="true">⇄</span>
+              <span id="player-provider-label">Try another server</span>
+            </button>`
+                : ""
+            }
+            <button class="detail__icon-btn" id="player-close" type="button" aria-label="Close player">
+              <span aria-hidden="true">✕</span>
+              <span>Close</span>
+            </button>
+          </div>
         </div>
         ${html}
+        ${allowProviderSwitch ? providerModalHtml() : ""}
       `;
 
       const closeBtn = player.querySelector("#player-close");
       closeBtn?.addEventListener("click", () => closePlayerSafely());
+      if (allowProviderSwitch) bindPlayerProviderModal();
 
       if (!pushedPlayerState) {
         history.pushState({ detailPlayer: true }, "");
@@ -311,17 +458,21 @@ async function renderMediaDetail(root, params, mediaType) {
     const openStream = () => {
       const reused = takeMiniPlayer(streamKey);
       if (!reused) closeMiniPlayer();
-      showPlayer(renderStreamPlayer(movie, mediaType), () => {
-        if (reused) {
-          const slot = player.querySelector("#stream-iframe");
-          reused.id = "stream-iframe";
-          slot?.replaceWith(reused);
-        }
-        mountStreamGuard();
-        bindStreamControls(player, movie, mediaType, {
-          onReload: () => mountStreamGuard(),
-        });
-      });
+      showPlayer(
+        renderStreamPlayer(movie, mediaType),
+        () => {
+          if (reused) {
+            const slot = player.querySelector("#stream-iframe");
+            reused.id = "stream-iframe";
+            slot?.replaceWith(reused);
+          }
+          mountStreamGuard();
+          bindStreamControls(player, movie, mediaType, {
+            onReload: () => mountStreamGuard(),
+          });
+        },
+        { allowProviderSwitch: true }
+      );
     };
 
     actions.classList.add("detail__actions");

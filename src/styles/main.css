@@ -434,7 +434,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   top: auto !important;
   display: grid !important;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: end;
   width: 100%;
   min-width: 0;
   /* No safe-area bottom while keyboard is up — inset already clears the keys */
@@ -446,7 +446,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__compose {
   box-shadow: none;
 }
 
-body.is-friends-chat-kb .friends-page--chat .fp-chat__compose input {
+body.is-friends-chat-kb .friends-page--chat .fp-chat__compose textarea {
   min-width: 0;
   width: 100%;
 }
@@ -656,7 +656,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   flex-shrink: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: end;
   gap: 0.45rem;
   width: 100%;
   min-width: 0;
@@ -670,7 +670,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   border-top: 0;
 }
 
-.friends-page--chat .fp-chat__compose input {
+.friends-page--chat .fp-chat__compose textarea {
   min-width: 0;
   width: 100%;
   font-size: 16px; /* avoid iOS focus zoom pushing layout */
@@ -1716,7 +1716,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
 
 .fp-add input,
 .fp-watch select,
-.fp-chat__compose input {
+.fp-chat__compose textarea {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.035);
@@ -1726,19 +1726,24 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   font: inherit;
 }
 
-.fp-chat__compose input {
+.fp-chat__compose textarea {
   min-height: 2.55rem;
-  border-radius: 999px;
+  max-height: 9.25rem;
+  border-radius: 18px;
   border-color: transparent;
   background: rgba(255, 255, 255, 0.08);
-  padding: 0.65rem 1.05rem;
+  padding: 0.7rem 1.05rem;
+  resize: none;
+  overflow-y: hidden;
+  line-height: 1.35;
+  field-sizing: content;
 }
 
-.fp-chat__compose input::placeholder {
+.fp-chat__compose textarea::placeholder {
   color: color-mix(in srgb, var(--muted) 85%, transparent);
 }
 
-.fp-chat__compose input:focus {
+.fp-chat__compose textarea:focus {
   outline: none;
   background: rgba(255, 255, 255, 0.11);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
@@ -2842,7 +2847,7 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.45rem;
-  align-items: center;
+  align-items: end;
   position: sticky;
   bottom: var(--bottom-nav-clearance);
   z-index: 8;
@@ -4279,6 +4284,119 @@ button.me-dest {
   color: var(--muted);
   font-size: 1.25rem;
   line-height: 1;
+}
+
+.me-modal__dialog--providers {
+  max-width: 22rem;
+}
+
+@media (max-width: 639px) {
+  #provider-modal.me-modal {
+    place-items: end center;
+    align-items: end;
+    padding: 0;
+  }
+
+  #provider-modal .me-modal__dialog--providers {
+    width: 100%;
+    max-width: none;
+    max-height: min(82vh, 40rem);
+    overflow: auto;
+    margin: 0;
+    padding: 0.55rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+    animation: me-provider-sheet-in 0.22s ease-out;
+  }
+
+  #provider-modal .me-modal__dialog--providers::before {
+    content: "";
+    display: block;
+    width: 2.4rem;
+    height: 0.28rem;
+    margin: 0.15rem auto 0.75rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+  }
+}
+
+@keyframes me-provider-sheet-in {
+  from {
+    transform: translateY(110%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.me-provider-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.35rem 0 1.1rem;
+}
+
+.me-provider-option {
+  appearance: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.85rem 0.95rem;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.me-provider-option:hover,
+.me-provider-option:focus-visible {
+  border-color: rgba(255, 10, 67, 0.45);
+  outline: none;
+}
+
+.me-provider-option.is-active {
+  border-color: var(--accent-strong);
+  background: rgba(255, 10, 67, 0.12);
+}
+
+.me-provider-option__copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.me-provider-option__label {
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.me-provider-option__hint {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.me-provider-option__check {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.me-provider-option.is-active .me-provider-option__check {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  box-shadow: inset 0 0 0 3px #0b0b0d;
 }
 
 .me-shelf {
@@ -7604,10 +7722,20 @@ body.is-halloween .home-sticky__mark::after {
 
 .detail__player-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem 0.65rem;
   margin-bottom: 0.15rem;
+}
+
+.detail__player-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .detail__player-label {
@@ -7617,13 +7745,15 @@ body.is-halloween .home-sticky__mark::after {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  flex: 0 0 auto;
 }
 
 .detail__icon-btn {
   appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  gap: 0.35rem;
   min-height: 2.2rem;
   padding: 0.35rem 0.75rem;
   border-radius: 999px;
@@ -7634,12 +7764,165 @@ body.is-halloween .home-sticky__mark::after {
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .detail__icon-btn:hover,
 .detail__icon-btn:focus-visible {
   background: rgba(255, 255, 255, 0.1);
   outline: none;
+}
+
+#player-provider-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+#player-provider-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#player-close {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 639px) {
+  .detail__player-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .detail__player-head-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .detail__player-head-actions .detail__icon-btn {
+    min-height: 2.45rem;
+    font-size: 0.78rem;
+    padding: 0.4rem 0.65rem;
+  }
+
+  #player-provider-open {
+    flex: 1 1 0;
+  }
+
+  #player-close {
+    flex: 0 0 auto;
+    min-width: 5.25rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .detail__player-head-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #player-close,
+  #player-provider-open {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.detail__provider-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: stretch;
+  padding: 0;
+}
+
+.detail__provider-modal[hidden] {
+  display: none;
+}
+
+.detail__provider-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 5, 8, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.detail__provider-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-height: min(78vh, 36rem);
+  overflow: auto;
+  padding: 0.55rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  border-radius: 18px 18px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 0;
+  background: #121218;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  animation: detail-provider-sheet-in 0.22s ease-out;
+}
+
+.detail__provider-modal__dialog::before {
+  content: "";
+  display: block;
+  width: 2.4rem;
+  height: 0.28rem;
+  margin: 0.15rem auto 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.detail__provider-modal__dialog h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.detail__provider-modal__lead {
+  margin: 0.45rem 0 0.85rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.detail__provider-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.35rem;
+}
+
+@keyframes detail-provider-sheet-in {
+  from {
+    transform: translateY(110%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 640px) {
+  .detail__provider-modal {
+    place-items: center;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+  }
+
+  .detail__provider-modal__dialog {
+    width: min(100%, 22rem);
+    max-height: min(100%, 32rem);
+    padding: 1.1rem 1rem 1rem;
+    border-radius: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    animation: none;
+  }
+
+  .detail__provider-modal__dialog::before {
+    display: none;
+  }
 }
 
 @media (min-width: 640px) {
@@ -7683,6 +7966,7 @@ body.is-halloween .home-sticky__mark::after {
 }
 
 .detail__player {
+  position: relative;
   display: grid;
   gap: 0.55rem;
   width: 100%;

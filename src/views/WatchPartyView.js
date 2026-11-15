@@ -526,7 +526,7 @@ export async function WatchPartyView(root, params = {}) {
     if (contentKey && lastContentKey && contentKey !== lastContentKey) {
       return false;
     }
-    // YapGrid has no seek API. Keep the live iframe so Sync does not restart at 0.
+    // Non-CineSrc providers have no seek API. Keep the live iframe so Sync does not restart at 0.
     if (!providerSupportsRemoteSync()) {
       if (syncKey) {
         lastMountedKey = syncKey;

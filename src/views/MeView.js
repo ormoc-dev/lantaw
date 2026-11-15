@@ -14,6 +14,12 @@ import {
 } from "../services/notifyService.js";
 import { notificationsSupported } from "../lib/appNotify.js";
 import { showNotice } from "../lib/appModal.js";
+import {
+  STREAM_PROVIDERS,
+  getStreamProvider,
+  getStreamProviderMeta,
+  setStreamProvider,
+} from "../lib/streamEmbed.js";
 
 const ICONS = {
   watchlist: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H17a2 2 0 0 1 2 2v13.2l-6.2-3.4a2 2 0 0 0-1.9 0L5 19.2V5.5z"/></svg>`,
@@ -22,6 +28,7 @@ const ICONS = {
   pen: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 5.5 18 11M4 20l1.2-5.3L16.4 3.5a2 2 0 0 1 2.8 0l1.3 1.3a2 2 0 0 1 0 2.8L9.3 18.8 4 20Z"/></svg>`,
   privacy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3.5 5.5 6.2v5.1c0 4.2 2.7 7.2 6.5 8.7 3.8-1.5 6.5-4.5 6.5-8.7V6.2L12 3.5Z"/><path d="M9.2 12.1 11 13.9l3.8-3.8"/></svg>`,
   bell: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3.8a4.4 4.4 0 0 0-4.4 4.4v2.1c0 .9-.3 1.7-.9 2.4L5.4 14.4c-.5.6-.1 1.6.7 1.6h11.8c.8 0 1.2-1 .7-1.6l-1.3-1.7c-.6-.7-.9-1.5-.9-2.4V8.2A4.4 4.4 0 0 0 12 3.8Z"/><path d="M10 17.2a2.2 2.2 0 0 0 4 0"/></svg>`,
+  stream: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3V9z"/></svg>`,
 };
 
 export async function MeView(root) {
@@ -48,6 +55,8 @@ export async function MeView(root) {
   const avatar = resolved.avatar;
   const email = resolved.email || user?.email || "";
   const initial = (name || email || "?").slice(0, 1).toUpperCase();
+  let activeProvider = getStreamProvider();
+  const providerMeta = () => getStreamProviderMeta(activeProvider);
 
   root.innerHTML = `
     <div class="me-page">
@@ -123,6 +132,14 @@ export async function MeView(root) {
             <span class="me-dest__label">Edit profile</span>
             <span class="me-dest__chev" aria-hidden="true">›</span>
           </button>
+          <button type="button" class="me-dest" id="me-settings-provider">
+            <span class="me-dest__icon">${ICONS.stream}</span>
+            <span class="me-dest__label">Server region</span>
+            <span class="me-dest__meta" id="me-provider-status">${escapeHtml(
+              providerMeta().label
+            )}</span>
+            <span class="me-dest__chev" aria-hidden="true">›</span>
+          </button>
           ${
             notificationsSupported()
               ? `<button type="button" class="me-dest" id="me-settings-notify">
@@ -180,6 +197,44 @@ export async function MeView(root) {
         </div>
       </div>
 
+      <div class="me-modal" id="provider-modal" hidden>
+        <div class="me-modal__backdrop" data-close-provider></div>
+        <div
+          class="me-modal__dialog me-modal__dialog--providers"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="provider-modal-title"
+        >
+          <h2 id="provider-modal-title">Server region</h2>
+          <p class="me-modal__lead">
+            Pick a region for Watch now. If a title won’t play, switch and try again.
+          </p>
+          <div class="me-provider-list" role="radiogroup" aria-label="Server regions">
+            ${STREAM_PROVIDERS.map(
+              (p) => `
+              <button
+                type="button"
+                class="me-provider-option${
+                  p.id === activeProvider ? " is-active" : ""
+                }"
+                role="radio"
+                aria-checked="${p.id === activeProvider ? "true" : "false"}"
+                data-provider="${escapeHtml(p.id)}"
+              >
+                <span class="me-provider-option__copy">
+                  <span class="me-provider-option__label">${escapeHtml(p.label)}</span>
+                  <span class="me-provider-option__hint">${escapeHtml(p.hint)}</span>
+                </span>
+                <span class="me-provider-option__check" aria-hidden="true"></span>
+              </button>`
+            ).join("")}
+          </div>
+          <div class="me-modal__actions me-modal__actions--single">
+            <button type="button" class="me-modal__btn" data-close-provider>Done</button>
+          </div>
+        </div>
+      </div>
+
       <div class="me-modal" id="signout-modal" hidden>
         <div class="me-modal__backdrop" data-close-signout></div>
         <div
@@ -204,15 +259,18 @@ export async function MeView(root) {
   `;
 
   const editProfileModal = root.querySelector("#edit-profile-modal");
+  const providerModal = root.querySelector("#provider-modal");
   const signOutModal = root.querySelector("#signout-modal");
   const nameInput = root.querySelector("#me-name-input");
   const nameError = root.querySelector("#me-name-error");
   const nameSave = root.querySelector("#me-name-save");
   const nameHeading = root.querySelector("#me-display-name");
+  const providerStatus = root.querySelector("#me-provider-status");
 
   const anyMeModalOpen = () =>
     Boolean(
       (editProfileModal && !editProfileModal.hidden) ||
+        (providerModal && !providerModal.hidden) ||
         (signOutModal && !signOutModal.hidden)
     );
 
@@ -266,8 +324,40 @@ export async function MeView(root) {
     }
   };
 
+  const syncProviderUi = () => {
+    const meta = providerMeta();
+    if (providerStatus) providerStatus.textContent = meta.label;
+    providerModal?.querySelectorAll("[data-provider]").forEach((btn) => {
+      const on = btn.getAttribute("data-provider") === activeProvider;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-checked", on ? "true" : "false");
+    });
+  };
+
+  const openProviderModal = () => {
+    activeProvider = getStreamProvider();
+    syncProviderUi();
+    providerModal.hidden = false;
+    document.body.classList.add("me-modal-open");
+  };
+
+  const closeProviderModal = () => {
+    providerModal.hidden = true;
+    if (!anyMeModalOpen()) document.body.classList.remove("me-modal-open");
+  };
+
   root.querySelector("#me-edit-profile")?.addEventListener("click", openEditProfile);
   root.querySelector("#me-settings-edit")?.addEventListener("click", openEditProfile);
+  root.querySelector("#me-settings-provider")?.addEventListener("click", openProviderModal);
+  providerModal?.querySelectorAll("[data-close-provider]").forEach((el) => {
+    el.addEventListener("click", closeProviderModal);
+  });
+  providerModal?.querySelectorAll("[data-provider]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeProvider = setStreamProvider(btn.getAttribute("data-provider"));
+      syncProviderUi();
+    });
+  });
   root.querySelector("#me-settings-notify")?.addEventListener("click", async () => {
     const statusEl = root.querySelector("#me-notify-status");
     const perm = await enableNotifications();
