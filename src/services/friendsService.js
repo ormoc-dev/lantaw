@@ -298,6 +298,17 @@ export async function listChatPreviews(friendshipIds = []) {
   if (!ids.length) return {};
 
   const user = await requireUser();
+
+  // One row per chat when the SQL function is installed.
+  const rpc = await getSupabase().rpc("friend_chat_previews", { ids });
+  if (!rpc.error && Array.isArray(rpc.data)) {
+    const map = {};
+    for (const m of rpc.data) {
+      if (m?.friendship_id) map[m.friendship_id] = m;
+    }
+    return map;
+  }
+
   const { data, error } = await getSupabase()
     .from("friend_messages")
     .select(

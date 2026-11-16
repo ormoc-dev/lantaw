@@ -990,12 +990,52 @@ export async function FriendsView(root) {
     syncChatLock();
   };
 
+  const INBOX_CACHE_KEY = "lantaw-friends-snapshot";
+
+  const readInboxSnapshot = () => {
+    try {
+      const raw = sessionStorage.getItem(INBOX_CACHE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data || data.userId !== me.id) return null;
+      if (Date.now() - Number(data.at || 0) > 30 * 60 * 1000) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeInboxSnapshot = () => {
+    try {
+      sessionStorage.setItem(
+        INBOX_CACHE_KEY,
+        JSON.stringify({
+          userId: me.id,
+          at: Date.now(),
+          friendships,
+          parties,
+          watchingByUser,
+          activity,
+          chatPreviews,
+        })
+      );
+    } catch {
+      /* private mode / quota */
+    }
+  };
+
   async function refreshData() {
-    friendships = await listFriendships();
+    const [nextFriends, nextParties, nextWatching, nextActivity] = await Promise.all([
+      listFriendships(),
+      listWatchParties().catch(() => parties),
+      listFriendsWatching().catch(() => watchingByUser),
+      getFriendsActivityCounts().catch(() => activity),
+    ]);
+    friendships = nextFriends;
     rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
-    parties = await listWatchParties();
-    watchingByUser = await listFriendsWatching().catch(() => watchingByUser);
-    activity = await getFriendsActivityCounts().catch(() => activity);
+    parties = nextParties;
+    watchingByUser = nextWatching;
+    activity = nextActivity;
   }
 
   async function renderPanel() {
@@ -1511,10 +1551,13 @@ export async function FriendsView(root) {
                   name="body"
                   id="chat-input"
                   rows="1"
-                  placeholder="Aa"
-                  autocomplete="off"
+                  placeholder="Message"
                   enterkeyhint="send"
                   inputmode="text"
+                  autocapitalize="sentences"
+                  autocorrect="on"
+                  spellcheck="true"
+                  autocomplete="on"
                   aria-label="Message"
                 ></textarea>
                 <button class="fp-chat__send" type="button" id="chat-send" aria-label="Send">
@@ -1629,7 +1672,7 @@ export async function FriendsView(root) {
             <div class="fp-chat__empty">
               ${presenceAvatarHtml(current.other, "fp-avatar--md")}
               <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
-              <p class="muted">You're friends on Cine. Say hi.</p>
+              <p class="muted">You're friends on LANTAW. Say hi.</p>
             </div>`;
           markChatRead(activeChatId);
           return;
@@ -2169,7 +2212,7 @@ export async function FriendsView(root) {
       threadPoll = setInterval(() => {
         if (sending) return;
         refreshThread().catch(() => {});
-      }, 1200);
+      }, 4000);
       unsubChat = () => {
         stopTypingPing();
         window.clearTimeout(typingHideTimer);
@@ -2220,8 +2263,6 @@ export async function FriendsView(root) {
       });
 
       let inputFocused = false;
-      let focusBaselineH = 0;
-      let kbPollTimer = null;
       let gifOpen = false;
       let gifTimer = 0;
       let gifReq = 0;
@@ -2312,45 +2353,6 @@ export async function FriendsView(root) {
         }
       };
 
-      const lockPageScroll = () => {
-        window.scrollTo(0, 0);
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
-        if (root.scrollTop) root.scrollTop = 0;
-      };
-
-      const keyboardInset = () => {
-        const vv = window.visualViewport;
-        let fromVv = 0;
-        if (vv) {
-          // Layout bottom → visual bottom (keyboard overlay)
-          fromVv = Math.max(
-            0,
-            Math.round(window.innerHeight - vv.offsetTop - vv.height)
-          );
-        }
-        let fromVk = 0;
-        try {
-          const rect = navigator.virtualKeyboard?.boundingRect;
-          if (rect && rect.height > 0 && rect.top < window.innerHeight - 8) {
-            fromVk = Math.round(Math.min(rect.height, window.innerHeight * 0.7));
-          }
-        } catch {
-          /* unsupported */
-        }
-        return Math.max(fromVv, fromVk);
-      };
-
-      try {
-        if (navigator.virtualKeyboard) {
-          navigator.virtualKeyboard.overlaysContent = true;
-        }
-      } catch {
-        /* unsupported */
-      }
-
-      clearChatViewport();
-
       const measureComposeH = () =>
         Math.ceil(
           composer?.getBoundingClientRect().height ||
@@ -2364,29 +2366,19 @@ export async function FriendsView(root) {
         root.style.removeProperty("--friends-chat-vh");
         root.style.removeProperty("transform");
         document.documentElement.style.removeProperty("--friends-kb-bottom");
-        form?.style.removeProperty("bottom");
-        composer?.style.removeProperty("bottom");
-        composer?.style.removeProperty("top");
-        composer?.style.removeProperty("left");
-        composer?.style.removeProperty("right");
-        composer?.style.removeProperty("width");
-        composer?.style.removeProperty("transform");
         if (composeSpacer) composeSpacer.hidden = true;
       };
 
+      clearChatViewport();
+
       const syncChatViewport = () => {
         const vv = window.visualViewport;
-        const layoutH = window.innerHeight;
-        const inset = keyboardInset();
         const split = window.matchMedia("(min-width: 768px)").matches;
-        const baseline = focusBaselineH || layoutH;
-        const shrinkFromFocus = vv
-          ? Math.max(0, Math.round(baseline - vv.height))
-          : 0;
-        // Real on-screen keyboard only. A hardware keyboard (desktop) does not
-        // shrink the viewport, so focus alone must not detach the composer.
-        const kbVisible = inset > 60 || (inputFocused && shrinkFromFocus > 100);
-        const kbMode = kbVisible;
+        const layoutH = window.innerHeight;
+        const visibleH = vv ? Math.round(vv.height) : layoutH;
+        const offsetTop = vv ? Math.round(vv.offsetTop) : 0;
+        const inset = Math.max(0, layoutH - offsetTop - visibleH);
+        const kbMode = inputFocused && (inset > 72 || visibleH < layoutH - 72);
 
         document.body.classList.toggle("is-friends-chat-kb", kbMode);
 
@@ -2396,76 +2388,23 @@ export async function FriendsView(root) {
           `${composeH}px`
         );
 
-        if (!kbMode) {
+        if (!kbMode || split) {
           clearComposerPin();
           return;
         }
 
-        const bottom = inset;
-        document.documentElement.style.setProperty(
-          "--friends-kb-bottom",
-          `${bottom}px`
-        );
-
-        if (vv) {
-          const chatVh = Math.max(220, Math.round(vv.height));
-          root.style.setProperty("--friends-chat-vh", `${chatVh}px`);
-          if (chatShell) {
-            chatShell.style.height = `${chatVh}px`;
-            chatShell.style.maxHeight = `${chatVh}px`;
-          }
-          const shift = Math.round(vv.offsetTop);
-          if (shift > 1) root.style.transform = `translateY(${shift}px)`;
-          else root.style.removeProperty("transform");
+        const chatVh = Math.max(220, visibleH);
+        root.style.setProperty("--friends-chat-vh", `${chatVh}px`);
+        if (chatShell) {
+          chatShell.style.height = `${chatVh}px`;
+          chatShell.style.maxHeight = `${chatVh}px`;
         }
+        if (offsetTop > 1) root.style.transform = `translateY(${offsetTop}px)`;
+        else root.style.removeProperty("transform");
 
-        if (split) {
-          // Tablet/desktop split: stay inside the thread column. The shortened
-          // shell lifts the bar with the keyboard instead of covering the list.
-          composer?.style.removeProperty("bottom");
-          composer?.style.removeProperty("top");
-          composer?.style.removeProperty("left");
-          composer?.style.removeProperty("right");
-          composer?.style.removeProperty("width");
-          composer?.style.removeProperty("transform");
-          if (composeSpacer) composeSpacer.hidden = true;
-        } else if (composer && vv) {
-          composer.style.setProperty("bottom", `${bottom}px`, "important");
-          composer.style.setProperty("top", "auto", "important");
-          composer.style.setProperty("left", "0px", "important");
-          composer.style.setProperty("right", "0px", "important");
-          composer.style.setProperty("width", "100%", "important");
-          if (composeSpacer) composeSpacer.hidden = false;
-          // Measure against the visual viewport and nudge once. Fixed bars
-          // sit under the keypad on some phones until this correction.
-          const prev = composer.style.transform;
-          composer.style.transform = "none";
-          const rect = composer.getBoundingClientRect();
-          const visualBottom = vv.offsetTop + vv.height;
-          const delta = Math.round(rect.bottom - visualBottom);
-          const next =
-            Math.abs(delta) > 3 ? `translateY(${-delta}px)` : "none";
-          if (prev !== next) composer.style.transform = next;
-        }
-
-        // Don't yank the page back to 0 on touch — that pins the field under the keypad.
-        if (split) lockPageScroll();
         requestAnimationFrame(() => {
-          box.scrollTop = box.scrollHeight;
+          if (box) box.scrollTop = box.scrollHeight;
         });
-      };
-
-      const startKbPoll = () => {
-        clearInterval(kbPollTimer);
-        let ticks = 0;
-        kbPollTimer = setInterval(() => {
-          syncChatViewport();
-          ticks += 1;
-          if (ticks >= 50 || (!inputFocused && keyboardInset() < 24)) {
-            clearInterval(kbPollTimer);
-            kbPollTimer = null;
-          }
-        }, 50);
       };
 
       syncChatViewport();
@@ -2473,8 +2412,6 @@ export async function FriendsView(root) {
       window.visualViewport?.addEventListener("scroll", syncChatViewport);
       window.addEventListener("resize", syncChatViewport);
       unsubChatVv = () => {
-        clearInterval(kbPollTimer);
-        kbPollTimer = null;
         window.visualViewport?.removeEventListener("resize", syncChatViewport);
         window.visualViewport?.removeEventListener("scroll", syncChatViewport);
         window.removeEventListener("resize", syncChatViewport);
@@ -2606,37 +2543,48 @@ export async function FriendsView(root) {
         sendChat();
       });
 
+      let allowLineBreak = false;
+
       input?.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          sendChat();
+        if (e.isComposing || e.key === "Process" || e.keyCode === 229) return;
+        if (e.key !== "Enter") return;
+        if (e.shiftKey) {
+          allowLineBreak = true;
+          return;
         }
+        e.preventDefault();
+        sendChat();
+      });
+
+      input?.addEventListener("beforeinput", (e) => {
+        if (e.isComposing || e.inputType !== "insertLineBreak") return;
+        if (allowLineBreak) {
+          allowLineBreak = false;
+          return;
+        }
+        e.preventDefault();
+        sendChat();
       });
 
       input?.addEventListener("focus", () => {
         inputFocused = true;
-        const vv = window.visualViewport;
-        focusBaselineH = Math.round(vv?.height || window.innerHeight);
         syncChatViewport();
-        startKbPoll();
-        [60, 140, 260, 420, 650, 900].forEach((ms) => {
+        [80, 220, 420].forEach((ms) => {
           setTimeout(() => {
             if (!inputFocused) return;
             syncChatViewport();
-            lockPageScroll();
-            box.scrollTop = box.scrollHeight;
+            if (box) box.scrollTop = box.scrollHeight;
           }, ms);
         });
       });
 
       input?.addEventListener("blur", () => {
         inputFocused = false;
-        focusBaselineH = 0;
         stopTypingPing();
         setTimeout(() => {
           if (inputFocused) return;
           syncChatViewport();
-        }, 160);
+        }, 80);
       });
 
       return;
@@ -3227,6 +3175,7 @@ export async function FriendsView(root) {
         await refreshChatPreviews();
         paintInboxList();
       }
+      writeInboxSnapshot();
     } finally {
       liveBusy = false;
       if (liveQueued) {
@@ -3249,12 +3198,53 @@ export async function FriendsView(root) {
     }, delay);
   }
 
+  const inboxSnapshot = readInboxSnapshot();
+  if (inboxSnapshot) {
+    friendships = Array.isArray(inboxSnapshot.friendships)
+      ? inboxSnapshot.friendships
+      : [];
+    parties = Array.isArray(inboxSnapshot.parties) ? inboxSnapshot.parties : [];
+    watchingByUser = inboxSnapshot.watchingByUser || {};
+    activity = inboxSnapshot.activity || activity;
+    chatPreviews = inboxSnapshot.chatPreviews || {};
+    rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
+  }
+
   renderShell();
+  if (inboxSnapshot) {
+    await renderPanel();
+    syncPresenceUi();
+  }
+
   try {
-    await refreshData();
-    // Warm preview cache before first paint so inbox doesn't flash "loading"
-    await refreshChatPreviews();
-    renderShell();
+    // Friend list first so chats can paint. Parties / watching / badges run beside it.
+    const partiesP = listWatchParties().catch(() => parties);
+    const watchP = listFriendsWatching().catch(() => watchingByUser);
+    const activityP = getFriendsActivityCounts().catch(() => activity);
+    friendships = await listFriendships();
+    rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
+    const previewsP = refreshChatPreviews();
+    if (!inboxSnapshot) {
+      renderShell();
+      await renderPanel();
+    }
+    const [nextParties, nextWatching, nextActivity] = await Promise.all([
+      partiesP,
+      watchP,
+      activityP,
+      previewsP,
+    ]);
+    parties = nextParties;
+    watchingByUser = nextWatching;
+    activity = nextActivity;
+    writeInboxSnapshot();
+    if (tab === "chat" && !activeChatId) {
+      paintInboxList();
+      syncTabBadgesOnly();
+    } else {
+      renderShell();
+      await renderPanel();
+    }
   } catch (err) {
     page.querySelector("#friends-panel").innerHTML = `
       ${emptyState("Couldn’t load Friends", err.message)}
