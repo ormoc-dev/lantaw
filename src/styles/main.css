@@ -4764,10 +4764,17 @@ body.me-modal-open {
   -webkit-backdrop-filter: blur(6px);
 }
 
-#edit-profile-modal .me-modal__backdrop {
+#edit-profile-modal .me-modal__backdrop,
+#signout-modal .me-modal__backdrop {
   background: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+#signout-modal .me-modal__dialog {
+  background: none;
+  border: 0;
+  box-shadow: none;
 }
 
 .me-modal__dialog {
@@ -11264,6 +11271,95 @@ body.has-mobile-nav #view:has(.detail) {
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.detail__comment-thread {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.detail__comment-replies {
+  display: grid;
+  gap: 0.75rem;
+  margin-left: 3.25rem;
+}
+
+.detail__comment--reply .detail__comment-avatar {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.72rem;
+}
+
+.detail__comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: 0.15rem;
+}
+
+.detail__comment-like,
+.detail__comment-reply {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.detail__comment-like svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.detail__comment-like.is-liked {
+  color: var(--accent-strong, #ff4d6d);
+}
+
+.detail__comment-like:hover,
+.detail__comment-like:focus-visible,
+.detail__comment-reply:hover,
+.detail__comment-reply:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.detail__comment-reply-form {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.detail__comment-reply-form textarea {
+  width: 100%;
+  min-height: 2.6rem;
+  resize: vertical;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.35rem 0;
+}
+
+.detail__comment-reply-form textarea:focus {
+  outline: none;
+  border-bottom-color: var(--text);
+}
+
+.detail__comment-reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
 }
 
 .detail__comment-delete {

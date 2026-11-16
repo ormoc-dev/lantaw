@@ -439,7 +439,24 @@ export async function ShortsView(root) {
     document.body.classList.remove("is-shorts");
   }
 
-  return { unmount };
+  return {
+    unmount,
+    suspend() {
+      if (activeReel) stopReel(activeReel);
+      root.classList.remove("view--shorts");
+      document.body.classList.remove("is-shorts");
+    },
+    resume() {
+      if (unmounted) return;
+      root.classList.add("view--shorts");
+      document.body.classList.add("is-shorts");
+      syncReelHeights();
+      const reel =
+        feed.querySelector(".shorts-reel.is-playing") ||
+        feed.querySelector(".shorts-reel");
+      if (reel) playReel(reel);
+    },
+  };
 }
 
 function truncate(str = "", n = 100) {

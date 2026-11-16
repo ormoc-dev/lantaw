@@ -3265,6 +3265,15 @@ export async function FriendsView(root) {
       <p class="muted">Run migrations <code>202603260003_friends_chat_watch.sql</code> and <code>202603260005_friends_realtime.sql</code> in Supabase.</p>
     `;
     return {
+      suspend() {
+        page.querySelector("textarea")?.blur();
+        clearChatViewport();
+        root.classList.remove("view--friends-chat");
+        document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
+      },
+      resume() {
+        syncChatLock();
+      },
       unmount() {
         clearTimeout(liveTimer);
         unsubChat?.();
@@ -3291,6 +3300,15 @@ export async function FriendsView(root) {
   const lastSeenTick = window.setInterval(() => syncPresenceUi(), 60_000);
 
   return {
+    suspend() {
+      page.querySelector("textarea")?.blur();
+      clearChatViewport();
+      root.classList.remove("view--friends-chat");
+      document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
+    },
+    resume() {
+      syncChatLock();
+    },
     unmount() {
       clearTimeout(liveTimer);
       clearInterval(lastSeenTick);

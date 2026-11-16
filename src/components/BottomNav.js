@@ -147,6 +147,15 @@ export function createBottomNav() {
     }
   }
 
+  wrap.addEventListener("click", (event) => {
+    const link = event.target.closest?.("a.bottom-nav__item");
+    if (!link || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    wrap.querySelectorAll(".bottom-nav__item").forEach((el) => {
+      el.classList.toggle("is-active", el === link);
+    });
+  });
+
   sync();
   window.addEventListener("hashchange", sync);
   window.addEventListener(FRIENDS_BADGE_EVENT, paintFriendsBadge);

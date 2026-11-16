@@ -10,6 +10,16 @@ let current = null;
 let outlet = null;
 let renderToken = 0;
 let authKickTimer = null;
+let navChain = Promise.resolve();
+let activePath = null;
+let sessionKnown = false;
+let sessionCache = null;
+
+const TAB_PATHS = new Set(["/", "/shorts", "/rankings", "/friends", "/me"]);
+const keptTabs = new Map();
+const keepHost = document.createElement("div");
+keepHost.hidden = true;
+keepHost.setAttribute("aria-hidden", "true");
 
 const PUBLIC_PATHS = new Set(["/login", "/privacy"]);
 const RETURN_KEY = "lantaw-return-path";
@@ -51,8 +61,73 @@ export function consumeReturnPath() {
   return takeReturnPath();
 }
 
+function onHashLinkClick(event) {
+  if (event.defaultPrevented || event.button !== 0) return;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const anchor = event.target?.closest?.("a[href]");
+  if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+  const href = anchor.getAttribute("href") || "";
+  if (!href.startsWith("#")) return;
+  event.preventDefault();
+  const nextPath = (href.slice(1) || "/").split("?")[0] || "/";
+  if (nextPath === currentPath()) return;
+  if (location.hash !== href) location.hash = href;
+}
+
+function dropKeptTabs() {
+  for (const saved of keptTabs.values()) {
+    try {
+      saved.handle?.unmount?.();
+    } catch {
+      /* ignore */
+    }
+    saved.box.remove();
+  }
+  keptTabs.clear();
+}
+
+function parkActiveTab() {
+  if (!activePath || !TAB_PATHS.has(activePath) || !current || !outlet) return false;
+  try {
+    current.suspend?.();
+  } catch {
+    /* ignore */
+  }
+  const box = document.createElement("div");
+  const scroll = window.scrollY || document.documentElement.scrollTop || 0;
+  while (outlet.firstChild) box.appendChild(outlet.firstChild);
+  keepHost.appendChild(box);
+  keptTabs.set(activePath, { box, handle: current, scroll });
+  current = null;
+  activePath = null;
+  return true;
+}
+
+function restoreTab(pathname) {
+  const saved = keptTabs.get(pathname);
+  if (!saved || !outlet) return false;
+  outlet.classList.remove("view--shorts", "view--friends-chat");
+  outlet.innerHTML = "";
+  while (saved.box.firstChild) outlet.appendChild(saved.box.firstChild);
+  saved.box.remove();
+  keptTabs.delete(pathname);
+  current = saved.handle;
+  activePath = pathname;
+  try {
+    current.resume?.();
+  } catch {
+    /* ignore */
+  }
+  requestAnimationFrame(() => window.scrollTo(0, saved.scroll || 0));
+  return true;
+}
+
 export function createRouter(rootEl) {
   outlet = rootEl;
+  if (outlet.parentElement && !keepHost.isConnected) {
+    outlet.parentElement.appendChild(keepHost);
+  }
+  document.addEventListener("click", onHashLinkClick, true);
 
   window.addEventListener("hashchange", () => {
     const path = currentPath();
@@ -71,6 +146,8 @@ export function createRouter(rootEl) {
   };
 
   onAuthChange((session, event) => {
+    sessionCache = session || null;
+    sessionKnown = true;
     // These must not remount the page — remounting kills watch-party / stream iframes
     if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") return;
 
@@ -182,19 +259,51 @@ function matchRoute(pathname) {
   return null;
 }
 
-async function show(viewFn, params = {}, token) {
+async function show(viewFn, params = {}, token, pathname) {
   if (!outlet || !viewFn) return;
+  if (token !== renderToken) return;
 
-  if (current?.unmount) {
+  if (pathname === "/login") {
+    dropKeptTabs();
+    if (current) {
+      try {
+        current.unmount?.();
+      } catch {
+        /* ignore */
+      }
+      current = null;
+    }
+    activePath = null;
+    outlet.innerHTML = "";
+  }
+
+  if (activePath && activePath !== pathname) {
+    if (!parkActiveTab() && current) {
+      try {
+        current.unmount?.();
+      } catch {
+        /* ignore */
+      }
+      current = null;
+      outlet.innerHTML = "";
+    }
+  } else if (activePath === pathname && current) {
     try {
-      current.unmount();
-    } catch (_) {
+      current.unmount?.();
+    } catch {
       /* ignore */
     }
+    current = null;
+    outlet.innerHTML = "";
+    activePath = null;
   }
 
   if (token !== renderToken) return;
 
+  if (TAB_PATHS.has(pathname) && restoreTab(pathname)) return;
+
+  outlet.classList.remove("view--shorts", "view--friends-chat");
+  document.body.classList.remove("is-shorts", "is-friends-chat", "is-friends-chat-kb");
   outlet.innerHTML = "";
   const next = await viewFn(outlet, params);
 
@@ -209,29 +318,45 @@ async function show(viewFn, params = {}, token) {
   }
 
   current = next;
+  activePath = pathname;
 }
 
-async function render() {
+function render() {
   const token = ++renderToken;
+  navChain = navChain
+    .catch(() => {})
+    .then(() => renderNow(token));
+}
+
+async function renderNow(token) {
+  if (token !== renderToken) return;
   const pathname = currentPath();
   let session = null;
 
-  try {
-    session = await getSession();
-  } catch (_) {
-    session = null;
+  if (sessionKnown) {
+    session = sessionCache;
+  } else {
+    try {
+      session = await getSession();
+    } catch (_) {
+      session = null;
+    }
+    if (token !== renderToken) return;
+    sessionCache = session;
+    sessionKnown = true;
   }
 
   if (token !== renderToken) return;
 
   if (!session && !PUBLIC_PATHS.has(pathname)) {
+    dropKeptTabs();
     rememberReturnPath(pathname);
     if (location.hash !== "#/login") {
       location.hash = "#/login";
       return;
     }
     const login = matchRoute("/login");
-    await show(login?.route.viewFn, {}, token);
+    await show(login?.route.viewFn, {}, token, "/login");
     return;
   }
 
@@ -251,7 +376,7 @@ async function render() {
   if (!matched) return;
   if (token !== renderToken) return;
 
-  await show(matched.route.viewFn, matched.params, token);
+  await show(matched.route.viewFn, matched.params, token, pathname);
 }
 
 export function linkTo(path) {

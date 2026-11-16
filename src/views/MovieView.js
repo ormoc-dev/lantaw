@@ -11,6 +11,7 @@ import {
   addTitleComment,
   deleteTitleComment,
   listTitleComments,
+  toggleTitleCommentLike,
 } from "../services/commentService.js";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
@@ -710,6 +711,7 @@ async function renderMediaDetail(root, params, mediaType) {
     const commentsCount = root.querySelector("#comments-count");
     let comments = [];
     let meId = null;
+    let replyToId = null;
 
     const formatCommentTime = (iso) => {
       const t = new Date(iso).getTime();
@@ -737,51 +739,105 @@ async function renderMediaDetail(root, params, mediaType) {
       )}</span>`;
     };
 
+    const commentCard = (c, { reply = false } = {}) => {
+      const name = c.author_name || "Fan";
+      const mine = meId && c.user_id === meId;
+      const liked = Boolean(c.liked);
+      const likes = Number(c.like_count) || 0;
+      const replyForm =
+        !reply && replyToId === c.id
+          ? `<form class="detail__comment-reply-form" data-reply-form="${escapeAttr(c.id)}">
+              <textarea rows="2" maxlength="1000" placeholder="Write a reply…" aria-label="Reply" required></textarea>
+              <div class="detail__comment-reply-actions">
+                <button type="button" class="detail__comments-cancel" data-reply-cancel>Cancel</button>
+                <button type="submit" class="detail__comments-submit">Reply</button>
+              </div>
+            </form>`
+          : "";
+      return `
+        <article class="detail__comment${reply ? " detail__comment--reply" : ""}" data-comment-id="${escapeAttr(c.id)}">
+          ${avatarHtml(name, c.author_avatar)}
+          <div class="detail__comment-body">
+            <div class="detail__comment-top">
+              <div class="detail__comment-meta">
+                <strong>${escapeHtml(name)}</strong>
+                <time datetime="${escapeAttr(c.created_at)}">${escapeHtml(
+                  formatCommentTime(c.created_at)
+                )}</time>
+              </div>
+              ${
+                mine
+                  ? `<button
+                      type="button"
+                      class="detail__comment-delete"
+                      data-delete-comment="${escapeAttr(c.id)}"
+                      aria-label="Delete comment"
+                      title="Delete"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                      </svg>
+                    </button>`
+                  : ""
+              }
+            </div>
+            <p>${escapeHtml(c.body)}</p>
+            <div class="detail__comment-actions">
+              <button
+                type="button"
+                class="detail__comment-like${liked ? " is-liked" : ""}"
+                data-like-comment="${escapeAttr(c.id)}"
+                aria-pressed="${liked ? "true" : "false"}"
+                aria-label="${liked ? "Unlike" : "Like"}"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20s-7-4.4-7-9.1C5 8 6.8 6.2 9.2 6.2c1.3 0 2.4.6 2.8 1.6.4-1 1.5-1.6 2.8-1.6C17.2 6.2 19 8 19 10.9 19 15.6 12 20 12 20Z" fill="${liked ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                </svg>
+                <span>${likes ? escapeHtml(String(likes)) : "Like"}</span>
+              </button>
+              <button type="button" class="detail__comment-reply" data-reply-comment="${escapeAttr(
+                reply ? c.parent_id || c.id : c.id
+              )}">Reply</button>
+            </div>
+            ${replyForm}
+          </div>
+        </article>`;
+    };
+
     const renderComments = () => {
+      const roots = comments.filter((c) => !c.parent_id);
+      const repliesOf = (parentId) =>
+        comments
+          .filter((c) => c.parent_id === parentId)
+          .slice()
+          .sort(
+            (a, b) =>
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
       if (commentsCount) {
         const n = comments.length;
         commentsCount.textContent = n === 1 ? "1 Comment" : `${n} Comments`;
       }
       if (!commentsList) return;
-      if (!comments.length) {
+      if (!roots.length) {
         commentsList.innerHTML = `
           <p class="detail__comments-empty">No comments yet. Be the first.</p>`;
         return;
       }
-      commentsList.innerHTML = comments
+      commentsList.innerHTML = roots
         .map((c) => {
-          const name = c.author_name || "Fan";
-          const mine = meId && c.user_id === meId;
+          const replies = repliesOf(c.id);
           return `
-            <article class="detail__comment" data-comment-id="${escapeAttr(c.id)}">
-              ${avatarHtml(name, c.author_avatar)}
-              <div class="detail__comment-body">
-                <div class="detail__comment-top">
-                  <div class="detail__comment-meta">
-                    <strong>${escapeHtml(name)}</strong>
-                    <time datetime="${escapeAttr(c.created_at)}">${escapeHtml(
-                      formatCommentTime(c.created_at)
-                    )}</time>
-                  </div>
-                  ${
-                    mine
-                      ? `<button
-                          type="button"
-                          class="detail__comment-delete"
-                          data-delete-comment="${escapeAttr(c.id)}"
-                          aria-label="Delete comment"
-                          title="Delete"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-                          </svg>
-                        </button>`
-                      : ""
-                  }
-                </div>
-                <p>${escapeHtml(c.body)}</p>
-              </div>
-            </article>`;
+            <div class="detail__comment-thread">
+              ${commentCard(c)}
+              ${
+                replies.length
+                  ? `<div class="detail__comment-replies">${replies
+                      .map((reply) => commentCard(reply, { reply: true }))
+                      .join("")}</div>`
+                  : ""
+              }
+            </div>`;
         })
         .join("");
     };
@@ -882,7 +938,59 @@ async function renderMediaDetail(root, params, mediaType) {
       });
     };
 
+    const requireCommentUser = () => {
+      if (meId) return true;
+      location.hash = linkTo("/login");
+      return false;
+    };
+
     commentsList?.addEventListener("click", async (e) => {
+      const likeBtn = e.target.closest("[data-like-comment]");
+      if (likeBtn) {
+        if (!requireCommentUser()) return;
+        const commentId = likeBtn.getAttribute("data-like-comment");
+        const current = comments.find((c) => c.id === commentId);
+        if (!current || likeBtn.disabled) return;
+        const wasLiked = Boolean(current.liked);
+        likeBtn.disabled = true;
+        current.liked = !wasLiked;
+        current.like_count = Math.max(
+          0,
+          (Number(current.like_count) || 0) + (wasLiked ? -1 : 1)
+        );
+        renderComments();
+        try {
+          const next = await toggleTitleCommentLike(commentId, wasLiked);
+          current.liked = next;
+          renderComments();
+        } catch (err) {
+          current.liked = wasLiked;
+          current.like_count = Math.max(
+            0,
+            (Number(current.like_count) || 0) + (wasLiked ? 1 : -1)
+          );
+          renderComments();
+          alert(err.message || "Could not update like");
+        }
+        return;
+      }
+
+      const replyBtn = e.target.closest("[data-reply-comment]");
+      if (replyBtn) {
+        if (!requireCommentUser()) return;
+        const parentId = replyBtn.getAttribute("data-reply-comment");
+        replyToId = replyToId === parentId ? null : parentId;
+        renderComments();
+        commentsList.querySelector("[data-reply-form] textarea")?.focus();
+        return;
+      }
+
+      if (e.target.closest("[data-reply-cancel]")) {
+        replyToId = null;
+        renderComments();
+        return;
+      }
+
       const btn = e.target.closest("[data-delete-comment]");
       if (!btn) return;
       const commentId = btn.getAttribute("data-delete-comment");
@@ -890,11 +998,41 @@ async function renderMediaDetail(root, params, mediaType) {
       btn.disabled = true;
       try {
         await deleteTitleComment(commentId);
-        comments = comments.filter((c) => c.id !== commentId);
+        comments = comments.filter(
+          (c) => c.id !== commentId && c.parent_id !== commentId
+        );
+        if (replyToId === commentId) replyToId = null;
         renderComments();
       } catch (err) {
         btn.disabled = false;
         alert(err.message || "Could not delete");
+      }
+    });
+
+    commentsList?.addEventListener("submit", async (e) => {
+      const form = e.target.closest("[data-reply-form]");
+      if (!form) return;
+      e.preventDefault();
+      if (!requireCommentUser()) return;
+      const parentId = form.getAttribute("data-reply-form");
+      const input = form.querySelector("textarea");
+      const text = String(input?.value || "").trim();
+      if (!text || !parentId) return;
+      const sendBtn = form.querySelector("[type='submit']");
+      if (sendBtn) sendBtn.disabled = true;
+      try {
+        const created = await addTitleComment(
+          Number(id),
+          mediaType,
+          text,
+          parentId
+        );
+        comments = [...comments, created];
+        replyToId = null;
+        renderComments();
+      } catch (err) {
+        if (sendBtn) sendBtn.disabled = false;
+        alert(err.message || "Could not reply");
       }
     });
 
