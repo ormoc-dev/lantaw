@@ -614,7 +614,15 @@ export async function listWatchParties() {
     .limit(40);
 
   if (error) throw error;
-  return data || [];
+  const rows = data || [];
+  const profiles = await profilesByIds(
+    rows.flatMap((p) => [p.host_id, p.guest_id])
+  );
+  return rows.map((p) => ({
+    ...p,
+    host: profiles[p.host_id] || null,
+    guest: profiles[p.guest_id] || null,
+  }));
 }
 
 export async function updateWatchPartyStatus(partyId, status) {
@@ -1056,6 +1064,11 @@ export function subscribeFriendsRealtime(onChange, opts = {}) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "watch_parties" },
+        (payload) => emit(payload)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "watching_now" },
         (payload) => emit(payload)
       )
       .on(

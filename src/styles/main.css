@@ -242,8 +242,8 @@ body:has(#view.view--auth) .app-shell {
 
   .friends-page:not(.friends-page--chat) .fp-panel {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-    gap: 1.15rem 1.25rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.15rem;
     align-items: start;
   }
 
@@ -288,16 +288,18 @@ body:has(#view.view--auth) .app-shell {
     background: transparent;
   }
 
-  .friends-page:not(.friends-page--chat) #friends-section {
-    grid-column: 1;
+  .friends-page:not(.friends-page--chat) #requests-section,
+  .friends-page:not(.friends-page--chat) #friends-section,
+  .friends-page:not(.friends-page--chat) .fp-suggest-block {
+    grid-column: 1 / -1;
   }
 
   .friends-page:not(.friends-page--chat) #requests-section {
-    grid-column: 2;
+    margin-top: 0.25rem;
   }
 
-  .friends-page:not(.friends-page--chat) .fp-suggest-block {
-    grid-column: 1 / -1;
+  .friends-page:not(.friends-page--chat) #friends-section {
+    margin-top: 0.35rem;
   }
 
   .friends-page:not(.friends-page--chat) .fp-block h2,
@@ -341,8 +343,7 @@ body:has(#view.view--auth) .app-shell {
 
 @media (min-width: 1100px) {
   .friends-page:not(.friends-page--chat) .fp-panel {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr);
-    gap: 1.35rem 1.5rem;
+    gap: 1.35rem;
   }
 
   .friends-page:not(.friends-page--chat) .fp-find {
@@ -1415,6 +1416,39 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   background: var(--accent);
 }
 
+a.fp-convo__watching {
+  text-decoration: none;
+}
+
+.fp-watching-inline {
+  font-style: normal;
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.fp-row.is-watching {
+  align-items: flex-start;
+}
+
+.fp-row__watching {
+  display: inline-block;
+  margin-top: 0.15rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.fp-row__watching:hover,
+.fp-row__watching:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
 .fp-convo__meta {
   min-width: 0;
   display: grid;
@@ -1546,10 +1580,22 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   line-height: 1.2;
 }
 
-.fp-chat__head-text .fp-presence-label {
+.fp-chat__head-text .fp-presence-label,
+.fp-chat__head-text .fp-watching-inline {
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.fp-chat__watching-link {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fff;
+  text-decoration: none;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent);
 }
 
 .fp-chat__head-actions {
@@ -8232,6 +8278,20 @@ body.is-halloween .home-sticky__mark::after {
   opacity: 0;
   transform: scale(1.02);
   pointer-events: none;
+}
+
+.stream-shield--ghost {
+  gap: 0.2rem;
+  background:
+    linear-gradient(180deg, rgba(8, 4, 6, 0.2), rgba(8, 4, 6, 0.78)),
+    rgba(8, 4, 6, 0.35);
+}
+
+.stream-shield__ghost-label {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .stream-shield__pulse {

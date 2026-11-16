@@ -216,14 +216,15 @@ export function buildStreamUrl({
 }
 
 function iframeAttrs(streamUrl, { deferSrc = false, provider = getStreamProvider() } = {}) {
-  // No allow-popups — block third-party pop-unders. First-click shield in streamGuard.
-  // deferSrc: keep about:blank until the user taps Sync / unlock (no media fetch yet).
+  // No allow-popups / allow-top-navigation — blocks tab pop-unders from the embed.
+  // deferSrc: keep about:blank until unlock so Watch now's user-gesture can't chain ads.
   const srcAttr = deferSrc
-    ? `src="about:blank" data-src="${streamUrl}"`
-    : `src="${streamUrl}"`;
+    ? `src="about:blank" data-src="${escapeAttr(streamUrl)}"`
+    : `src="${escapeAttr(streamUrl)}"`;
   const allowSandbox = getStreamProviderMeta(provider).allowSandbox;
+  // Intentionally omit allow-popups and allow-top-navigation*.
   const sandboxAttr = allowSandbox
-    ? `sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"`
+    ? `sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"`
     : "";
   return `
           id="stream-iframe"
@@ -231,10 +232,20 @@ function iframeAttrs(streamUrl, { deferSrc = false, provider = getStreamProvider
           title="Streaming player"
           frameborder="0"
           style="border: 0; border-radius: 12px;"
+          referrerpolicy="no-referrer"
           allow="autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
           allowfullscreen
           ${sandboxAttr}
   `.trim();
+}
+
+function escapeAttr(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function episodeCountForSeason(movie, seasonNum) {
@@ -391,7 +402,7 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
 
   const loadEpisode = (season, episode) => {
     if (iframe) {
-      iframe.src = buildStreamUrl({
+      const nextUrl = buildStreamUrl({
         mediaType,
         tmdbId: movie.id,
         season,
@@ -399,6 +410,11 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
         autoplay,
         provider,
       });
+      iframe.removeAttribute("data-src");
+      iframe.src = "about:blank";
+      window.setTimeout(() => {
+        if (iframe.isConnected) iframe.src = nextUrl;
+      }, 0);
     }
     onReload?.();
     onEpisodeChange?.({ season, episode });

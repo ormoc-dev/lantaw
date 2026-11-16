@@ -89,6 +89,10 @@ export function closeMiniPlayer() {
   document.getElementById("mini-player")?.remove();
   current = null;
   pendingExpandKey = "";
+  // Closing the corner player means you're no longer watching.
+  import("../services/watchingService.js")
+    .then((m) => m.clearWatchingNow())
+    .catch(() => {});
 }
 
 export function consumeMiniExpand(key) {

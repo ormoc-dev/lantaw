@@ -30,6 +30,10 @@ import {
   dockMiniPlayer,
   takeMiniPlayer,
 } from "../lib/miniPlayer.js?v=156";
+import {
+  clearWatchingNow,
+  publishWatchingNow,
+} from "../services/watchingService.js";
 
 const SERVER_SWITCH_LOADING_MS = 12_000;
 
@@ -296,6 +300,7 @@ async function renderMediaDetail(root, params, mediaType) {
       const iframe = player.querySelector("#stream-iframe");
       if (iframe) iframe.src = "about:blank";
       closeMiniPlayer();
+      clearWatchingNow().catch(() => {});
       cleanupStreamGuard();
       cleanupStreamGuard = () => {};
       player.hidden = true;
@@ -339,17 +344,19 @@ async function renderMediaDetail(root, params, mediaType) {
       }
     };
 
-    const mountStreamGuard = () => {
+    const mountStreamGuard = ({ alreadyPlaying = false } = {}) => {
       cleanupStreamGuard();
-      // Watch now is already a user gesture — skip the "Tap to play" overlay.
-      // Skip the frame ← exit too; the bottom Close button is clearer.
-      // Still block window.open from embed popups.
+      // Quiet first-tap catcher + deferred src (see streamGuard) — blocks the
+      // common "Watch now → embed opens a tab" popup chain. Close stays below.
       cleanupStreamGuard = attachStreamAdGuard(
         player.querySelector(".detail__player-frame--embed"),
         {
           onSafeExit: minimizeFromBack,
           skipShield: true,
+          ghostShield: !alreadyPlaying,
           showExit: false,
+          shieldLabel: "Tap to start",
+          shieldHint: "Stops pop-up ads",
         }
       );
     };
@@ -488,11 +495,12 @@ async function renderMediaDetail(root, params, mediaType) {
         if (allowSandbox) {
           iframe.setAttribute(
             "sandbox",
-            "allow-scripts allow-same-origin allow-forms allow-presentation"
+            "allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"
           );
         } else {
           iframe.removeAttribute("sandbox");
         }
+        iframe.setAttribute("referrerpolicy", "no-referrer");
         iframe.setAttribute(
           "allow",
           "autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
@@ -512,7 +520,7 @@ async function renderMediaDetail(root, params, mediaType) {
         serverSwitchTimer = window.setTimeout(() => {
           clearServerSwitchLoading();
         }, SERVER_SWITCH_LOADING_MS);
-        iframe.src = buildStreamUrl({
+        const nextUrl = buildStreamUrl({
           mediaType,
           tmdbId: movie.id,
           season,
@@ -520,11 +528,16 @@ async function renderMediaDetail(root, params, mediaType) {
           provider: next,
           autoplay: true,
         });
+        // Break user-gesture chaining from the server-switch click.
+        iframe.src = "about:blank";
+        window.setTimeout(() => {
+          if (iframe.isConnected) iframe.src = nextUrl;
+        }, 0);
       } else {
         clearServerSwitchLoading();
       }
       syncPlayerProviderUi();
-      mountStreamGuard();
+      mountStreamGuard({ alreadyPlaying: false });
     };
 
     const bindPlayerProviderModal = () => {
@@ -597,17 +610,28 @@ async function renderMediaDetail(root, params, mediaType) {
       const reused = takeMiniPlayer(streamKey);
       if (!reused) closeMiniPlayer();
       showPlayer(
-        renderStreamPlayer(movie, mediaType),
+        renderStreamPlayer(movie, mediaType, {
+          // Fresh loads stay blank until the ghost shield tap (blocks popup chain).
+          deferSrc: !reused,
+          autoplay: true,
+        }),
         () => {
           if (reused) {
             const slot = player.querySelector("#stream-iframe");
             reused.id = "stream-iframe";
             slot?.replaceWith(reused);
           }
-          mountStreamGuard();
+          mountStreamGuard({ alreadyPlaying: Boolean(reused) });
           bindStreamControls(player, movie, mediaType, {
-            onReload: () => mountStreamGuard(),
+            onReload: () => mountStreamGuard({ alreadyPlaying: false }),
+            autoplay: true,
           });
+          publishWatchingNow({
+            mediaType,
+            tmdbId: Number(id),
+            title: movie.title || "Untitled",
+            poster: movie.poster || null,
+          }).catch(() => {});
         },
         { allowProviderSwitch: true }
       );

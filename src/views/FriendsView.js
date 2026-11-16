@@ -34,6 +34,10 @@ import {
   rememberLastSeen,
   startPresence,
 } from "../services/presenceService.js";
+import {
+  listFriendsWatching,
+  watchingTitlePath,
+} from "../services/watchingService.js";
 import { startVideoCall } from "../services/callService.js";
 import { showConfirm, showNotice } from "../lib/appModal.js";
 import { loadingHtml } from "../components/Loading.js";
@@ -115,6 +119,8 @@ export async function FriendsView(root) {
   }
   let friendships = [];
   let parties = [];
+  /** @type {Record<string, object>} */
+  let watchingByUser = {};
   let activity = { requests: 0, chats: 0, invites: 0, chatIds: [] };
   let chatPreviews = {};
 
@@ -301,12 +307,17 @@ export async function FriendsView(root) {
         (p.status === "active" || p.status === "invited")
     ) || null;
 
+  const soloWatchingFor = (userId) =>
+    (userId && watchingByUser[userId]) || null;
+
   const sortedInboxFriends = (accepted, previews = chatPreviews) =>
     [...accepted].sort((a, b) => {
       const wa = watchingPartyFor(a.id);
       const wb = watchingPartyFor(b.id);
-      const waRank = wa?.status === "active" ? 2 : wa ? 1 : 0;
-      const wbRank = wb?.status === "active" ? 2 : wb ? 1 : 0;
+      const sa = soloWatchingFor(a.other?.id);
+      const sb = soloWatchingFor(b.other?.id);
+      const waRank = wa?.status === "active" ? 3 : wa ? 2 : sa ? 1 : 0;
+      const wbRank = wb?.status === "active" ? 3 : wb ? 2 : sb ? 1 : 0;
       if (waRank !== wbRank) return wbRank - waRank;
       const pa = previews[a.id];
       const pb = previews[b.id];
@@ -334,11 +345,12 @@ export async function FriendsView(root) {
         const hasChat = Boolean(preview);
         const watching = watchingPartyFor(f.id);
         const watchingActive = watching?.status === "active";
+        const solo = !watching ? soloWatchingFor(f.other?.id) : null;
         const isActive = activeId && f.id === activeId;
         return `
         <div
-          class="fp-convo-wrap ${watching ? "is-watching" : ""} ${
-            watchingActive ? "is-watching-live" : ""
+          class="fp-convo-wrap ${watching || solo ? "is-watching" : ""} ${
+            watchingActive || solo ? "is-watching-live" : ""
           } ${isActive ? "is-active" : ""}"
           role="listitem"
         >
@@ -367,6 +379,10 @@ export async function FriendsView(root) {
                 ${
                   hasChat
                     ? escapeHtml(previewLine(preview))
+                    : solo
+                      ? `<em class="fp-watching-inline">Watching ${escapeHtml(
+                          solo.title || "something"
+                        )}</em>`
                     : `<em class="fp-presence-label ${
                         on ? "is-online" : ""
                       }" data-presence-id="${escapeHtml(
@@ -411,7 +427,23 @@ export async function FriendsView(root) {
                     watchingActive ? "Join" : "Open"
                   }</span>
                 </button>`
-              : ""
+              : solo
+                ? `<a
+                    class="fp-convo__watching is-live"
+                    href="${linkTo(watchingTitlePath(solo))}"
+                  >
+                    ${
+                      solo.poster
+                        ? `<img src="${escapeHtml(solo.poster)}" alt="" />`
+                        : `<span class="fp-convo__watching-ph" aria-hidden="true">▶</span>`
+                    }
+                    <span class="fp-convo__watching-text">
+                      <strong>Watching now</strong>
+                      <em>${escapeHtml(solo.title || "a title")}</em>
+                    </span>
+                    <span class="fp-convo__watching-cta">View</span>
+                  </a>`
+                : ""
           }
         </div>`;
       })
@@ -422,10 +454,13 @@ export async function FriendsView(root) {
       .map((f) => {
         const p = previews[f.id];
         const w = watchingPartyFor(f.id);
+        const s = soloWatchingFor(f.other?.id);
         const unread = activity.chatIds?.includes(f.id) ? "1" : "0";
         return `${f.id}:${p?.id || ""}:${p?.created_at || ""}:${unread}:${
           isUserOnline(f.other?.id) ? "1" : "0"
-        }:${w?.id || ""}:${w?.status || ""}`;
+        }:${w?.id || ""}:${w?.status || ""}:${s?.tmdb_id || ""}:${
+          s?.updated_at || ""
+        }`;
       })
       .join("|");
 
@@ -491,6 +526,11 @@ export async function FriendsView(root) {
     }
   };
 
+  const partyPeerName = (p, mineHost) => {
+    const peer = mineHost ? p.guest : p.host;
+    return peer?.display_name || peer?.email || "Friend";
+  };
+
   const partyListHtml = () => {
     if (!parties.length) {
       return emptyState("No invites", "Watch invites will show up here.");
@@ -498,6 +538,7 @@ export async function FriendsView(root) {
     return parties
       .map((p) => {
         const mineHost = p.host_id === me.id;
+        const peer = partyPeerName(p, mineHost);
         const openLabel =
           p.status === "active" ? "Join room" : mineHost ? "Open & wait" : "Open";
         return `
@@ -509,9 +550,11 @@ export async function FriendsView(root) {
             }
             <div class="fp-party__body">
               <strong>${escapeHtml(p.title)}</strong>
-              <span class="muted">${mineHost ? "You invited" : "Invite for you"} · ${escapeHtml(
-                p.status
-              )}</span>
+              <span class="muted">${
+                mineHost
+                  ? `You invited ${escapeHtml(peer)}`
+                  : `${escapeHtml(peer)} invited you`
+              } · ${escapeHtml(p.status)}</span>
               <div class="fp-party__actions">
                 ${
                   p.status === "active" || p.status === "invited"
@@ -624,8 +667,11 @@ export async function FriendsView(root) {
       ? presenceLabelFor(p.id, { onlineText: "Online" })
       : "Offline";
     const statusText = on ? "Online" : status === "Online" ? "Offline" : status;
+    const solo = soloWatchingFor(p?.id);
     return `
-    <div class="fp-row ${compact ? "fp-row--people" : ""}">
+    <div class="fp-row ${compact ? "fp-row--people" : ""} ${
+      solo ? "is-watching" : ""
+    }">
       ${presenceAvatarHtml(p, compact ? "fp-avatar--md" : "")}
       <div class="fp-row__meta">
         <strong>${escapeHtml(name)}</strong>
@@ -638,6 +684,13 @@ export async function FriendsView(root) {
               : ""
           }
         ><em data-presence-label>${escapeHtml(statusText)}</em></span>
+        ${
+          solo
+            ? `<a class="fp-row__watching" href="${linkTo(
+                watchingTitlePath(solo)
+              )}">Watching ${escapeHtml(solo.title || "something")}</a>`
+            : ""
+        }
         ${
           email
             ? `<span class="fp-row__email" title="${escapeHtml(email)}">${escapeHtml(
@@ -714,6 +767,7 @@ export async function FriendsView(root) {
     friendships = await listFriendships();
     rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
     parties = await listWatchParties();
+    watchingByUser = await listFriendsWatching().catch(() => watchingByUser);
     activity = await getFriendsActivityCounts().catch(() => activity);
   }
 
@@ -1052,6 +1106,7 @@ export async function FriendsView(root) {
                         .slice(0, 6)
                         .map((p) => {
                           const mineHost = p.host_id === me.id;
+                          const peer = partyPeerName(p, mineHost);
                           return `
                           <button type="button" class="fp-invite-card" data-open-party="${p.id}">
                             ${
@@ -1061,9 +1116,11 @@ export async function FriendsView(root) {
                             }
                             <span>
                               <strong>${escapeHtml(p.title)}</strong>
-                              <em>${mineHost ? "You invited" : "Invite"} · ${escapeHtml(
-                                p.status
-                              )}</em>
+                              <em>${
+                                mineHost
+                                  ? `You invited ${escapeHtml(peer)}`
+                                  : `${escapeHtml(peer)} invited you`
+                              } · ${escapeHtml(p.status)}</em>
                             </span>
                           </button>`;
                         })
@@ -1115,6 +1172,7 @@ export async function FriendsView(root) {
       activeChatId = current.id;
 
       const peerOnline = isUserOnline(current.other?.id);
+      const peerSolo = soloWatchingFor(current.other?.id);
       panel.innerHTML = `
         <div class="fp-chat fp-chat--thread fp-chat--split">
           <aside class="fp-chat__rail" aria-label="Conversations">
@@ -1135,14 +1193,27 @@ export async function FriendsView(root) {
               <button type="button" class="fp-chat__peer" data-chat-back aria-label="Back to chats">
                 <span class="fp-chat__head-text">
                   <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
-                  <span
+                  ${
+                    peerSolo
+                      ? `<em class="fp-watching-inline">Watching ${escapeHtml(
+                          peerSolo.title || "something"
+                        )}</em>`
+                      : `<span
                     class="fp-presence-label ${peerOnline ? "is-online" : ""}"
                     data-presence-id="${escapeHtml(current.other?.id || "")}"
                   ><em data-presence-label>${
                     peerOnline ? "Active now" : "Offline"
-                  }</em></span>
+                  }</em></span>`
+                  }
                 </span>
               </button>
+              ${
+                peerSolo
+                  ? `<a class="fp-chat__watching-link" href="${linkTo(
+                      watchingTitlePath(peerSolo)
+                    )}">View</a>`
+                  : ""
+              }
               <div class="fp-chat__head-actions">
                 <button type="button" class="fp-icon-btn" data-video-call aria-label="Video call" title="Video call">
                   <svg viewBox="0 0 24 24" aria-hidden="true">

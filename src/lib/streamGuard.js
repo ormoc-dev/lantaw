@@ -1,6 +1,7 @@
 /**
  * Soften third-party embed ads:
  * - eat the first click (common popup trigger)
+ * - defer src load so "Watch now" user-activation can't chain into window.open
  * - cover the embed's ← / back control so exit never hits ad handlers
  * - block window.open while the player is open
  * - reclaim focus if a popup steals it
@@ -12,9 +13,11 @@ export function attachStreamAdGuard(
   {
     onSafeExit,
     skipShield = false,
+    /** Quiet first-tap catcher (no big play overlay). */
+    ghostShield = false,
     showExit = true,
-    shieldLabel = "Tap to play",
-    shieldHint = "Blocks pop-up ads on the first click",
+    shieldLabel = "Tap to start",
+    shieldHint = "Blocks pop-up ads on the first tap",
     exitCorner = "start",
     exitLabel = "←",
   } = {}
@@ -22,22 +25,46 @@ export function attachStreamAdGuard(
   if (!frame) return () => {};
 
   const iframe = frame.querySelector("iframe");
-  let unlocked = Boolean(skipShield);
-  let lastInteract = 0;
+  let unlocked = Boolean(skipShield) && !ghostShield;
   let shield = null;
   let exitBtn = null;
+  let loadTimer = 0;
 
-  // Solo watch / guest sync — host Play already starts under a user gesture.
-  if (!skipShield) {
+  const loadDeferredSrc = () => {
+    if (!iframe?.dataset?.src) return;
+    const url = iframe.dataset.src;
+    delete iframe.dataset.src;
+    // Load outside the current user-gesture stack so the embed can't
+    // open a tab/window using the Watch now / Tap activation.
+    loadTimer = window.setTimeout(() => {
+      loadTimer = 0;
+      if (iframe.isConnected) iframe.src = url;
+    }, 0);
+  };
+
+  const useShield = !skipShield || ghostShield;
+
+  if (useShield) {
     shield = document.createElement("button");
     shield.type = "button";
-    shield.className = "stream-shield";
+    shield.className = ghostShield
+      ? "stream-shield stream-shield--ghost"
+      : "stream-shield";
     shield.setAttribute("aria-label", shieldLabel);
-    shield.innerHTML = `
-      <span class="stream-shield__pulse" aria-hidden="true"></span>
-      <span class="stream-shield__label">${escapeShieldText(shieldLabel)}</span>
-      <span class="stream-shield__hint">${escapeShieldText(shieldHint)}</span>
-    `;
+    if (ghostShield) {
+      shield.innerHTML = `
+        <span class="stream-shield__ghost-label">${escapeShieldText(
+          shieldLabel
+        )}</span>
+        <span class="stream-shield__hint">${escapeShieldText(shieldHint)}</span>
+      `;
+    } else {
+      shield.innerHTML = `
+        <span class="stream-shield__pulse" aria-hidden="true"></span>
+        <span class="stream-shield__label">${escapeShieldText(shieldLabel)}</span>
+        <span class="stream-shield__hint">${escapeShieldText(shieldHint)}</span>
+      `;
+    }
     frame.appendChild(shield);
 
     if (iframe) {
@@ -48,12 +75,7 @@ export function attachStreamAdGuard(
     const unlock = () => {
       if (unlocked) return;
       unlocked = true;
-      lastInteract = Date.now();
-      // Load the embed only on Sync / tap — never prefetch behind the shield
-      if (iframe?.dataset?.src) {
-        iframe.src = iframe.dataset.src;
-        delete iframe.dataset.src;
-      }
+      loadDeferredSrc();
       shield.classList.add("is-leaving");
       window.setTimeout(() => shield.remove(), 280);
       iframe?.classList.remove("is-guarded");
@@ -64,25 +86,25 @@ export function attachStreamAdGuard(
       e.stopPropagation();
       unlock();
     });
+    shield.addEventListener("pointerdown", (e) => {
+      // Beat iframe / synthetic click handlers that open ads.
+      e.preventDefault();
+      e.stopPropagation();
+    });
   } else if (iframe?.dataset?.src) {
-    // Host path with deferSrc (rare): still honor data-src without a shield
-    iframe.src = iframe.dataset.src;
-    delete iframe.dataset.src;
+    loadDeferredSrc();
   }
 
   const safeExit = (e) => {
     e?.preventDefault?.();
     e?.stopPropagation?.();
-    lastInteract = Date.now();
     if (typeof onSafeExit === "function") {
       onSafeExit();
       return;
     }
-    // Fallback: just tear down the iframe so embed back can't fire ads.
     if (iframe) iframe.src = "about:blank";
   };
 
-  // Detail: cover embed ←. Watch party can omit this (room has Back / End).
   if (showExit) {
     exitBtn = document.createElement("button");
     exitBtn.type = "button";
@@ -96,30 +118,33 @@ export function attachStreamAdGuard(
     frame.appendChild(exitBtn);
 
     exitBtn.addEventListener("pointerdown", (e) => {
-      // Beat the iframe to the punch on touch devices.
       e.preventDefault();
       e.stopPropagation();
     });
     exitBtn.addEventListener("click", safeExit);
   }
 
-  const onFramePointer = () => {
-    lastInteract = Date.now();
-  };
+  const onFramePointer = () => {};
   frame.addEventListener("pointerdown", onFramePointer);
 
   const nativeOpen = window.open.bind(window);
   let blockedPopupAt = 0;
-  // While this guard is mounted, swallow popup attempts from the page/embed flow.
-  window.open = () => {
+  const blockedOpen = () => {
     blockedPopupAt = Date.now();
     return null;
   };
+  try {
+    Object.defineProperty(window, "open", {
+      configurable: true,
+      writable: true,
+      value: blockedOpen,
+    });
+  } catch {
+    window.open = blockedOpen;
+  }
 
   const reclaimFocus = () => {
     if (!unlocked) return;
-    // Only reclaim after a blocked popup — never when the user is using the player
-    // (seek / pause / fullscreen). Stealing focus mid-seek restarts many embeds.
     if (!blockedPopupAt || Date.now() - blockedPopupAt > 2500) return;
     window.setTimeout(() => {
       if (iframe && document.activeElement === iframe) return;
@@ -134,7 +159,6 @@ export function attachStreamAdGuard(
 
   window.addEventListener("blur", reclaimFocus);
 
-  // CineSrc `back=close` → postMessage; treat as our safe exit.
   const onMessage = (event) => {
     if (event.origin !== "https://cinesrc.st") return;
     if (event.data?.type !== "cinesrc:close") return;
@@ -143,7 +167,16 @@ export function attachStreamAdGuard(
   window.addEventListener("message", onMessage);
 
   return () => {
-    window.open = nativeOpen;
+    if (loadTimer) clearTimeout(loadTimer);
+    try {
+      Object.defineProperty(window, "open", {
+        configurable: true,
+        writable: true,
+        value: nativeOpen,
+      });
+    } catch {
+      window.open = nativeOpen;
+    }
     window.removeEventListener("blur", reclaimFocus);
     window.removeEventListener("message", onMessage);
     frame.removeEventListener("pointerdown", onFramePointer);
