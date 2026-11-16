@@ -1,3 +1,5 @@
+import { recordTitleView } from "./friendProfileService.js";
+
 const KEY = "movie.recentViews";
 const MAX = 30;
 
@@ -26,6 +28,14 @@ export function addRecentMovie(movie) {
   const list = getRecentMovies().filter((m) => m.id !== next.id);
   list.unshift(next);
   localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX)));
+
+  // Friends profile history (ignore if signed out / migration missing).
+  recordTitleView({
+    mediaType: next.mediaType,
+    tmdbId: next.id,
+    title: next.title,
+    poster: next.poster,
+  }).catch(() => {});
 }
 
 export function clearRecentMovies() {

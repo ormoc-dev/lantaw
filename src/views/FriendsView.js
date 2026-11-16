@@ -38,6 +38,7 @@ import {
   listFriendsWatching,
   watchingTitlePath,
 } from "../services/watchingService.js";
+import { getFriendProfile } from "../services/friendProfileService.js";
 import { startVideoCall } from "../services/callService.js";
 import { showConfirm, showNotice } from "../lib/appModal.js";
 import { loadingHtml } from "../components/Loading.js";
@@ -361,7 +362,13 @@ export async function FriendsView(root) {
           }" data-open-chat="${f.id}" ${
             isActive ? 'aria-current="page"' : ""
           }>
-            ${presenceAvatarHtml(f.other)}
+            <span
+              class="fp-convo__avatar"
+              role="button"
+              tabindex="0"
+              data-open-profile="${f.id}"
+              aria-label="View profile"
+            >${presenceAvatarHtml(f.other)}</span>
             <span class="fp-convo__meta">
               <span class="fp-convo__top">
                 <strong>${escapeHtml(
@@ -464,6 +471,215 @@ export async function FriendsView(root) {
       })
       .join("|");
 
+  const closeFriendProfile = () => {
+    page.querySelector("#friend-profile")?.remove();
+  };
+
+  const formatViewedAt = (iso) => {
+    if (!iso) return "";
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return "";
+    const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (sec < 60) return "just now";
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+    if (sec < 86400 * 7) return `${Math.floor(sec / 86400)}d ago`;
+    try {
+      return new Date(t).toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+      });
+    } catch {
+      return "";
+    }
+  };
+
+  const openFriendProfile = async (friendshipId) => {
+    const friendship =
+      friendships.find((f) => f.id === friendshipId && f.status === "accepted") ||
+      null;
+    const userId = friendship?.other?.id || friendship?.otherId;
+    if (!userId) return;
+
+    closeFriendProfile();
+    const shell = document.createElement("div");
+    shell.id = "friend-profile";
+    shell.className = "fp-profile";
+    shell.innerHTML = `
+      <button type="button" class="fp-profile__backdrop" data-profile-close aria-label="Close"></button>
+      <div class="fp-profile__sheet" role="dialog" aria-modal="true" aria-label="Friend profile">
+        <div class="fp-profile__grab" aria-hidden="true"></div>
+        <header class="fp-profile__head">
+          ${presenceAvatarHtml(friendship.other, "fp-avatar--lg")}
+          <div class="fp-profile__identity">
+            <strong>${escapeHtml(
+              friendship.other?.display_name || friendship.other?.email || "Friend"
+            )}</strong>
+            <span
+              class="fp-presence-label ${
+                isUserOnline(userId) ? "is-online" : ""
+              }"
+              data-presence-id="${escapeHtml(userId)}"
+            ><em data-presence-label>${escapeHtml(
+              presenceLabelFor(userId, { onlineText: "Active now" })
+            )}</em></span>
+          </div>
+          <button type="button" class="fp-icon-btn" data-profile-close aria-label="Close">✕</button>
+        </header>
+        <div class="fp-profile__body">
+          ${loadingHtml({ className: "fp-profile__loading", size: "sm" })}
+        </div>
+        <div class="fp-profile__actions">
+          <button type="button" class="fp-btn fp-btn--solid" data-profile-chat="${escapeHtml(
+            friendshipId
+          )}">Message</button>
+          <button type="button" class="fp-btn" data-profile-watch="${escapeHtml(
+            friendshipId
+          )}">Watch together</button>
+        </div>
+      </div>
+    `;
+    page.appendChild(shell);
+    syncPresenceUi();
+
+    shell.querySelectorAll("[data-profile-close]").forEach((btn) => {
+      btn.addEventListener("click", closeFriendProfile);
+    });
+    shell.querySelector("[data-profile-chat]")?.addEventListener("click", () => {
+      closeFriendProfile();
+      tab = "chat";
+      activeChatId = friendshipId;
+      renderShell();
+      renderPanel();
+    });
+    shell.querySelector("[data-profile-watch]")?.addEventListener("click", () => {
+      closeFriendProfile();
+      tab = "watch";
+      activeChatId = null;
+      renderShell();
+      renderPanel();
+    });
+
+    const body = shell.querySelector(".fp-profile__body");
+    try {
+      const data = await getFriendProfile(userId);
+      if (!shell.isConnected) return;
+      rememberLastSeen([data.profile]);
+      const watching = data.watching;
+      const history = data.history || [];
+      const peers = data.peers || [];
+
+      body.innerHTML = `
+        ${
+          watching
+            ? `<section class="fp-profile__block">
+                <h3>Watching now</h3>
+                <a class="fp-profile__now" href="${linkTo(
+                  watchingTitlePath(watching)
+                )}">
+                  ${
+                    watching.poster
+                      ? `<img src="${escapeHtml(watching.poster)}" alt="" />`
+                      : `<span class="fp-profile__ph" aria-hidden="true">▶</span>`
+                  }
+                  <span>
+                    <strong>${escapeHtml(watching.title || "a title")}</strong>
+                    <em>Open title</em>
+                  </span>
+                </a>
+              </section>`
+            : `<section class="fp-profile__block">
+                <h3>Watching now</h3>
+                <p class="muted fp-profile__empty">Not watching anything right now.</p>
+              </section>`
+        }
+        <section class="fp-profile__block">
+          <h3>Recently viewed</h3>
+          ${
+            history.length
+              ? `<div class="fp-profile__posters">
+                  ${history
+                    .map(
+                      (h) => `
+                    <a class="fp-profile__poster" href="${linkTo(
+                      `/${h.media_type === "tv" ? "tv" : "movie"}/${h.tmdb_id}`
+                    )}" title="${escapeHtml(h.title || "")}">
+                      ${
+                        h.poster
+                          ? `<img src="${escapeHtml(h.poster)}" alt="" />`
+                          : `<span>${escapeHtml(
+                              (h.title || "?").slice(0, 1)
+                            )}</span>`
+                      }
+                      <em>${escapeHtml(formatViewedAt(h.viewed_at))}</em>
+                    </a>`
+                    )
+                    .join("")}
+                </div>`
+              : `<p class="muted fp-profile__empty">No shared history yet. Ask them to open a few titles on LANTAW.</p>`
+          }
+        </section>
+        <section class="fp-profile__block">
+          <h3>Friends · ${peers.length}</h3>
+          ${
+            peers.length
+              ? `<div class="fp-profile__peers">
+                  ${peers
+                    .map((p) => {
+                      rememberLastSeen([p]);
+                      return `
+                      <div class="fp-profile__peer">
+                        ${presenceAvatarHtml(p, "fp-avatar--sm")}
+                        <span>
+                          <strong>${escapeHtml(
+                            p.display_name || p.email || "User"
+                          )}</strong>
+                          <em class="fp-presence-label ${
+                            isUserOnline(p.id) ? "is-online" : ""
+                          }" data-presence-id="${escapeHtml(p.id || "")}">
+                            <span data-presence-label>${escapeHtml(
+                              presenceLabelFor(p.id, {
+                                onlineText: "Online",
+                              })
+                            )}</span>
+                          </em>
+                        </span>
+                      </div>`;
+                    })
+                    .join("")}
+                </div>`
+              : `<p class="muted fp-profile__empty">No other friends to show.</p>`
+          }
+        </section>
+      `;
+      syncPresenceUi();
+    } catch (err) {
+      if (!shell.isConnected) return;
+      body.innerHTML = `
+        <p class="muted fp-profile__empty">${escapeHtml(
+          err.message || "Couldn’t load profile."
+        )}</p>
+        <p class="muted fp-profile__empty">If this is new, run <code>202603300008_friend_profile_views.sql</code> in Supabase.</p>
+      `;
+    }
+  };
+
+  const bindProfileTriggers = (rootEl = page) => {
+    rootEl.querySelectorAll("[data-open-profile]").forEach((el) => {
+      if (el.dataset.profileBound) return;
+      el.dataset.profileBound = "1";
+      const open = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openFriendProfile(el.dataset.openProfile);
+      };
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") open(e);
+      });
+    });
+  };
+
   const bindInboxListActions = (rootEl = page) => {
     rootEl.querySelectorAll("[data-open-chat]").forEach((btn) => {
       if (btn.dataset.bound) return;
@@ -487,6 +703,7 @@ export async function FriendsView(root) {
         }
       });
     });
+    bindProfileTriggers(rootEl);
     syncPresenceUi();
   };
 
@@ -651,14 +868,16 @@ export async function FriendsView(root) {
           personRow(
             f.other,
             `<button class="fp-btn fp-btn--solid" data-chat="${f.id}" type="button">Chat</button>
-             <button class="fp-btn" data-remove="${f.id}" type="button">Remove</button>`
+             <button class="fp-btn" data-remove="${f.id}" type="button">Remove</button>`,
+            { friendshipId: f.id }
           )
         )
         .join("");
     }
+    bindProfileTriggers(panel);
   };
 
-  const personRow = (p, actions = "", { compact = false } = {}) => {
+  const personRow = (p, actions = "", { compact = false, friendshipId = "" } = {}) => {
     if (p) rememberLastSeen([p]);
     const on = Boolean(p?.id && isUserOnline(p.id));
     const name = p?.display_name || "User";
@@ -668,11 +887,19 @@ export async function FriendsView(root) {
       : "Offline";
     const statusText = on ? "Online" : status === "Online" ? "Offline" : status;
     const solo = soloWatchingFor(p?.id);
+    const avatar = friendshipId
+      ? `<button type="button" class="fp-row__avatar-btn" data-open-profile="${escapeHtml(
+          friendshipId
+        )}" aria-label="View profile">${presenceAvatarHtml(
+          p,
+          compact ? "fp-avatar--md" : ""
+        )}</button>`
+      : presenceAvatarHtml(p, compact ? "fp-avatar--md" : "");
     return `
     <div class="fp-row ${compact ? "fp-row--people" : ""} ${
       solo ? "is-watching" : ""
     }">
-      ${presenceAvatarHtml(p, compact ? "fp-avatar--md" : "")}
+      ${avatar}
       <div class="fp-row__meta">
         <strong>${escapeHtml(name)}</strong>
         <span
@@ -863,11 +1090,13 @@ export async function FriendsView(root) {
             personRow(
               f.other,
               `<button class="fp-btn fp-btn--solid" data-chat="${f.id}" type="button">Chat</button>
-               <button class="fp-btn" data-remove="${f.id}" type="button">Remove</button>`
+               <button class="fp-btn" data-remove="${f.id}" type="button">Remove</button>`,
+              { friendshipId: f.id }
             )
           )
           .join("");
       }
+      bindProfileTriggers(panel);
 
       const suggestSection = panel.querySelector("#suggest-section");
       const suggestSub = panel.querySelector("#suggest-sub");
@@ -1190,7 +1419,9 @@ export async function FriendsView(root) {
               <button type="button" class="fp-icon-btn fp-chat__back" data-chat-back aria-label="Back to chats">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
-              <button type="button" class="fp-chat__peer" data-chat-back aria-label="Back to chats">
+              <button type="button" class="fp-chat__peer" data-open-profile="${
+                current.id
+              }" aria-label="View profile">
                 <span class="fp-chat__head-text">
                   <strong>${escapeHtml(current.other?.display_name || "Friend")}</strong>
                   ${
@@ -3060,6 +3291,7 @@ export async function FriendsView(root) {
       clearTimeout(liveTimer);
       clearInterval(lastSeenTick);
       peerIsTyping = false;
+      closeFriendProfile();
       unsubChat?.();
       unsubPage?.();
       unsubWatchDoc?.();
