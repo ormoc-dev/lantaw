@@ -1,4 +1,9 @@
-import { getUser } from "../services/authService.js";
+import {
+  avatarFromUser,
+  displayNameFromUser,
+  getUser,
+  resolveUserProfile,
+} from "../services/authService.js";
 import { addRecentMovie, getRecentMovies } from "../services/recentService.js";
 import { getSupabase } from "../lib/supabase.js";
 import {
@@ -38,6 +43,8 @@ import {
   listFriendsWatching,
   watchingTitlePath,
 } from "../services/watchingService.js";
+import { listFriendNotes, saveFriendNote } from "../services/friendNoteService.js";
+import { listActivityNotices } from "../services/activityNoticeService.js";
 import { getFriendProfile } from "../services/friendProfileService.js";
 import { startVideoCall } from "../services/callService.js";
 import { showConfirm, showNotice } from "../lib/appModal.js";
@@ -125,6 +132,26 @@ export async function FriendsView(root) {
   let watchingByUser = {};
   let activity = { requests: 0, chats: 0, invites: 0, chatIds: [] };
   let chatPreviews = {};
+  /** @type {Record<string, { user_id: string, body: string, updated_at: string }>} */
+  let friendNotes = {};
+  let notices = [];
+  let noteComposer = false;
+  let noteHistory = false;
+  let meCard = {
+    id: me.id,
+    display_name: displayNameFromUser(me),
+    avatar_url: avatarFromUser(me),
+  };
+  resolveUserProfile(me)
+    .then((profile) => {
+      meCard = {
+        id: me.id,
+        display_name: profile?.name || meCard.display_name,
+        avatar_url: profile?.avatar || meCard.avatar_url,
+      };
+      paintPeopleRow();
+    })
+    .catch(() => {});
 
   function chatIdFromHash() {
     const qs = (location.hash.replace(/^#/, "") || "").split("?")[1] || "";
@@ -209,10 +236,14 @@ export async function FriendsView(root) {
   const syncChatLock = () => {
     // Full-bleed chat chrome only inside an open thread (Messenger-style).
     const locked = tab === "chat" && Boolean(activeChatId);
+    const inbox = tab === "chat" && !activeChatId && !noteComposer;
     page.classList.toggle("friends-page--chat", locked);
-    page.classList.toggle("friends-page--inbox", tab === "chat" && !activeChatId);
+    page.classList.toggle("friends-page--inbox", inbox);
+    page.classList.toggle("friends-page--note", noteComposer);
     root.classList.toggle("view--friends-chat", locked);
+    root.classList.toggle("view--note", noteComposer);
     document.body.classList.toggle("is-friends-chat", locked);
+    document.body.classList.toggle("is-note-page", noteComposer);
     if (!locked) clearChatViewport();
     syncChatUrl();
   };
@@ -932,6 +963,278 @@ export async function FriendsView(root) {
   `;
   };
 
+  const shortLabel = (name, fallback = "Friend") => {
+    const raw = String(name || fallback).trim();
+    const first = raw.split(/[\s@]/)[0] || fallback;
+    return first.length > 12 ? `${first.slice(0, 11)}…` : first;
+  };
+
+  const peopleRowHtml = () => {
+    const accepted = friendships.filter((f) => f.status === "accepted");
+    const ranked = [...accepted].sort((a, b) => {
+      const na = friendNotes[a.other?.id]?.body ? 1 : 0;
+      const nb = friendNotes[b.other?.id]?.body ? 1 : 0;
+      if (na !== nb) return nb - na;
+      const oa = isUserOnline(a.other?.id) ? 1 : 0;
+      const ob = isUserOnline(b.other?.id) ? 1 : 0;
+      if (oa !== ob) return ob - oa;
+      const an = (a.other?.display_name || a.other?.email || "").toLowerCase();
+      const bn = (b.other?.display_name || b.other?.email || "").toLowerCase();
+      return an.localeCompare(bn);
+    });
+    const mine = friendNotes[me.id];
+    const watchCount = parties.filter(
+      (p) =>
+        (p.status === "invited" || p.status === "active") &&
+        (p.host_id === me.id || p.guest_id === me.id)
+    ).length;
+
+    const friendItem = (friend) => {
+      const note = friendNotes[friend.other?.id];
+      const on = isUserOnline(friend.other?.id);
+      const name = friend.other?.display_name || friend.other?.email || "Friend";
+      return `
+        <button type="button" class="fp-people-item" data-open-chat="${friend.id}" aria-label="${escapeHtml(
+          note?.body ? `${name}. Note: ${note.body}` : name
+        )}">
+          ${
+            note?.body
+              ? `<span class="fp-people-item__bubble">${escapeHtml(note.body)}</span>`
+              : `<span class="fp-people-item__bubble fp-people-item__bubble--empty"></span>`
+          }
+          <span class="fp-people-item__face ${on ? "is-online" : ""}">
+            ${avatarHtml(friend.other)}
+          </span>
+          <span class="fp-people-item__name">${escapeHtml(shortLabel(name))}</span>
+        </button>`;
+    };
+
+    return `
+      <button type="button" class="fp-people-item fp-people-item--me" data-edit-note aria-label="${
+        mine?.body ? `Your note: ${escapeHtml(mine.body)}` : "Add a note"
+      }">
+        ${
+          mine?.body
+            ? `<span class="fp-people-item__bubble">${escapeHtml(mine.body)}</span>`
+            : `<span class="fp-people-item__bubble fp-people-item__bubble--empty"></span>`
+        }
+        <span class="fp-people-item__face">
+          ${avatarHtml(meCard)}
+          ${mine?.body ? "" : `<i class="fp-people-item__plus" aria-hidden="true">+</i>`}
+        </span>
+        <span class="fp-people-item__name">Your note</span>
+      </button>
+      ${ranked.map(friendItem).join("")}
+      <button type="button" class="fp-people-item fp-people-item--watch" data-open-watch aria-label="Watch together">
+        <span class="fp-people-item__bubble fp-people-item__bubble--empty"></span>
+        <span class="fp-people-item__face fp-people-item__face--watch">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 7.8v8.4L17 12 9.2 7.8Z" fill="currentColor"/></svg>
+          ${watchCount ? `<em class="fp-people-item__badge">${watchCount > 9 ? "9+" : watchCount}</em>` : ""}
+        </span>
+        <span class="fp-people-item__name">Watch</span>
+      </button>
+    `;
+  };
+
+  const peopleBlockHtml = () => `
+    <div class="fp-people">
+      <div class="fp-people-row ${rowHasNotes() ? "has-notes" : ""}" role="list">${peopleRowHtml()}</div>
+    </div>
+  `;
+
+  const rowHasNotes = () =>
+    Boolean(friendNotes[me.id]?.body) ||
+    friendships.some(
+      (f) => f.status === "accepted" && friendNotes[f.other?.id]?.body
+    );
+
+  const paintPeopleRow = () => {
+    const row = page.querySelector(".fp-people-row");
+    if (!row || tab !== "chat" || activeChatId) return;
+    row.classList.toggle("has-notes", rowHasNotes());
+    row.innerHTML = peopleRowHtml();
+    bindPeopleRow(row);
+  };
+
+  const bindPeopleRow = (rootEl = page) => {
+    rootEl.querySelectorAll("[data-open-chat]").forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        activeChatId = btn.dataset.openChat;
+        renderShell();
+        renderPanel();
+      });
+    });
+    rootEl.querySelectorAll("[data-open-watch]").forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        tab = "watch";
+        activeChatId = null;
+        renderShell();
+        renderPanel();
+      });
+    });
+    rootEl.querySelectorAll("[data-edit-note]").forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => openNoteComposer());
+    });
+  };
+
+  const openNoteComposer = () => {
+    noteComposer = true;
+    if (!noteHistory) {
+      history.pushState({ lantawNote: 1 }, "");
+      noteHistory = true;
+    }
+    renderShell();
+    renderPanel();
+    page.querySelector("#fp-note-input")?.focus();
+  };
+
+  const closeNoteComposer = () => {
+    const popped = noteHistory;
+    noteComposer = false;
+    noteHistory = false;
+    renderShell();
+    renderPanel();
+    if (popped) history.back();
+  };
+
+  const onNotePop = () => {
+    if (!noteComposer) return;
+    noteComposer = false;
+    noteHistory = false;
+    if (!document.getElementById("view")?.contains(page)) return;
+    renderShell();
+    renderPanel();
+  };
+  window.addEventListener("popstate", onNotePop);
+
+  const renderNotePage = (panel) => {
+    const existing = friendNotes[me.id]?.body || "";
+    panel.innerHTML = `
+      <section class="fp-note-page">
+        <header class="fp-note-page__bar">
+          <button type="button" class="fp-note-page__close" data-note-close aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" class="fp-note-page__share" data-note-share disabled>Share</button>
+        </header>
+        <div class="fp-note-page__stage">
+          <div class="fp-note-bubble">
+            <textarea
+              id="fp-note-input"
+              maxlength="60"
+              rows="2"
+              enterkeyhint="done"
+              autocomplete="off"
+              autocapitalize="sentences"
+              placeholder="Share a thought…"
+              aria-label="Your note"
+            >${escapeHtml(existing)}</textarea>
+          </div>
+          <div class="fp-note-page__me">${avatarHtml(meCard, "fp-avatar--lg")}</div>
+          <p class="fp-note-page__hint">Friends can see this for 24 hours.</p>
+          ${
+            existing
+              ? `<button type="button" class="fp-note-page__delete" data-note-delete>Delete note</button>`
+              : ""
+          }
+        </div>
+      </section>
+    `;
+
+    const input = panel.querySelector("#fp-note-input");
+    const share = panel.querySelector("[data-note-share]");
+    const fit = () => {
+      if (!input) return;
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+      if (share) share.disabled = !input.value.trim();
+    };
+    fit();
+    input?.addEventListener("input", fit);
+    input?.focus();
+    input?.setSelectionRange(input.value.length, input.value.length);
+
+    panel.querySelector("[data-note-close]")?.addEventListener("click", () => {
+      closeNoteComposer();
+    });
+    share?.addEventListener("click", async () => {
+      const text = input?.value || "";
+      share.disabled = true;
+      try {
+        const saved = await saveFriendNote(text);
+        if (saved) friendNotes[me.id] = saved;
+        else delete friendNotes[me.id];
+        writeInboxSnapshot();
+        closeNoteComposer();
+      } catch (err) {
+        share.disabled = !text.trim();
+        showNotice({ title: "Couldn’t share note", message: err.message });
+      }
+    });
+    panel.querySelector("[data-note-delete]")?.addEventListener("click", async () => {
+      try {
+        await saveFriendNote("");
+        delete friendNotes[me.id];
+        writeInboxSnapshot();
+        closeNoteComposer();
+      } catch (err) {
+        showNotice({ title: "Couldn’t delete note", message: err.message });
+      }
+    });
+  };
+
+  const NOTICE_SEEN_KEY = `lantaw-notices-seen:${me.id}`;
+  let noticeSeenAt = 0;
+  try {
+    noticeSeenAt = Number(localStorage.getItem(NOTICE_SEEN_KEY)) || 0;
+  } catch {
+    noticeSeenAt = 0;
+  }
+  let noticeHighlightAfter = noticeSeenAt;
+
+  const unreadNoticeCount = () =>
+    notices.filter((item) => new Date(item.at).getTime() > noticeSeenAt).length;
+
+  const markNoticesSeen = () => {
+    noticeHighlightAfter = noticeSeenAt;
+    noticeSeenAt = Date.now();
+    try {
+      localStorage.setItem(NOTICE_SEEN_KEY, String(noticeSeenAt));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  async function refreshNotices() {
+    try {
+      const accepted = friendships.filter((f) => f.status === "accepted");
+      notices = await listActivityNotices({
+        friendIds: accepted.map((f) => f.other?.id).filter(Boolean),
+        friendships: accepted,
+      });
+    } catch {
+      /* keep the last list */
+    }
+  }
+
+  const noticeTime = (iso) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const now = new Date();
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    if (sameDay) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
   const tabBadge = (n) => (n ? `<em>${n > 9 ? "9+" : n}</em>` : "");
 
   const renderShell = () => {
@@ -942,14 +1245,21 @@ export async function FriendsView(root) {
       parties.filter((p) => p.guest_id === me.id && p.status === "invited").length;
 
     const title =
-      tab === "watch" ? "Watch together" : tab === "friends" ? "People" : "Chats";
+      tab === "notices"
+        ? "Notifications"
+        : tab === "watch"
+          ? "Watch together"
+          : tab === "friends"
+            ? "People"
+            : "Chats";
 
     // Hide chrome while inside a Messenger thread
     const inThread = tab === "chat" && Boolean(activeChatId);
+    const hideChrome = inThread || noteComposer;
 
     page.innerHTML = `
       ${
-        inThread
+        hideChrome
           ? ""
           : `<header class="fp-msg-head">
         <h1>${title}</h1>
@@ -972,6 +1282,12 @@ export async function FriendsView(root) {
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="10.2" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.8 18.8c1.4-2.7 3.5-4.1 5.2-4.1s3.8 1.4 5.2 4.1M13.4 18.5c1-1.8 2.4-2.8 3.5-2.8 1.2 0 2.4.8 3.3 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             ${tabBadge(requestCount)}
           </button>
+          <button type="button" class="fp-icon-btn ${
+            tab === "notices" ? "is-active" : ""
+          }" data-tab="notices" aria-label="Notifications">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8a4.4 4.4 0 0 0-4.4 4.4v2.1c0 .9-.3 1.7-.9 2.4L5.4 14.4c-.5.6-.1 1.6.7 1.6h11.8c.8 0 1.2-1 .7-1.6l-1.3-1.7c-.6-.7-.9-1.5-.9-2.4V8.2A4.4 4.4 0 0 0 12 3.8Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 17.2a2.2 2.2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            ${tabBadge(unreadNoticeCount())}
+          </button>
         </nav>
       </header>`
       }
@@ -982,6 +1298,7 @@ export async function FriendsView(root) {
     page.querySelectorAll("[data-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const next = btn.dataset.tab;
+        if (next === "notices" && tab !== "notices") markNoticesSeen();
         tab = next;
         if (next === "chat") activeChatId = null;
         renderShell();
@@ -1015,6 +1332,7 @@ export async function FriendsView(root) {
       watchingByUser,
       activity,
       chatPreviews,
+      friendNotes,
     };
     try {
       sessionStorage.setItem(INBOX_CACHE_KEY, JSON.stringify(payload));
@@ -1023,6 +1341,20 @@ export async function FriendsView(root) {
     }
     idbSet(`friends:${me.id}`, payload);
   };
+
+  const noteUserIds = () => [
+    me.id,
+    ...friendships.map((f) => f.other?.id).filter(Boolean),
+  ];
+
+  async function refreshNotes() {
+    try {
+      friendNotes = await listFriendNotes(noteUserIds());
+    } catch {
+      /* keep the last notes */
+    }
+    paintPeopleRow();
+  }
 
   async function refreshData() {
     const [nextFriends, nextParties, nextWatching, nextActivity] = await Promise.all([
@@ -1036,12 +1368,68 @@ export async function FriendsView(root) {
     parties = nextParties;
     watchingByUser = nextWatching;
     activity = nextActivity;
+    await Promise.all([refreshNotes(), refreshNotices()]);
   }
 
   async function renderPanel() {
     if (tab !== "chat") clearChatViewport();
     const panel = page.querySelector("#friends-panel");
     if (!panel) return;
+
+    if (noteComposer) {
+      if (!panel.querySelector(".fp-note-page")) renderNotePage(panel);
+      return;
+    }
+
+    if (tab === "notices") {
+      panel.innerHTML = notices.length
+        ? `<div class="fp-notices" role="list">
+            ${notices
+              .map((item) => {
+                const unread = new Date(item.at).getTime() > noticeHighlightAfter;
+                return `
+                  <button type="button" class="fp-notice ${
+                    unread ? "is-unread" : ""
+                  }" data-notice="${escapeHtml(item.id)}">
+                    ${avatarHtml({
+                      display_name: item.actorName,
+                      avatar_url: item.actorAvatar,
+                    })}
+                    <span class="fp-notice__copy">
+                      <strong>${escapeHtml(item.actorName)} <em>${escapeHtml(
+                        item.action
+                      )}</em></strong>
+                      ${
+                        item.preview
+                          ? `<p>${escapeHtml(item.preview)}</p>`
+                          : ""
+                      }
+                      <time>${escapeHtml(noticeTime(item.at))}</time>
+                    </span>
+                  </button>`;
+              })
+              .join("")}
+          </div>`
+        : emptyState(
+            "No notifications yet",
+            "Replies, likes, and friend notes show up here."
+          );
+      panel.querySelectorAll("[data-notice]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const item = notices.find((entry) => entry.id === btn.dataset.notice);
+          if (!item) return;
+          if (item.chatId) {
+            tab = "chat";
+            activeChatId = item.chatId;
+            renderShell();
+            renderPanel();
+            return;
+          }
+          if (item.href) location.hash = linkTo(item.href);
+        });
+      });
+      return;
+    }
 
     if (tab === "friends") {
       const accepted = friendships.filter((f) => f.status === "accepted");
@@ -1306,6 +1694,7 @@ export async function FriendsView(root) {
       if (!activeChatId) {
         if (!accepted.length) {
           panel.innerHTML = `
+            ${peopleBlockHtml()}
             ${
               pendingShare?.id
                 ? `<div class="fp-share-banner" role="status">
@@ -1337,6 +1726,7 @@ export async function FriendsView(root) {
             renderShell();
             renderPanel();
           });
+          bindPeopleRow(panel);
           return;
         }
 
@@ -1362,6 +1752,7 @@ export async function FriendsView(root) {
 
         panel.innerHTML = `
           <div class="fp-inbox">
+            ${peopleBlockHtml()}
             ${shareBanner}
             ${
               openInvites.length
@@ -1396,10 +1787,7 @@ export async function FriendsView(root) {
                         .join("")}
                     </div>
                   </section>`
-                : `<button type="button" class="fp-watch-banner" data-tab="watch">
-                    <span aria-hidden="true">▶</span>
-                    <span><strong>Watch together</strong><em>Invite a friend to a movie or show</em></span>
-                  </button>`
+                : ""
             }
             <div class="fp-convo-list" role="list" data-paint-key="${escapeHtml(
               inboxPaintKey(accepted)
@@ -1422,6 +1810,7 @@ export async function FriendsView(root) {
           });
         });
         bindInboxListActions(panel);
+        bindPeopleRow(panel);
 
         // Soft-refresh previews in background; only rewrite list if data changed
         refreshChatPreviews().then(() => {
@@ -3121,6 +3510,7 @@ export async function FriendsView(root) {
     setBadge("friends", activity.requests || 0);
     setBadge("chat", activity.chats || 0);
     setBadge("watch", activity.invites || 0);
+    setBadge("notices", unreadNoticeCount());
   };
 
   async function applyLiveUpdate(payload) {
@@ -3221,6 +3611,7 @@ export async function FriendsView(root) {
     watchingByUser = inboxSnapshot.watchingByUser || {};
     activity = inboxSnapshot.activity || activity;
     chatPreviews = inboxSnapshot.chatPreviews || {};
+    friendNotes = inboxSnapshot.friendNotes || {};
     rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
   }
 
@@ -3237,6 +3628,8 @@ export async function FriendsView(root) {
     const activityP = getFriendsActivityCounts().catch(() => activity);
     friendships = await listFriendships();
     rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
+    const notesP = refreshNotes();
+    const noticesP = refreshNotices();
     const previewsP = refreshChatPreviews();
     if (!inboxSnapshot) {
       renderShell();
@@ -3247,6 +3640,8 @@ export async function FriendsView(root) {
       watchP,
       activityP,
       previewsP,
+      notesP,
+      noticesP,
     ]);
     parties = nextParties;
     watchingByUser = nextWatching;
@@ -3254,6 +3649,7 @@ export async function FriendsView(root) {
     writeInboxSnapshot();
     if (tab === "chat" && !activeChatId) {
       paintInboxList();
+      paintPeopleRow();
       syncTabBadgesOnly();
     } else {
       renderShell();
@@ -3268,8 +3664,8 @@ export async function FriendsView(root) {
       suspend() {
         page.querySelector("textarea")?.blur();
         clearChatViewport();
-        root.classList.remove("view--friends-chat");
-        document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
+        root.classList.remove("view--friends-chat", "view--note");
+        document.body.classList.remove("is-friends-chat", "is-friends-chat-kb", "is-note-page");
       },
       resume() {
         syncChatLock();
@@ -3303,15 +3699,15 @@ export async function FriendsView(root) {
     suspend() {
       page.querySelector("textarea")?.blur();
       clearChatViewport();
-      root.classList.remove("view--friends-chat");
-      document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
+      root.classList.remove("view--friends-chat", "view--note");
+      document.body.classList.remove("is-friends-chat", "is-friends-chat-kb", "is-note-page");
     },
     resume() {
       syncChatLock();
     },
     unmount() {
+      window.removeEventListener("popstate", onNotePop);
       clearTimeout(liveTimer);
-      clearInterval(lastSeenTick);
       peerIsTyping = false;
       closeFriendProfile();
       unsubChat?.();
@@ -3319,9 +3715,9 @@ export async function FriendsView(root) {
       unsubWatchDoc?.();
       unsubPresence?.();
       clearChatViewport();
-      page.classList.remove("friends-page--chat");
-      root.classList.remove("view--friends-chat");
-      document.body.classList.remove("is-friends-chat", "is-friends-chat-kb");
+      page.classList.remove("friends-page--chat", "friends-page--note");
+      root.classList.remove("view--friends-chat", "view--note");
+      document.body.classList.remove("is-friends-chat", "is-friends-chat-kb", "is-note-page");
     },
   };
 }

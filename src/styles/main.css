@@ -1052,6 +1052,339 @@ body.is-friends-chat-kb .friends-page--chat .fp-chat__gifs:not([hidden]) {
   gap: 0.85rem;
 }
 
+.fp-people {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.fp-people-row {
+  display: flex;
+  gap: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0.1rem 0 0.15rem;
+  scroll-snap-type: x proximity;
+}
+
+.fp-people-row::-webkit-scrollbar {
+  display: none;
+}
+
+.fp-people-item {
+  appearance: none;
+  flex: 0 0 4.55rem;
+  width: 4.55rem;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 0.28rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+
+.fp-people-item__bubble {
+  display: none;
+  width: 100%;
+  min-height: 2.15rem;
+  max-height: 2.55rem;
+  padding: 0.28rem 0.35rem;
+  border-radius: 12px;
+  background: #fff;
+  color: #1c1c1e;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  overflow: hidden;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+.fp-people-row.has-notes .fp-people-item__bubble {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.fp-people-row.has-notes .fp-people-item__bubble--empty {
+  visibility: hidden;
+}
+
+.fp-people-item__face {
+  position: relative;
+  width: 52px;
+  height: 52px;
+}
+
+.fp-people-item__face .fp-avatar {
+  width: 52px;
+  height: 52px;
+  font-size: 1.05rem;
+}
+
+.fp-people-item__face.is-online .fp-avatar {
+  box-shadow: 0 0 0 2px var(--bg, #0e0e12), 0 0 0 3.5px #3ddc84;
+}
+
+.fp-people-item__plus,
+.fp-people-item__badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-style: normal;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--bg, #0e0e12);
+}
+
+.fp-people-item__face--watch {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-strong, var(--accent));
+}
+
+.fp-people-item__face--watch svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.fp-people-item__name {
+  max-width: 100%;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-note-page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #0e0e12);
+}
+
+.fp-note-page__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(0.4rem, env(safe-area-inset-top)) 0.35rem 0.2rem;
+}
+
+.fp-note-page__close,
+.fp-note-page__share {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fp-note-page__close {
+  width: 2.75rem;
+  height: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+}
+
+.fp-note-page__close svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.fp-note-page__share {
+  color: var(--accent-strong, var(--accent));
+  font-size: 1.05rem;
+  font-weight: 700;
+  padding: 0.55rem 0.85rem;
+}
+
+.fp-note-page__share:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.fp-note-page__stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem 12vh;
+}
+
+.fp-note-bubble {
+  position: relative;
+  width: min(16.5rem, 78vw);
+  min-height: 5.5rem;
+  padding: 1.15rem 1rem 1.25rem;
+  border-radius: 28px;
+  background: #fff;
+  color: #1c1c1e;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.fp-note-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 2px;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.fp-note-bubble textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  min-height: 3.2rem;
+  max-height: 10rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: #1c1c1e;
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.fp-note-bubble textarea:focus {
+  outline: none;
+}
+
+.fp-note-bubble textarea::placeholder {
+  color: rgba(28, 28, 30, 0.38);
+}
+
+.fp-note-page__me .fp-avatar {
+  width: 4.4rem;
+  height: 4.4rem;
+  font-size: 1.45rem;
+  box-shadow: 0 0 0 3px var(--bg, #0e0e12);
+}
+
+.fp-note-page__hint {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.fp-note-page__delete {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #ff5a6a;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.35rem 0.5rem;
+}
+
+body.is-note-page .bottom-nav {
+  display: none !important;
+}
+
+body.has-mobile-nav #view.view--note {
+  padding: 0 !important;
+  max-width: none;
+}
+
+.friends-page--note {
+  gap: 0;
+  min-height: 100dvh;
+  max-width: none;
+}
+
+.fp-notices {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.fp-notice {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.7rem 0.4rem;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fp-notice.is-unread {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.fp-notice__copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.fp-notice__copy strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.fp-notice__copy strong em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.fp-notice__copy p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fp-notice__copy time {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 .fp-inbox__cta {
   justify-self: center;
   margin-top: 0.35rem;
@@ -2025,29 +2358,32 @@ a.fp-convo__watching {
   /* Watch together: keep tab icons + invite actions on-screen */
   .friends-page .fp-msg-head {
     flex-wrap: nowrap;
-    align-items: flex-start;
+    align-items: center;
   }
 
   .friends-page .fp-msg-head h1 {
     flex: 1 1 auto;
     min-width: 0;
-    max-width: calc(100% - 7.6rem);
-    font-size: clamp(1.25rem, 5.8vw, 1.5rem);
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    line-height: 1.12;
+    max-width: none;
+    font-size: clamp(1.15rem, 4.8vw, 1.4rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.15;
   }
 
   .friends-page .fp-msg-actions {
+    position: relative;
+    z-index: 1;
     gap: 0.28rem;
     margin-left: auto;
-    margin-top: 0.1rem;
+    margin-top: 0;
+    flex-shrink: 0;
   }
 
   .friends-page .fp-icon-btn {
-    width: 2.35rem;
-    height: 2.35rem;
+    width: 2.15rem;
+    height: 2.15rem;
   }
 
   .friends-page .fp-party {
