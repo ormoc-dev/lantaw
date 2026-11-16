@@ -237,12 +237,37 @@ function iframeAttrs(streamUrl, { deferSrc = false, provider = getStreamProvider
   `.trim();
 }
 
+function episodeCountForSeason(movie, seasonNum) {
+  const match = (movie.seasons || []).find(
+    (season) => Number(season.seasonNumber) === Number(seasonNum)
+  );
+  return Math.max(1, Number(match?.episodeCount) || 1);
+}
+
+function renderEpisodeChips(episodeCount, selectedEpisode = 1, disabled = false) {
+  const max = Math.max(1, Number(episodeCount) || 1);
+  const current = Math.min(max, Math.max(1, Number(selectedEpisode) || 1));
+  let html = "";
+  for (let i = 1; i <= max; i += 1) {
+    html += `<button
+      type="button"
+      class="stream-ep${i === current ? " is-active" : ""}"
+      data-episode="${i}"
+      role="option"
+      aria-selected="${i === current ? "true" : "false"}"
+      ${disabled ? "disabled" : ""}
+    >${i}</button>`;
+  }
+  return html;
+}
+
 /** Season / episode picker used by detail + watch-party host toolbar. */
 export function renderTvEpisodeControls(movie, opts = {}) {
   const defaults = getTvDefaults(movie);
   const seasonNum = Math.max(1, Number(opts.season) || defaults.season);
   const episodeNum = Math.max(1, Number(opts.episode) || defaults.episode);
   const disabled = Boolean(opts.disabled);
+  const episodeCount = episodeCountForSeason(movie, seasonNum);
   const options = (movie.seasons || [])
     .map(
       (season) =>
@@ -255,20 +280,35 @@ export function renderTvEpisodeControls(movie, opts = {}) {
     .join("");
 
   const seasonSelect = options
-    ? `<select id="stream-season" ${disabled ? "disabled" : ""}>${options}</select>`
-    : `<input id="stream-season" type="number" min="1" value="${seasonNum}" ${
+    ? `<select id="stream-season" aria-label="Season" ${
+        disabled ? "disabled" : ""
+      }>${options}</select>`
+    : `<input id="stream-season" type="number" min="1" aria-label="Season" value="${seasonNum}" ${
         disabled ? "disabled" : ""
       } />`;
 
   return `
     <div class="stream-controls">
-      <label>Season ${seasonSelect}</label>
-      <label>Episode <input id="stream-episode" type="number" min="1" value="${episodeNum}" ${
-        disabled ? "disabled" : ""
-      } /></label>
-      <button class="btn btn--ghost" id="stream-reload" type="button" ${
-        disabled ? "disabled" : ""
-      }>Load</button>
+      <div class="stream-controls__season">
+        <span class="stream-controls__label">Season</span>
+        <div class="stream-controls__select-wrap">${seasonSelect}</div>
+      </div>
+      <div class="stream-controls__episodes">
+        <div class="stream-controls__eps-head">
+          <span class="stream-controls__label">Episodes</span>
+          <span class="stream-controls__count" id="stream-episode-count">${episodeCount} ep</span>
+        </div>
+        <input type="hidden" id="stream-episode" value="${Math.min(
+          episodeCount,
+          Math.max(1, episodeNum)
+        )}" />
+        <div
+          class="stream-controls__eps"
+          id="stream-episode-list"
+          role="listbox"
+          aria-label="Episodes"
+        >${renderEpisodeChips(episodeCount, episodeNum, disabled)}</div>
+      </div>
     </div>
   `;
 }
@@ -297,6 +337,11 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
     });
 
     return `
+      <div class="detail__player-frame detail__player-frame--embed">
+        <iframe
+          ${iframeAttrs(streamUrl, { deferSrc, provider })}
+        ></iframe>
+      </div>
       ${
         readOnly || omitControls
           ? ""
@@ -305,11 +350,6 @@ export function renderStreamPlayer(movie, mediaType, opts = {}) {
               episode: episodeNum,
             })
       }
-      <div class="detail__player-frame detail__player-frame--embed">
-        <iframe
-          ${iframeAttrs(streamUrl, { deferSrc, provider })}
-        ></iframe>
-      </div>
     `;
   }
 
@@ -343,27 +383,13 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
 
   const seasonEl = player.querySelector("#stream-season");
   const episodeEl = player.querySelector("#stream-episode");
-  const reloadBtn = player.querySelector("#stream-reload");
+  const episodeList = player.querySelector("#stream-episode-list");
+  const episodeCountEl = player.querySelector("#stream-episode-count");
   const iframe = player.querySelector("#stream-iframe");
 
-  if (!seasonEl || !episodeEl || !reloadBtn) return;
+  if (!seasonEl || !episodeEl || !episodeList) return;
 
-  const clampEpisode = () => {
-    if (seasonEl.tagName !== "SELECT") return;
-    const selected = seasonEl.selectedOptions?.[0];
-    const max = Number(selected?.dataset?.episodeCount || 1);
-    const current = Number(episodeEl.value) || 1;
-    if (current < 1) episodeEl.value = "1";
-    if (current > max) episodeEl.value = String(max);
-    episodeEl.max = String(max);
-  };
-
-  seasonEl.addEventListener("change", clampEpisode);
-  clampEpisode();
-
-  reloadBtn.addEventListener("click", () => {
-    const season = Math.max(1, Number(seasonEl.value) || 1);
-    const episode = Math.max(1, Number(episodeEl.value) || 1);
+  const loadEpisode = (season, episode) => {
     if (iframe) {
       iframe.src = buildStreamUrl({
         mediaType,
@@ -376,6 +402,58 @@ export function bindStreamControls(player, movie, mediaType, hooks = {}) {
     }
     onReload?.();
     onEpisodeChange?.({ season, episode });
+  };
+
+  const setActiveEpisode = (episode, { load = false } = {}) => {
+    const season = Math.max(1, Number(seasonEl.value) || 1);
+    const max =
+      seasonEl.tagName === "SELECT"
+        ? Math.max(
+            1,
+            Number(seasonEl.selectedOptions?.[0]?.dataset?.episodeCount || 1)
+          )
+        : episodeCountForSeason(movie, season);
+    const next = Math.min(max, Math.max(1, Number(episode) || 1));
+    episodeEl.value = String(next);
+    episodeList.querySelectorAll(".stream-ep").forEach((btn) => {
+      const on = Number(btn.dataset.episode) === next;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const activeBtn = episodeList.querySelector(`.stream-ep[data-episode="${next}"]`);
+    activeBtn?.scrollIntoView({
+      behavior: "smooth",
+      inline: "center",
+      block: "nearest",
+    });
+    if (load) loadEpisode(season, next);
+  };
+
+  const refillEpisodes = ({ load = false } = {}) => {
+    const season = Math.max(1, Number(seasonEl.value) || 1);
+    const max =
+      seasonEl.tagName === "SELECT"
+        ? Math.max(
+            1,
+            Number(seasonEl.selectedOptions?.[0]?.dataset?.episodeCount || 1)
+          )
+        : episodeCountForSeason(movie, season);
+    const current = Math.min(max, Math.max(1, Number(episodeEl.value) || 1));
+    if (episodeCountEl) episodeCountEl.textContent = `${max} ep`;
+    episodeList.innerHTML = renderEpisodeChips(max, current, false);
+    episodeEl.value = String(current);
+    if (load) loadEpisode(season, current);
+  };
+
+  seasonEl.addEventListener("change", () => {
+    episodeEl.value = "1";
+    refillEpisodes({ load: true });
+  });
+
+  episodeList.addEventListener("click", (e) => {
+    const btn = e.target.closest(".stream-ep");
+    if (!btn || btn.disabled) return;
+    setActiveEpisode(btn.dataset.episode, { load: true });
   });
 }
 

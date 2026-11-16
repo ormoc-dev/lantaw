@@ -7,6 +7,11 @@ import {
   isInWatchlist,
   removeByTmdbId,
 } from "../services/watchlistService.js";
+import {
+  addTitleComment,
+  deleteTitleComment,
+  listTitleComments,
+} from "../services/commentService.js";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
   STREAM_PROVIDERS,
@@ -25,6 +30,8 @@ import {
   dockMiniPlayer,
   takeMiniPlayer,
 } from "../lib/miniPlayer.js?v=156";
+
+const SERVER_SWITCH_LOADING_MS = 12_000;
 
 export async function MovieView(root, params = {}) {
   return renderMediaDetail(root, params, "movie");
@@ -54,6 +61,7 @@ async function renderMediaDetail(root, params, mediaType) {
   let cleanupStreamGuard = () => {};
   let playerOpen = false;
   let minimizePlayer = () => {};
+  let clearServerSwitchLoading = () => {};
 
   root.innerHTML = loadingHtml();
 
@@ -84,6 +92,8 @@ async function renderMediaDetail(root, params, mediaType) {
 
     root.innerHTML = `
       <article class="detail">
+        <div class="detail__player" id="player" hidden></div>
+
         ${
           movie.backdrop
             ? `<div class="detail__hero" style="background-image:url('${safeBackdrop}')" aria-hidden="true"></div>`
@@ -122,81 +132,128 @@ async function renderMediaDetail(root, params, mediaType) {
 
         <div class="detail__actions" id="actions"></div>
 
-        <div class="detail__player" id="player" hidden></div>
-
         ${
-          plot
-            ? `<section class="detail__block">
+          plot || movie.omdb?.ratings?.length || movie.omdb?.imdbRating || movie.omdb?.director || movie.omdb?.actors
+            ? `<section class="detail__block detail__overview-block">
                 <h2>Overview</h2>
-                <p class="detail__plot">${escapeHtml(plot)}</p>
+                ${
+                  plot
+                    ? `<button
+                  type="button"
+                  class="detail__plot is-collapsed"
+                  id="detail-plot"
+                  aria-expanded="false"
+                  aria-controls="detail-overview-more"
+                >${escapeHtml(plot)}</button>`
+                    : `<button
+                  type="button"
+                  class="detail__plot detail__plot--toggle is-collapsed"
+                  id="detail-plot"
+                  aria-expanded="false"
+                  aria-controls="detail-overview-more"
+                >Show details</button>`
+                }
+                <div class="detail__overview-more" id="detail-overview-more" hidden>
+                  <div class="detail__omdb" id="omdb-ratings" hidden></div>
+                  ${
+                    movie.omdb?.director || movie.omdb?.actors
+                      ? `<div class="detail__overview-credits">
+                          <h3>Credits</h3>
+                          <dl class="detail__credits">
+                            ${
+                              movie.omdb.director
+                                ? `<div><dt>Director</dt><dd>${escapeHtml(
+                                    movie.omdb.director
+                                  )}</dd></div>`
+                                : ""
+                            }
+                            ${
+                              movie.omdb.actors
+                                ? `<div><dt>Cast</dt><dd>${escapeHtml(
+                                    movie.omdb.actors
+                                  )}</dd></div>`
+                                : ""
+                            }
+                          </dl>
+                        </div>`
+                      : ""
+                  }
+                </div>
               </section>`
             : ""
         }
 
-        <div class="detail__omdb" id="omdb-ratings" hidden></div>
-
-        ${
-          movie.omdb?.director || movie.omdb?.actors
-            ? `<section class="detail__block">
-                <h2>Credits</h2>
-                <dl class="detail__credits">
-                  ${
-                    movie.omdb.director
-                      ? `<div><dt>Director</dt><dd>${escapeHtml(
-                          movie.omdb.director
-                        )}</dd></div>`
-                      : ""
-                  }
-                  ${
-                    movie.omdb.actors
-                      ? `<div><dt>Cast</dt><dd>${escapeHtml(
-                          movie.omdb.actors
-                        )}</dd></div>`
-                      : ""
-                  }
-                </dl>
-              </section>`
-            : ""
-        }
+        <section class="detail__block detail__comments" aria-labelledby="detail-comments-title">
+          <h2 class="detail__comments-title" id="detail-comments-title">
+            <span id="comments-count">Comments</span>
+          </h2>
+          <div id="comments-compose" class="detail__comments-compose"></div>
+          <div id="comments-list" class="detail__comments-list">
+            ${loadingHtml({ className: "ui-loading--inline", size: "sm" })}
+          </div>
+        </section>
       </article>
     `;
 
     const actions = root.querySelector("#actions");
     const player = root.querySelector("#player");
     const omdbBox = root.querySelector("#omdb-ratings");
+    const overviewMore = root.querySelector("#detail-overview-more");
+    const setPlayingLayout = (on) => {
+      root.querySelector(".detail")?.classList.toggle("detail--playing", on);
+    };
 
-    if (movie.omdb?.ratings?.length) {
+    const setOverviewExpanded = (open) => {
+      const btn = root.querySelector("#detail-plot");
+      if (btn) {
+        btn.classList.toggle("is-collapsed", !open);
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+        if (btn.classList.contains("detail__plot--toggle")) {
+          btn.textContent = open ? "Hide details" : "Show details";
+        }
+      }
+      if (overviewMore) overviewMore.hidden = !open;
+    };
+
+    root.querySelector("#detail-plot")?.addEventListener("click", () => {
+      const btn = root.querySelector("#detail-plot");
+      const open = btn?.getAttribute("aria-expanded") !== "true";
+      setOverviewExpanded(open);
+    });
+
+    if (omdbBox && movie.omdb?.ratings?.length) {
       omdbBox.hidden = false;
       omdbBox.innerHTML = `
-        <section class="detail__block">
-          <h2>Ratings</h2>
-          <div class="omdb-ratings">
-            ${movie.omdb.ratings
-              .map(
-                (r) => `
-              <div class="omdb-ratings__item">
-                <span>${escapeHtml(shortRatingSource(r.Source))}</span>
-                <strong>${escapeHtml(r.Value)}</strong>
-              </div>`
-              )
-              .join("")}
-          </div>
-        </section>
-      `;
-    } else if (movie.omdb?.imdbRating) {
-      omdbBox.hidden = false;
-      omdbBox.innerHTML = `
-        <section class="detail__block">
-          <h2>Ratings</h2>
-          <div class="omdb-ratings">
+        <h3>Ratings</h3>
+        <div class="omdb-ratings">
+          ${movie.omdb.ratings
+            .map(
+              (r) => `
             <div class="omdb-ratings__item">
-              <span>IMDb</span>
-              <strong>${escapeHtml(movie.omdb.imdbRating)}/10</strong>
-            </div>
+              <span>${escapeHtml(shortRatingSource(r.Source))}</span>
+              <strong>${escapeHtml(r.Value)}</strong>
+            </div>`
+            )
+            .join("")}
+        </div>
+      `;
+    } else if (omdbBox && movie.omdb?.imdbRating) {
+      omdbBox.hidden = false;
+      omdbBox.innerHTML = `
+        <h3>Ratings</h3>
+        <div class="omdb-ratings">
+          <div class="omdb-ratings__item">
+            <span>IMDb</span>
+            <strong>${escapeHtml(movie.omdb.imdbRating)}/10</strong>
           </div>
-        </section>
+        </div>
       `;
     }
+
+    const hasOverviewMore =
+      (omdbBox && !omdbBox.hidden) ||
+      Boolean(overviewMore?.querySelector(".detail__overview-credits"));
+    if (overviewMore && !hasOverviewMore) overviewMore.remove();
 
     let pushedPlayerState = false;
     let ignoreNextPop = false;
@@ -235,6 +292,7 @@ async function renderMediaDetail(root, params, mediaType) {
     const closePlayerSafely = () => {
       if (!playerOpen) return;
       // Explicit Close stops playback. Back shrinks it to the corner instead.
+      clearServerSwitchLoading();
       const iframe = player.querySelector("#stream-iframe");
       if (iframe) iframe.src = "about:blank";
       closeMiniPlayer();
@@ -243,6 +301,7 @@ async function renderMediaDetail(root, params, mediaType) {
       player.hidden = true;
       player.innerHTML = "";
       playerOpen = false;
+      setPlayingLayout(false);
       if (pushedPlayerState) {
         ignoreNextPop = true;
         pushedPlayerState = false;
@@ -252,6 +311,7 @@ async function renderMediaDetail(root, params, mediaType) {
 
     minimizePlayer = () => {
       if (!playerOpen) return;
+      clearServerSwitchLoading();
       const iframe = liveStreamFrame();
       cleanupStreamGuard();
       cleanupStreamGuard = () => {};
@@ -266,6 +326,7 @@ async function renderMediaDetail(root, params, mediaType) {
       player.hidden = true;
       player.innerHTML = "";
       playerOpen = false;
+      setPlayingLayout(false);
     };
 
     const minimizeFromBack = () => {
@@ -280,9 +341,16 @@ async function renderMediaDetail(root, params, mediaType) {
 
     const mountStreamGuard = () => {
       cleanupStreamGuard();
+      // Watch now is already a user gesture — skip the "Tap to play" overlay.
+      // Skip the frame ← exit too; the bottom Close button is clearer.
+      // Still block window.open from embed popups.
       cleanupStreamGuard = attachStreamAdGuard(
         player.querySelector(".detail__player-frame--embed"),
-        { onSafeExit: minimizeFromBack }
+        {
+          onSafeExit: minimizeFromBack,
+          skipShield: true,
+          showExit: false,
+        }
       );
     };
 
@@ -352,6 +420,50 @@ async function renderMediaDetail(root, params, mediaType) {
       });
     };
 
+    let serverSwitchTimer = 0;
+    let serverSwitchLoadHandler = null;
+
+    clearServerSwitchLoading = () => {
+      if (serverSwitchTimer) {
+        clearTimeout(serverSwitchTimer);
+        serverSwitchTimer = 0;
+      }
+      const iframe = player.querySelector("#stream-iframe");
+      if (iframe && serverSwitchLoadHandler) {
+        iframe.removeEventListener("load", serverSwitchLoadHandler);
+        serverSwitchLoadHandler = null;
+      }
+      player
+        .querySelector(".detail__player-frame--embed")
+        ?.classList.remove("is-switching-server");
+      player.querySelector("#player-server-loading")?.remove();
+      player
+        .querySelectorAll("[data-player-provider]")
+        .forEach((btn) => {
+          btn.disabled = false;
+        });
+    };
+
+    const showServerSwitchLoading = (regionLabel) => {
+      clearServerSwitchLoading();
+      const frame = player.querySelector(".detail__player-frame--embed");
+      if (!frame) return;
+      frame.classList.add("is-switching-server");
+      const overlay = document.createElement("div");
+      overlay.id = "player-server-loading";
+      overlay.className = "detail__server-loading";
+      overlay.innerHTML = loadingHtml({
+        label: `Switching to ${regionLabel}…`,
+        className: "detail__server-loading__inner",
+      });
+      frame.appendChild(overlay);
+      player
+        .querySelectorAll("[data-player-provider]")
+        .forEach((btn) => {
+          btn.disabled = true;
+        });
+    };
+
     const closePlayerProviderModal = () => {
       const modal = player.querySelector("#player-provider-modal");
       if (modal) modal.hidden = true;
@@ -365,18 +477,13 @@ async function renderMediaDetail(root, params, mediaType) {
 
     const switchStreamProvider = (providerId) => {
       const next = setStreamProvider(providerId);
+      const regionLabel = getStreamProviderMeta(next).label;
       const { season, episode } = readEpisodeSelection();
       const iframe = player.querySelector("#stream-iframe");
+      showServerSwitchLoading(regionLabel);
+      closePlayerProviderModal();
       if (iframe) {
         iframe.removeAttribute("data-src");
-        iframe.src = buildStreamUrl({
-          mediaType,
-          tmdbId: movie.id,
-          season,
-          episode,
-          provider: next,
-          autoplay: true,
-        });
         const allowSandbox = getStreamProviderMeta(next).allowSandbox;
         if (allowSandbox) {
           iframe.setAttribute(
@@ -390,9 +497,33 @@ async function renderMediaDetail(root, params, mediaType) {
           "allow",
           "autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
         );
+        serverSwitchLoadHandler = () => {
+          if (serverSwitchTimer) {
+            clearTimeout(serverSwitchTimer);
+            serverSwitchTimer = 0;
+          }
+          serverSwitchLoadHandler = null;
+          // Keep the spinner briefly so the embed can paint.
+          serverSwitchTimer = window.setTimeout(() => {
+            clearServerSwitchLoading();
+          }, 450);
+        };
+        iframe.addEventListener("load", serverSwitchLoadHandler, { once: true });
+        serverSwitchTimer = window.setTimeout(() => {
+          clearServerSwitchLoading();
+        }, SERVER_SWITCH_LOADING_MS);
+        iframe.src = buildStreamUrl({
+          mediaType,
+          tmdbId: movie.id,
+          season,
+          episode,
+          provider: next,
+          autoplay: true,
+        });
+      } else {
+        clearServerSwitchLoading();
       }
       syncPlayerProviderUi();
-      closePlayerProviderModal();
       mountStreamGuard();
     };
 
@@ -420,25 +551,29 @@ async function renderMediaDetail(root, params, mediaType) {
       cleanupStreamGuard = () => {};
       player.hidden = false;
       playerOpen = true;
+      setPlayingLayout(true);
       player.innerHTML = `
-        <div class="detail__player-head">
+        ${html}
+        <div class="detail__player-head detail__player-head--below">
           <p class="detail__player-label">Now playing</p>
           <div class="detail__player-head-actions">
             ${
               allowProviderSwitch
                 ? `<button class="detail__icon-btn" id="player-provider-open" type="button" aria-label="Try another server" title="Try another server">
               <span aria-hidden="true">⇄</span>
-              <span id="player-provider-label">Try another server</span>
+              <span id="player-provider-label" class="detail__icon-btn__text">
+                <span class="detail__icon-btn__full">Try another server</span>
+                <span class="detail__icon-btn__short">Servers</span>
+              </span>
             </button>`
                 : ""
             }
             <button class="detail__icon-btn" id="player-close" type="button" aria-label="Close player">
               <span aria-hidden="true">✕</span>
-              <span>Close</span>
+              <span class="detail__icon-btn__full">Close</span>
             </button>
           </div>
         </div>
-        ${html}
         ${allowProviderSwitch ? providerModalHtml() : ""}
       `;
 
@@ -452,7 +587,10 @@ async function renderMediaDetail(root, params, mediaType) {
       }
 
       afterMount?.();
-      player.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const view = document.getElementById("view");
+      if (view) view.scrollTo({ top: 0, behavior: "smooth" });
+      else window.scrollTo({ top: 0, behavior: "smooth" });
+      player.scrollIntoView({ behavior: "smooth", block: "start" });
     };
 
     const openStream = () => {
@@ -601,6 +739,213 @@ async function renderMediaDetail(root, params, mediaType) {
     });
     tools.appendChild(watchBtn);
     if (consumeMiniExpand(streamKey)) openStream();
+
+    const commentsList = root.querySelector("#comments-list");
+    const commentsCompose = root.querySelector("#comments-compose");
+    const commentsCount = root.querySelector("#comments-count");
+    let comments = [];
+    let meId = null;
+
+    const formatCommentTime = (iso) => {
+      const t = new Date(iso).getTime();
+      if (!Number.isFinite(t)) return "";
+      const diff = Math.max(0, Date.now() - t);
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return "Just now";
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      if (days < 7) return `${days}d ago`;
+      return new Date(iso).toLocaleDateString();
+    };
+
+    const avatarHtml = (name, avatarUrl) => {
+      const initial = String(name || "F").slice(0, 1).toUpperCase();
+      if (avatarUrl) {
+        return `<img class="detail__comment-avatar" src="${escapeAttr(
+          avatarUrl
+        )}" alt="" referrerpolicy="no-referrer" />`;
+      }
+      return `<span class="detail__comment-avatar detail__comment-avatar--fallback" aria-hidden="true">${escapeHtml(
+        initial
+      )}</span>`;
+    };
+
+    const renderComments = () => {
+      if (commentsCount) {
+        const n = comments.length;
+        commentsCount.textContent = n === 1 ? "1 Comment" : `${n} Comments`;
+      }
+      if (!commentsList) return;
+      if (!comments.length) {
+        commentsList.innerHTML = `
+          <p class="detail__comments-empty">No comments yet. Be the first.</p>`;
+        return;
+      }
+      commentsList.innerHTML = comments
+        .map((c) => {
+          const name = c.author_name || "Fan";
+          const mine = meId && c.user_id === meId;
+          return `
+            <article class="detail__comment" data-comment-id="${escapeAttr(c.id)}">
+              ${avatarHtml(name, c.author_avatar)}
+              <div class="detail__comment-body">
+                <div class="detail__comment-top">
+                  <div class="detail__comment-meta">
+                    <strong>${escapeHtml(name)}</strong>
+                    <time datetime="${escapeAttr(c.created_at)}">${escapeHtml(
+                      formatCommentTime(c.created_at)
+                    )}</time>
+                  </div>
+                  ${
+                    mine
+                      ? `<button
+                          type="button"
+                          class="detail__comment-delete"
+                          data-delete-comment="${escapeAttr(c.id)}"
+                          aria-label="Delete comment"
+                          title="Delete"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                          </svg>
+                        </button>`
+                      : ""
+                  }
+                </div>
+                <p>${escapeHtml(c.body)}</p>
+              </div>
+            </article>`;
+        })
+        .join("");
+    };
+
+    const paintCompose = async (user) => {
+      if (!commentsCompose) return;
+      if (!user) {
+        commentsCompose.innerHTML = `
+          <a class="detail__comments-signin" href="${linkTo("/login")}">
+            Add a comment…
+          </a>`;
+        return;
+      }
+
+      commentsCompose.innerHTML = `
+        <form class="detail__comments-form" id="comments-form" autocomplete="off">
+          <div class="detail__comments-form-main">
+            <textarea
+              id="comment-input"
+              rows="1"
+              maxlength="1000"
+              placeholder="Add a comment…"
+              aria-label="Add a comment"
+            ></textarea>
+            <div class="detail__comments-form-actions" hidden>
+              <span class="detail__comments-hint" id="comment-hint"></span>
+              <div class="detail__comments-form-btns">
+                <button type="button" class="detail__comments-cancel" id="comment-cancel">Cancel</button>
+                <button type="submit" class="detail__comments-submit" id="comment-send" disabled>Comment</button>
+              </div>
+            </div>
+          </div>
+        </form>`;
+
+      const form = commentsCompose.querySelector("#comments-form");
+      const input = commentsCompose.querySelector("#comment-input");
+      const actions = commentsCompose.querySelector(".detail__comments-form-actions");
+      const sendBtn = commentsCompose.querySelector("#comment-send");
+      const cancelBtn = commentsCompose.querySelector("#comment-cancel");
+      const hint = commentsCompose.querySelector("#comment-hint");
+
+      const syncCompose = () => {
+        const hasText = Boolean(String(input?.value || "").trim());
+        if (sendBtn) sendBtn.disabled = !hasText;
+        input?.classList.toggle("is-expanded", Boolean(actions && !actions.hidden));
+      };
+
+      const openCompose = () => {
+        if (actions) actions.hidden = false;
+        if (input) {
+          input.rows = 2;
+          input.classList.add("is-expanded");
+        }
+        syncCompose();
+      };
+
+      const closeCompose = () => {
+        if (input) {
+          input.value = "";
+          input.rows = 1;
+          input.blur();
+          input.classList.remove("is-expanded");
+        }
+        if (actions) actions.hidden = true;
+        if (hint) hint.textContent = "";
+        syncCompose();
+      };
+
+      input?.addEventListener("focus", openCompose);
+      input?.addEventListener("input", syncCompose);
+      cancelBtn?.addEventListener("click", closeCompose);
+
+      form?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = String(input?.value || "").trim();
+        if (!text) {
+          input?.focus();
+          return;
+        }
+        if (sendBtn) {
+          sendBtn.disabled = true;
+          sendBtn.textContent = "Posting…";
+        }
+        if (hint) hint.textContent = "";
+        try {
+          const created = await addTitleComment(Number(id), mediaType, text);
+          comments = [created, ...comments];
+          closeCompose();
+          renderComments();
+        } catch (err) {
+          if (hint) hint.textContent = err.message || "Could not post";
+          if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.textContent = "Comment";
+          }
+          openCompose();
+        }
+      });
+    };
+
+    commentsList?.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-delete-comment]");
+      if (!btn) return;
+      const commentId = btn.getAttribute("data-delete-comment");
+      if (!commentId) return;
+      btn.disabled = true;
+      try {
+        await deleteTitleComment(commentId);
+        comments = comments.filter((c) => c.id !== commentId);
+        renderComments();
+      } catch (err) {
+        btn.disabled = false;
+        alert(err.message || "Could not delete");
+      }
+    });
+
+    try {
+      const user = await getUser();
+      meId = user?.id || null;
+      await paintCompose(user);
+      comments = await listTitleComments(Number(id), mediaType);
+      renderComments();
+    } catch (err) {
+      if (commentsList) {
+        commentsList.innerHTML = `<p class="muted">${escapeHtml(
+          err.message || "Could not load comments"
+        )}</p>`;
+      }
+    }
   } catch (err) {
     root.innerHTML = `
       <p class="muted">${escapeHtml(err.message)}</p>
@@ -609,6 +954,7 @@ async function renderMediaDetail(root, params, mediaType) {
 
   return {
     unmount() {
+      clearServerSwitchLoading();
       if (playerOpen) minimizePlayer();
       cleanupStreamGuard();
       cleanupPlayerHistory();
