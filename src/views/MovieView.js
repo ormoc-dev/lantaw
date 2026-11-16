@@ -25,12 +25,6 @@ import {
 } from "../lib/streamEmbed.js";
 import { loadingHtml } from "../components/Loading.js";
 import {
-  closeMiniPlayer,
-  consumeMiniExpand,
-  dockMiniPlayer,
-  takeMiniPlayer,
-} from "../lib/miniPlayer.js?v=156";
-import {
   clearWatchingNow,
   publishWatchingNow,
 } from "../services/watchingService.js";
@@ -64,7 +58,7 @@ async function renderMediaDetail(root, params, mediaType) {
   let cleanupPlayerHistory = () => {};
   let cleanupStreamGuard = () => {};
   let playerOpen = false;
-  let minimizePlayer = () => {};
+  let stopPlayer = () => {};
   let clearServerSwitchLoading = () => {};
 
   root.innerHTML = loadingHtml();
@@ -261,16 +255,6 @@ async function renderMediaDetail(root, params, mediaType) {
 
     let pushedPlayerState = false;
     let ignoreNextPop = false;
-    const streamKey = `${mediaType}:${id}`;
-    const returnHref = linkTo(mediaType === "tv" ? `/tv/${id}` : `/movie/${id}`);
-
-    const liveStreamFrame = () => {
-      const iframe = player.querySelector("#stream-iframe");
-      if (!iframe) return null;
-      const src = iframe.getAttribute("src") || "";
-      if (!src || src === "about:blank") return null;
-      return iframe;
-    };
 
     const onPopState = () => {
       if (ignoreNextPop) {
@@ -279,27 +263,29 @@ async function renderMediaDetail(root, params, mediaType) {
         return;
       }
       if (!playerOpen) return;
-      minimizePlayer();
+      stopPlayer();
       pushedPlayerState = false;
     };
-    const onMiniExpand = () => {
-      if (!consumeMiniExpand(streamKey)) return;
-      openStream();
-    };
     window.addEventListener("popstate", onPopState);
-    window.addEventListener("lantaw-mini-expand", onMiniExpand);
     cleanupPlayerHistory = () => {
       window.removeEventListener("popstate", onPopState);
-      window.removeEventListener("lantaw-mini-expand", onMiniExpand);
     };
 
     const closePlayerSafely = () => {
       if (!playerOpen) return;
-      // Explicit Close stops playback. Back shrinks it to the corner instead.
+      stopPlayer();
+      if (pushedPlayerState) {
+        ignoreNextPop = true;
+        pushedPlayerState = false;
+        history.back();
+      }
+    };
+
+    stopPlayer = () => {
+      if (!playerOpen) return;
       clearServerSwitchLoading();
       const iframe = player.querySelector("#stream-iframe");
       if (iframe) iframe.src = "about:blank";
-      closeMiniPlayer();
       clearWatchingNow().catch(() => {});
       cleanupStreamGuard();
       cleanupStreamGuard = () => {};
@@ -307,41 +293,6 @@ async function renderMediaDetail(root, params, mediaType) {
       player.innerHTML = "";
       playerOpen = false;
       setPlayingLayout(false);
-      if (pushedPlayerState) {
-        ignoreNextPop = true;
-        pushedPlayerState = false;
-        history.back();
-      }
-    };
-
-    minimizePlayer = () => {
-      if (!playerOpen) return;
-      clearServerSwitchLoading();
-      const iframe = liveStreamFrame();
-      cleanupStreamGuard();
-      cleanupStreamGuard = () => {};
-      if (iframe) {
-        dockMiniPlayer({
-          iframe,
-          title: movie.title || "Now playing",
-          href: returnHref,
-          key: streamKey,
-        });
-      }
-      player.hidden = true;
-      player.innerHTML = "";
-      playerOpen = false;
-      setPlayingLayout(false);
-    };
-
-    const minimizeFromBack = () => {
-      if (!playerOpen) return;
-      minimizePlayer();
-      if (pushedPlayerState) {
-        ignoreNextPop = true;
-        pushedPlayerState = false;
-        history.back();
-      }
     };
 
     const mountStreamGuard = ({ alreadyPlaying = false } = {}) => {
@@ -351,12 +302,10 @@ async function renderMediaDetail(root, params, mediaType) {
       cleanupStreamGuard = attachStreamAdGuard(
         player.querySelector(".detail__player-frame--embed"),
         {
-          onSafeExit: minimizeFromBack,
+          onSafeExit: closePlayerSafely,
           skipShield: true,
           ghostShield: !alreadyPlaying,
           showExit: false,
-          shieldLabel: "Tap to start",
-          shieldHint: "Stops pop-up ads",
         }
       );
     };
@@ -572,11 +521,11 @@ async function renderMediaDetail(root, params, mediaType) {
           <div class="detail__player-head-actions">
             ${
               allowProviderSwitch
-                ? `<button class="detail__icon-btn" id="player-provider-open" type="button" aria-label="Try another server" title="Try another server">
+                ? `<button class="detail__icon-btn" id="player-provider-open" type="button" aria-label="Choose server if not working" title="Choose server if not working">
               <span aria-hidden="true">⇄</span>
               <span id="player-provider-label" class="detail__icon-btn__text">
-                <span class="detail__icon-btn__full">Try another server</span>
-                <span class="detail__icon-btn__short">Servers</span>
+                <span class="detail__icon-btn__full">Choose server if not working</span>
+                <span class="detail__icon-btn__short">Choose server if not working</span>
               </span>
             </button>`
                 : ""
@@ -607,21 +556,14 @@ async function renderMediaDetail(root, params, mediaType) {
     };
 
     const openStream = () => {
-      const reused = takeMiniPlayer(streamKey);
-      if (!reused) closeMiniPlayer();
       showPlayer(
         renderStreamPlayer(movie, mediaType, {
           // Fresh loads stay blank until the ghost shield tap (blocks popup chain).
-          deferSrc: !reused,
+          deferSrc: true,
           autoplay: true,
         }),
         () => {
-          if (reused) {
-            const slot = player.querySelector("#stream-iframe");
-            reused.id = "stream-iframe";
-            slot?.replaceWith(reused);
-          }
-          mountStreamGuard({ alreadyPlaying: Boolean(reused) });
+          mountStreamGuard({ alreadyPlaying: false });
           bindStreamControls(player, movie, mediaType, {
             onReload: () => mountStreamGuard({ alreadyPlaying: false }),
             autoplay: true,
@@ -762,7 +704,6 @@ async function renderMediaDetail(root, params, mediaType) {
       }
     });
     tools.appendChild(watchBtn);
-    if (consumeMiniExpand(streamKey)) openStream();
 
     const commentsList = root.querySelector("#comments-list");
     const commentsCompose = root.querySelector("#comments-compose");
@@ -979,7 +920,7 @@ async function renderMediaDetail(root, params, mediaType) {
   return {
     unmount() {
       clearServerSwitchLoading();
-      if (playerOpen) minimizePlayer();
+      if (playerOpen) stopPlayer();
       cleanupStreamGuard();
       cleanupPlayerHistory();
     },

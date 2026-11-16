@@ -1,5 +1,6 @@
 import { tmdb, posterUrl, backdropUrl } from "../lib/tmdb.js?v=151";
 import { getOmdbByImdbId, getOmdbByTitle } from "../lib/omdb.js";
+import { idbGet, idbSet } from "../lib/idbCache.js";
 
 function mapTitle(m) {
   return {
@@ -355,14 +356,12 @@ export async function getVivamax({ limit = CATEGORY_LIST_LIMIT } = {}) {
 
 function readCategoryCache(categoryId) {
   const hit = categoryMem.get(categoryId);
-  if (hit && hit.expires > Date.now()) return hit.data;
+  if (hit?.data) return hit.data;
   try {
     const raw = sessionStorage.getItem(`lantaw-cat-${categoryId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed?.expires || parsed.expires < Date.now() || !parsed.data) {
-      return null;
-    }
+    if (!parsed?.data) return null;
     categoryMem.set(categoryId, parsed);
     return parsed.data;
   } catch {
@@ -378,6 +377,28 @@ function writeCategoryCache(categoryId, data) {
   } catch {
     /* quota */
   }
+  idbSet(`cat:${categoryId}`, entry);
+}
+
+const CATALOG_IDS = [
+  "recommend",
+  "filipino",
+  "vivamax",
+  "movies",
+  "tv-show",
+  "anime",
+  "kdrama",
+];
+
+/** Warm in-memory shelves from IndexedDB before the first paint. */
+export async function hydrateCatalogCache() {
+  await Promise.all(
+    CATALOG_IDS.map(async (id) => {
+      if (categoryMem.has(id)) return;
+      const entry = await idbGet(`cat:${id}`);
+      if (entry?.data) categoryMem.set(id, entry);
+    })
+  );
 }
 
 /** Instant paint from last visit (may be slightly stale). */
@@ -546,7 +567,29 @@ async function attachOmdb(detail, { imdbId, title, year }) {
   }
 }
 
+async function cachedDetail(key, load) {
+  const cached = await idbGet(key);
+  const fresh = load()
+    .then((detail) => {
+      if (detail?.id) idbSet(key, { at: Date.now(), data: detail });
+      return detail;
+    })
+    .catch((err) => {
+      if (cached?.data) return cached.data;
+      throw err;
+    });
+  if (cached?.data?.id) {
+    fresh.catch(() => {});
+    return cached.data;
+  }
+  return fresh;
+}
+
 export async function getMovieDetail(id) {
+  return cachedDetail(`detail:movie:${id}`, () => fetchMovieDetail(id));
+}
+
+async function fetchMovieDetail(id) {
   const [movie, credits, videos, external] = await Promise.all([
     tmdb.movie(id),
     tmdb.credits(id),
@@ -573,6 +616,10 @@ export async function getMovieDetail(id) {
 }
 
 export async function getTvDetail(id) {
+  return cachedDetail(`detail:tv:${id}`, () => fetchTvDetail(id));
+}
+
+async function fetchTvDetail(id) {
   const [show, credits, videos, external] = await Promise.all([
     tmdb.tv(id),
     tmdb.tvCredits(id),

@@ -1,5 +1,6 @@
 import { createApp } from "./App.js?v=168";
 import { onAuthChange, recoverSession } from "./services/authService.js";
+import { hydrateCatalogCache } from "./services/movieService.js";
 import {
   startPresence,
   stopPresence,
@@ -28,9 +29,14 @@ if (new Date().getMonth() === 9) {
 async function boot() {
   let session = null;
   try {
-    session = await recoverSession();
+    const [recovered] = await Promise.all([
+      recoverSession(),
+      hydrateCatalogCache(),
+    ]);
+    session = recovered;
   } catch (err) {
     console.warn("Session recovery failed:", err?.message || err);
+    hydrateCatalogCache().catch(() => {});
   }
 
   // After Google OAuth, land in the app — not back on /login.

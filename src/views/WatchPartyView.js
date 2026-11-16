@@ -11,12 +11,6 @@ import {
   updateWatchPartyStatus,
 } from "../services/friendsService.js";
 import { linkTo } from "../router/index.js";
-import {
-  closeMiniPlayer,
-  dockMiniPlayer,
-  peekMiniPlayer,
-  takeMiniPlayer,
-} from "../lib/miniPlayer.js?v=156";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
   bindStreamControls,
@@ -44,10 +38,6 @@ import {
  */
 export async function WatchPartyView(root, params = {}) {
   const partyId = params.id;
-  const partyKey = partyId ? `party:${partyId}` : "";
-  const parkedMatches = () => peekMiniPlayer()?.key === partyKey;
-  // A different title's corner player must stop. This room's own picture stays.
-  if (!parkedMatches()) closeMiniPlayer();
   let cleanupStreamGuard = () => {};
   let unsubTime = null;
   let partySub = null;
@@ -670,67 +660,13 @@ export async function WatchPartyView(root, params = {}) {
     }
   };
 
-  /** Put the corner picture back in this room without reloading it. */
-  const adoptParkedStream = () => {
-    if (!parkedMatches()) return false;
-    const iframe = takeMiniPlayer(partyKey);
-    if (!iframe) return false;
-    cleanupStreamGuard();
-    cleanupStreamGuard = () => {};
-    stripPlayerDom();
-    waiting.hidden = true;
-    setSyncTipVisible(true);
-    const wrap = document.createElement("div");
-    wrap.className = "detail__player-frame detail__player-frame--embed";
-    iframe.id = "stream-iframe";
-    wrap.appendChild(iframe);
-    waiting.insertAdjacentElement("afterend", wrap);
-    cleanupStreamGuard = attachStreamAdGuard(wrap, {
-      skipShield: true,
-      showExit: false,
-    });
-    bindHostTimeTracking();
-    if (party.isHost && mediaType === "tv") paintEpisodeRow();
-    const key = playbackKey(party);
-    lastMountedKey = key;
-    lastAppliedKey = key;
-    mountInFlightKey = "";
-    lastContentKey = contentKeyFor(party);
-    if (party.isGuest) lastFollowedToken = syncTokenOf(party);
-    return true;
-  };
-
-  const parkLiveStream = () => {
-    const iframe = playerEl?.querySelector("#stream-iframe");
-    const src = iframe?.getAttribute("src") || "";
-    if (!iframe || !src || src === "about:blank" || !partyKey) return false;
-    cleanupStreamGuard();
-    cleanupStreamGuard = () => {};
-    unsubTime?.();
-    unsubTime = null;
-    return dockMiniPlayer({
-      iframe,
-      title: movie?.title || "Watch together",
-      href: linkTo(`/watch-party/${partyId}`),
-      key: partyKey,
-    });
-  };
-
   const applyPlayback = (row = party, { force = false } = {}) => {
-    if (!row || row.status !== "active") {
-      if (parkedMatches()) closeMiniPlayer();
-      return;
-    }
+    if (!row || row.status !== "active") return;
     const state = row.playback_state || "idle";
     const key = playbackKey(row);
     const token = syncTokenOf(row);
     const contentKey = contentKeyFor(row);
     const startAt = estimatePositionSec(row);
-
-    if (parkedMatches()) {
-      if (state === "playing" && adoptParkedStream()) return;
-      closeMiniPlayer();
-    }
 
     if (state === "playing") {
       // Host loads only via Start / Sync / Continue / episode Load (force).
@@ -1987,7 +1923,6 @@ export async function WatchPartyView(root, params = {}) {
 
   return {
     unmount() {
-      const parked = parkLiveStream();
       stopTypingPing();
       window.clearTimeout(typingHideTimer);
       window.clearTimeout(kbSettleTimer);
@@ -2021,7 +1956,7 @@ export async function WatchPartyView(root, params = {}) {
       document.documentElement.style.removeProperty("--wparty-lock-h");
       document.documentElement.style.removeProperty("--wparty-compose-h");
       if (composeSpacer) composeSpacer.hidden = true;
-      if (!parked) clearStream();
+      clearStream();
       teardownChrome();
     },
   };

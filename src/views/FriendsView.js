@@ -44,6 +44,7 @@ import { showConfirm, showNotice } from "../lib/appModal.js";
 import { loadingHtml } from "../components/Loading.js";
 import { peopleCardsHtml } from "../components/PeopleYouMayKnow.js?v=141";
 import { linkTo } from "../router/index.js";
+import { idbGet, idbSet } from "../lib/idbCache.js";
 import {
   featuredGifs,
   gifMessageBody,
@@ -1006,22 +1007,21 @@ export async function FriendsView(root) {
   };
 
   const writeInboxSnapshot = () => {
+    const payload = {
+      userId: me.id,
+      at: Date.now(),
+      friendships,
+      parties,
+      watchingByUser,
+      activity,
+      chatPreviews,
+    };
     try {
-      sessionStorage.setItem(
-        INBOX_CACHE_KEY,
-        JSON.stringify({
-          userId: me.id,
-          at: Date.now(),
-          friendships,
-          parties,
-          watchingByUser,
-          activity,
-          chatPreviews,
-        })
-      );
+      sessionStorage.setItem(INBOX_CACHE_KEY, JSON.stringify(payload));
     } catch {
       /* private mode / quota */
     }
+    idbSet(`friends:${me.id}`, payload);
   };
 
   async function refreshData() {
@@ -2353,6 +2353,16 @@ export async function FriendsView(root) {
         }
       };
 
+      let screenH = Math.round(
+        window.visualViewport?.height || window.innerHeight
+      );
+
+      const rememberScreen = () => {
+        if (inputFocused) return;
+        const vv = window.visualViewport;
+        screenH = Math.round(Math.max(window.innerHeight, vv?.height || 0));
+      };
+
       const measureComposeH = () =>
         Math.ceil(
           composer?.getBoundingClientRect().height ||
@@ -2377,8 +2387,10 @@ export async function FriendsView(root) {
         const layoutH = window.innerHeight;
         const visibleH = vv ? Math.round(vv.height) : layoutH;
         const offsetTop = vv ? Math.round(vv.offsetTop) : 0;
-        const inset = Math.max(0, layoutH - offsetTop - visibleH);
-        const kbMode = inputFocused && (inset > 72 || visibleH < layoutH - 72);
+        rememberScreen();
+        // While the message field is focused on a phone, the tab bar stays hidden.
+        // Height math alone fails: Android shrinks innerHeight before focus fires.
+        const kbMode = Boolean(inputFocused && !split);
 
         document.body.classList.toggle("is-friends-chat-kb", kbMode);
 
@@ -2388,7 +2400,7 @@ export async function FriendsView(root) {
           `${composeH}px`
         );
 
-        if (!kbMode || split) {
+        if (!kbMode) {
           clearComposerPin();
           return;
         }
@@ -2568,6 +2580,7 @@ export async function FriendsView(root) {
 
       input?.addEventListener("focus", () => {
         inputFocused = true;
+        document.body.classList.add("is-friends-chat-kb");
         syncChatViewport();
         [80, 220, 420].forEach((ms) => {
           setTimeout(() => {
@@ -3198,7 +3211,8 @@ export async function FriendsView(root) {
     }, delay);
   }
 
-  const inboxSnapshot = readInboxSnapshot();
+  const inboxSnapshot =
+    readInboxSnapshot() || (await idbGet(`friends:${me.id}`));
   if (inboxSnapshot) {
     friendships = Array.isArray(inboxSnapshot.friendships)
       ? inboxSnapshot.friendships

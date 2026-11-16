@@ -52,12 +52,8 @@ export function attachStreamAdGuard(
       : "stream-shield";
     shield.setAttribute("aria-label", shieldLabel);
     if (ghostShield) {
-      shield.innerHTML = `
-        <span class="stream-shield__ghost-label">${escapeShieldText(
-          shieldLabel
-        )}</span>
-        <span class="stream-shield__hint">${escapeShieldText(shieldHint)}</span>
-      `;
+      shield.setAttribute("aria-label", "Play");
+      shield.innerHTML = `<span class="stream-shield__pulse" aria-hidden="true"></span>`;
     } else {
       shield.innerHTML = `
         <span class="stream-shield__pulse" aria-hidden="true"></span>

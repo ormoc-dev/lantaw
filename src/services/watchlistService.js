@@ -1,7 +1,9 @@
 import { getSupabase } from "../lib/supabase.js";
 import { getUser } from "./authService.js";
+import { idbGet, idbSet } from "../lib/idbCache.js";
 
 const TABLE = "watchlist";
+const WL_KEY = "watchlist";
 
 async function requireUser() {
   const user = await getUser();
@@ -9,16 +11,36 @@ async function requireUser() {
   return user;
 }
 
+async function rememberList(userId, rows) {
+  await idbSet(WL_KEY, { at: Date.now(), userId, data: rows });
+}
+
+async function readList(userId) {
+  const cached = await idbGet(WL_KEY);
+  if (cached?.userId !== userId || !Array.isArray(cached.data)) return null;
+  return cached.data;
+}
+
 export async function listWatchlist() {
-  await requireUser();
+  const user = await requireUser();
+  const cached = await readList(user.id);
 
-  const { data, error } = await getSupabase()
-    .from(TABLE)
-    .select("*")
-    .order("created_at", { ascending: false });
+  const pull = async () => {
+    const { data, error } = await getSupabase()
+      .from(TABLE)
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    const rows = data || [];
+    rememberList(user.id, rows);
+    return rows;
+  };
 
-  if (error) throw error;
-  return data || [];
+  if (cached) {
+    pull().catch(() => {});
+    return cached;
+  }
+  return pull();
 }
 
 export async function addToWatchlist({ tmdbId, title, poster }) {
@@ -41,14 +63,25 @@ export async function addToWatchlist({ tmdbId, title, poster }) {
     .single();
 
   if (error) throw error;
+  const cached = (await readList(user.id)) || [];
+  const next = [
+    data,
+    ...cached.filter((row) => row.tmdb_id !== data.tmdb_id),
+  ];
+  rememberList(user.id, next);
   return data;
 }
 
 export async function removeFromWatchlist(id) {
-  await requireUser();
+  const user = await requireUser();
 
   const { error } = await getSupabase().from(TABLE).delete().eq("id", id);
   if (error) throw error;
+  const cached = (await readList(user.id)) || [];
+  rememberList(
+    user.id,
+    cached.filter((row) => row.id !== id)
+  );
 }
 
 export async function removeByTmdbId(tmdbId) {
@@ -61,11 +94,21 @@ export async function removeByTmdbId(tmdbId) {
     .eq("tmdb_id", tmdbId);
 
   if (error) throw error;
+  const cached = (await readList(user.id)) || [];
+  rememberList(
+    user.id,
+    cached.filter((row) => Number(row.tmdb_id) !== Number(tmdbId))
+  );
 }
 
 export async function isInWatchlist(tmdbId) {
   const user = await getUser();
   if (!user) return false;
+
+  const cached = await readList(user.id);
+  if (cached) {
+    return cached.some((row) => Number(row.tmdb_id) === Number(tmdbId));
+  }
 
   const { data, error } = await getSupabase()
     .from(TABLE)
