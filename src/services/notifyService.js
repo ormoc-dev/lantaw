@@ -1,10 +1,12 @@
 import { getSupabase } from "../lib/supabase.js";
 import { getUser } from "./authService.js";
 import {
+  appIsForeground,
   ensureNotifyPermission,
   notificationPermission,
   showAppNotification,
 } from "../lib/appNotify.js";
+import { showInAppToast } from "../lib/inAppToast.js";
 import { parseGifMessage } from "../lib/giphy.js";
 import { parseShareMessage } from "../lib/shareMessage.js";
 import {
@@ -55,18 +57,26 @@ function previewBody(body) {
   return text.length > 90 ? `${text.slice(0, 89)}…` : text;
 }
 
-async function profileName(userId) {
-  if (!userId) return "Friend";
+async function profileCard(userId) {
+  if (!userId) return { name: "Friend", avatar: null };
   try {
     const { data } = await getSupabase()
       .from("profiles")
-      .select("display_name, email")
+      .select("display_name, email, avatar_url")
       .eq("id", userId)
       .maybeSingle();
-    return data?.display_name || data?.email || "Friend";
+    return {
+      name: data?.display_name || data?.email || "Friend",
+      avatar: data?.avatar_url || null,
+    };
   } catch {
-    return "Friend";
+    return { name: "Friend", avatar: null };
   }
+}
+
+async function profileName(userId) {
+  const card = await profileCard(userId);
+  return card.name;
 }
 
 function goHash(url) {
@@ -132,15 +142,28 @@ function bindServiceWorkerActions() {
 export async function notifyFriendRequest({ fromId, friendshipId }) {
   const tag = `fr-${friendshipId || fromId}`;
   if (rememberTag(tag, 120_000)) return;
-  const name = await profileName(fromId);
-  await showAppNotification({
-    kind: "friend",
-    title: "Friend request",
-    body: `${name} sent you a friend request`,
-    tag,
-    url: "#/friends",
-    force: true,
-  });
+  const { name, avatar } = await profileCard(fromId);
+  const body = `${name} sent you a friend request`;
+  if (document.visibilityState === "visible") {
+    showInAppToast({
+      title: "Friend request",
+      body,
+      avatarUrl: avatar,
+      onClick: () => {
+        location.hash = linkTo("/friends");
+      },
+    });
+  }
+  if (!appIsForeground()) {
+    await showAppNotification({
+      kind: "friend",
+      title: "Friend request",
+      body,
+      tag,
+      url: "#/friends",
+      force: true,
+    });
+  }
 }
 
 export async function notifyChatMessage({ friendshipId, senderId, body, messageId }) {
@@ -150,16 +173,35 @@ export async function notifyChatMessage({ friendshipId, senderId, body, messageI
   }
   const tag = `chat-${messageId || `${friendshipId}-${body?.slice?.(0, 24) || ""}`}`;
   if (rememberTag(tag, 20_000)) return;
-  const name = await profileName(senderId);
-  await showAppNotification({
-    kind: "chat",
-    title: name,
-    body: previewBody(body),
-    tag: `chat-${friendshipId}`,
-    url: `#/friends?chat=${encodeURIComponent(friendshipId)}`,
-    data: { chatId: friendshipId },
-    force: true,
-  });
+  const { name, avatar } = await profileCard(senderId);
+  const preview = previewBody(body);
+  const chatUrl = `#/friends?chat=${encodeURIComponent(friendshipId)}`;
+  const openChat = () => {
+    location.hash = linkTo(
+      `/friends?chat=${encodeURIComponent(friendshipId)}`
+    );
+  };
+
+  // App open → banner at the top (Messenger-style). Background → OS alert.
+  if (document.visibilityState === "visible") {
+    showInAppToast({
+      title: name,
+      body: preview,
+      avatarUrl: avatar,
+      onClick: openChat,
+    });
+  }
+  if (!appIsForeground()) {
+    await showAppNotification({
+      kind: "chat",
+      title: name,
+      body: preview,
+      tag: `chat-${friendshipId}`,
+      url: chatUrl,
+      data: { chatId: friendshipId },
+      force: true,
+    });
+  }
 }
 
 export async function notifyWatchInvite({ partyId, hostName, title, poster }) {

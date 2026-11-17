@@ -10182,6 +10182,97 @@ body.is-wparty-kb .wparty__gifs:not([hidden]) {
   margin-left: 0.1rem;
 }
 
+/* —— In-app chat banner (Messenger-style) —— */
+.lantaw-toast-host {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 160;
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+  padding: max(0.55rem, env(safe-area-inset-top)) 0.75rem 0;
+}
+
+.lantaw-toast {
+  appearance: none;
+  pointer-events: auto;
+  width: min(24rem, calc(100% - 0.5rem));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  text-align: left;
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: color-mix(in srgb, #1a0c10 88%, #000);
+  color: var(--text, #fff);
+  font: inherit;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transform: translateY(-120%);
+  opacity: 0;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lantaw-toast.is-in {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.lantaw-toast.is-out {
+  transform: translateY(-120%);
+  opacity: 0;
+}
+
+.lantaw-toast__avatar {
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 999px;
+  object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lantaw-toast__avatar--fallback {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--accent-strong, #ff4d6d);
+  background: color-mix(in srgb, var(--accent, #ff0a43) 18%, #12080b);
+}
+
+.lantaw-toast__copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.lantaw-toast__copy strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lantaw-toast__copy em {
+  font-style: normal;
+  font-size: 0.84rem;
+  color: var(--muted, #b8a8ad);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* —— Video call overlay (WebRTC) —— */
 .vc {
   position: fixed;
