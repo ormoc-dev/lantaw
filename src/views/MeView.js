@@ -2,8 +2,6 @@ import {
   getSession,
   resolveUserProfile,
   signOut,
-  updateDisplayName,
-  uploadProfileAvatar,
 } from "../services/authService.js";
 import { listWatchlist } from "../services/watchlistService.js";
 import { loadingHtml } from "../components/Loading.js";
@@ -62,7 +60,7 @@ export async function MeView(root) {
     <div class="me-page">
       <section class="me-section" aria-label="Profile">
         <header class="me-identity">
-          <button type="button" class="me-identity__avatar-wrap" id="me-avatar-btn" aria-label="Change profile photo">
+          <div class="me-identity__avatar-wrap me-identity__avatar-wrap--static">
             ${
               avatar
                 ? `<img class="me-identity__avatar" id="me-avatar-img" src="${escapeHtml(
@@ -72,21 +70,10 @@ export async function MeView(root) {
                     initial
                   )}</span>`
             }
-            <span class="me-identity__avatar-edit" aria-hidden="true">${ICONS.pen}</span>
-          </button>
-          <input type="file" id="me-avatar-file" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
+          </div>
           <div class="me-identity__copy">
             <div class="me-identity__name-row">
               <h2 id="me-display-name">${escapeHtml(name || "Account")}</h2>
-              <button
-                type="button"
-                class="me-identity__edit"
-                id="me-edit-profile"
-                aria-label="Edit profile name"
-                title="Edit name"
-              >
-                ${ICONS.pen}
-              </button>
             </div>
             ${email ? `<p class="me-identity__email">${escapeHtml(email)}</p>` : ""}
           </div>
@@ -127,11 +114,11 @@ export async function MeView(root) {
       <section class="me-section" aria-labelledby="me-settings-title">
         <h2 class="me-section__title" id="me-settings-title">Settings</h2>
         <nav class="me-destinations" aria-label="Settings">
-          <button type="button" class="me-dest" id="me-settings-edit">
+          <a class="me-dest" href="${linkTo("/me/edit")}">
             <span class="me-dest__icon">${ICONS.pen}</span>
             <span class="me-dest__label">Edit profile</span>
             <span class="me-dest__chev" aria-hidden="true">›</span>
-          </button>
+          </a>
           <button type="button" class="me-dest" id="me-settings-provider">
             <span class="me-dest__icon">${ICONS.stream}</span>
             <span class="me-dest__label">Server region</span>
@@ -166,36 +153,6 @@ export async function MeView(root) {
           <button type="button" class="me-signout" id="sign-out">Sign out</button>
         </div>
       </section>
-
-      <div class="me-modal" id="edit-profile-modal" hidden>
-        <div class="me-modal__backdrop" data-close-edit-profile></div>
-        <div
-          class="me-modal__dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-profile-title"
-        >
-          <h2 id="edit-profile-title">Edit profile</h2>
-          <p class="me-modal__lead">Change how your name appears to friends. Email can’t be edited.</p>
-          <label class="me-modal__label" for="me-name-input">Display name</label>
-          <input
-            class="me-modal__input"
-            id="me-name-input"
-            type="text"
-            maxlength="40"
-            autocomplete="nickname"
-            enterkeyhint="done"
-            value="${escapeHtml(name || "")}"
-          />
-          <p class="me-modal__error" id="me-name-error" hidden></p>
-          <div class="me-modal__actions">
-            <button type="button" class="me-modal__btn" data-close-edit-profile>Cancel</button>
-            <button type="button" class="me-modal__btn me-modal__btn--accent" id="me-name-save">
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
 
       <div class="me-modal" id="provider-modal" hidden>
         <div class="me-modal__backdrop" data-close-provider></div>
@@ -258,71 +215,15 @@ export async function MeView(root) {
     </div>
   `;
 
-  const editProfileModal = root.querySelector("#edit-profile-modal");
   const providerModal = root.querySelector("#provider-modal");
   const signOutModal = root.querySelector("#signout-modal");
-  const nameInput = root.querySelector("#me-name-input");
-  const nameError = root.querySelector("#me-name-error");
-  const nameSave = root.querySelector("#me-name-save");
-  const nameHeading = root.querySelector("#me-display-name");
   const providerStatus = root.querySelector("#me-provider-status");
 
   const anyMeModalOpen = () =>
     Boolean(
-      (editProfileModal && !editProfileModal.hidden) ||
-        (providerModal && !providerModal.hidden) ||
+      (providerModal && !providerModal.hidden) ||
         (signOutModal && !signOutModal.hidden)
     );
-
-  const openEditProfile = () => {
-    if (nameError) {
-      nameError.hidden = true;
-      nameError.textContent = "";
-    }
-    if (nameInput) {
-      nameInput.value = nameHeading?.textContent?.trim() || name || "";
-    }
-    editProfileModal.hidden = false;
-    document.body.classList.add("me-modal-open");
-    requestAnimationFrame(() => {
-      nameInput?.focus();
-      nameInput?.select();
-    });
-  };
-
-  const closeEditProfile = () => {
-    editProfileModal.hidden = true;
-    if (!anyMeModalOpen()) document.body.classList.remove("me-modal-open");
-  };
-
-  const saveDisplayName = async () => {
-    if (!nameSave || !nameInput) return;
-    if (nameError) {
-      nameError.hidden = true;
-      nameError.textContent = "";
-    }
-    nameSave.disabled = true;
-    nameSave.textContent = "Saving…";
-    try {
-      const next = await updateDisplayName(nameInput.value);
-      if (nameHeading) nameHeading.textContent = next;
-      const avatarFallback = root.querySelector(
-        "#me-avatar-img.me-identity__avatar--fallback"
-      );
-      if (avatarFallback) {
-        avatarFallback.textContent = next.slice(0, 1).toUpperCase();
-      }
-      closeEditProfile();
-    } catch (err) {
-      if (nameError) {
-        nameError.hidden = false;
-        nameError.textContent = err.message || "Could not update name";
-      }
-    } finally {
-      nameSave.disabled = false;
-      nameSave.textContent = "Save";
-    }
-  };
 
   const syncProviderUi = () => {
     const meta = providerMeta();
@@ -346,8 +247,6 @@ export async function MeView(root) {
     if (!anyMeModalOpen()) document.body.classList.remove("me-modal-open");
   };
 
-  root.querySelector("#me-edit-profile")?.addEventListener("click", openEditProfile);
-  root.querySelector("#me-settings-edit")?.addEventListener("click", openEditProfile);
   root.querySelector("#me-settings-provider")?.addEventListener("click", openProviderModal);
   providerModal?.querySelectorAll("[data-close-provider]").forEach((el) => {
     el.addEventListener("click", closeProviderModal);
@@ -379,17 +278,6 @@ export async function MeView(root) {
       });
     }
   });
-  editProfileModal?.querySelectorAll("[data-close-edit-profile]").forEach((el) => {
-    el.addEventListener("click", closeEditProfile);
-  });
-  nameSave?.addEventListener("click", saveDisplayName);
-  nameInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      saveDisplayName();
-    }
-  });
-
   const openSignOutModal = () => {
     signOutModal.hidden = false;
     document.body.classList.add("me-modal-open");
@@ -419,39 +307,6 @@ export async function MeView(root) {
         btn.textContent = "Sign out";
       }
       alert(err.message || "Could not sign out");
-    }
-  });
-
-  const avatarBtn = root.querySelector("#me-avatar-btn");
-  const avatarFile = root.querySelector("#me-avatar-file");
-  avatarBtn?.addEventListener("click", () => avatarFile?.click());
-  avatarFile?.addEventListener("change", async () => {
-    const file = avatarFile.files?.[0];
-    if (!file) return;
-    avatarBtn.disabled = true;
-    avatarBtn.classList.add("is-busy");
-    try {
-      const url = await uploadProfileAvatar(file);
-      const wrap = root.querySelector(".me-identity__avatar-wrap");
-      const existing = root.querySelector("#me-avatar-img");
-      if (existing?.tagName === "IMG") {
-        existing.src = url;
-      } else if (wrap) {
-        existing?.remove();
-        const img = document.createElement("img");
-        img.className = "me-identity__avatar";
-        img.id = "me-avatar-img";
-        img.alt = "";
-        img.referrerPolicy = "no-referrer";
-        img.src = url;
-        wrap.insertBefore(img, wrap.querySelector(".me-identity__avatar-edit"));
-      }
-    } catch (err) {
-      alert(err.message || "Could not update photo");
-    } finally {
-      avatarBtn.disabled = false;
-      avatarBtn.classList.remove("is-busy");
-      avatarFile.value = "";
     }
   });
 

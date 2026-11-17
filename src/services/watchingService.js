@@ -2,7 +2,8 @@ import { getSupabase } from "../lib/supabase.js";
 import { getUser } from "./authService.js";
 
 /** Friends-only “watching now” presence while a stream is open. */
-const STALE_MS = 45 * 60 * 1000;
+/** Drop after ~3 missed heartbeats so “Watching now” does not stick. */
+const STALE_MS = 6 * 60 * 1000;
 const HEARTBEAT_MS = 2 * 60 * 1000;
 
 let heartbeatTimer = null;
@@ -121,4 +122,19 @@ export function watchingTitlePath(row) {
   if (!row?.tmdb_id) return "/";
   const type = row.media_type === "tv" ? "tv" : "movie";
   return `/${type}/${row.tmdb_id}`;
+}
+
+/**
+ * Keep only fresh rows. Optional isOnline(userId) hides offline friends.
+ * Mutates and returns the map.
+ */
+export function pruneWatchingMap(map, { isOnline = null, now = Date.now() } = {}) {
+  if (!map || typeof map !== "object") return {};
+  for (const id of Object.keys(map)) {
+    const row = map[id];
+    const live = isFresh(row?.updated_at, now);
+    const online = typeof isOnline === "function" ? isOnline(id) : true;
+    if (!live || !online) delete map[id];
+  }
+  return map;
 }

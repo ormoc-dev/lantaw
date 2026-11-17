@@ -1,7 +1,7 @@
 import { createRouter } from "./router/index.js";
 import { createBottomNav } from "./components/BottomNav.js";
 import { HomeView } from "./views/HomeView.js?v=151";
-import { MovieView, TvView } from "./views/MovieView.js?v=156";
+import { MovieView, TvView } from "./views/MovieView.js?v=176";
 import { LoginView } from "./views/LoginView.js";
 import { PrivacyView } from "./views/PrivacyView.js?v=141";
 import { ResetPasswordView } from "./views/ResetPasswordView.js";
@@ -9,8 +9,9 @@ import { WatchlistView } from "./views/WatchlistView.js";
 import { ShortsView } from "./views/ShortsView.js";
 import { RankingsView } from "./views/RankingsView.js";
 import { DiscoverView } from "./views/DiscoverView.js";
-import { MeView } from "./views/MeView.js?v=146";
-import { FriendsView } from "./views/FriendsView.js?v=174";
+import { MeView } from "./views/MeView.js?v=176";
+import { EditProfileView } from "./views/EditProfileView.js?v=176";
+import { FriendsView } from "./views/FriendsView.js?v=176";
 import { WatchPartyView } from "./views/WatchPartyView.js?v=156";
 import { RecentView } from "./views/RecentView.js";
 import { RecommendView } from "./views/categories/RecommendView.js?v=151";
@@ -50,6 +51,7 @@ export function createApp(root) {
   router.add("/rankings", RankingsView);
   router.add("/discover", DiscoverView);
   router.add("/me", MeView);
+  router.add("/me/edit", EditProfileView);
   router.add("/friends", FriendsView);
   router.add("/watch-party/:id", WatchPartyView);
   router.add("/recent", RecentView);

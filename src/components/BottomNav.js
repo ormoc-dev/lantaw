@@ -57,7 +57,8 @@ const ITEMS = [
   {
     path: "/me",
     label: "Me",
-    match: (p) => p.startsWith("/me") || p.startsWith("/watchlist"),
+    match: (p) =>
+      p.startsWith("/me") || p.startsWith("/watchlist") || p === "/me/edit",
     icon: `
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="9" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/>

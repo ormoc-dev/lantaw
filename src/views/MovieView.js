@@ -296,6 +296,20 @@ async function renderMediaDetail(root, params, mediaType) {
       setPlayingLayout(false);
     };
 
+    // Closing the tab / leaving the page must drop “Watching now” for friends.
+    const clearWatchingOnLeave = () => {
+      if (!playerOpen) return;
+      clearWatchingNow().catch(() => {});
+    };
+    window.addEventListener("pagehide", clearWatchingOnLeave);
+    window.addEventListener("beforeunload", clearWatchingOnLeave);
+    const previousCleanupHistory = cleanupPlayerHistory;
+    cleanupPlayerHistory = () => {
+      window.removeEventListener("pagehide", clearWatchingOnLeave);
+      window.removeEventListener("beforeunload", clearWatchingOnLeave);
+      previousCleanupHistory?.();
+    };
+
     const mountStreamGuard = ({ alreadyPlaying = false } = {}) => {
       cleanupStreamGuard();
       // Quiet first-tap catcher + deferred src (see streamGuard) — blocks the
@@ -608,14 +622,6 @@ async function renderMediaDetail(root, params, mediaType) {
               allowfullscreen
             ></iframe>
           </div>
-          <a
-            class="link-btn"
-            href="https://www.youtube.com/watch?v=${encodeURIComponent(
-              trailerKey
-            )}"
-            target="_blank"
-            rel="noopener noreferrer"
-          >Open on YouTube</a>
         `);
       });
       tools.appendChild(trailerBtn);

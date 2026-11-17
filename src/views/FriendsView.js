@@ -41,6 +41,7 @@ import {
 } from "../services/presenceService.js";
 import {
   listFriendsWatching,
+  pruneWatchingMap,
   watchingTitlePath,
 } from "../services/watchingService.js";
 import { listFriendNotes, saveFriendNote } from "../services/friendNoteService.js";
@@ -217,6 +218,25 @@ export async function FriendsView(root) {
     });
   };
 
+  /** Drop Watching-now chips when a friend goes offline or the row goes stale. */
+  const syncWatchingPresence = () => {
+    const before = Object.keys(watchingByUser).length;
+    pruneWatchingMap(watchingByUser, { isOnline: isUserOnline });
+    const changed = Object.keys(watchingByUser).length !== before;
+    syncPresenceUi();
+    if (tab === "chat") {
+      paintInboxList();
+      if (!activeChatId) paintPeopleRow();
+    } else if (tab === "friends") {
+      try {
+        paintPeopleLists?.();
+      } catch {
+        /* people helpers may not exist until that tab mounts */
+      }
+    }
+    if (changed) writeInboxSnapshot();
+  };
+
   const page = document.createElement("div");
   page.className = "page-pad friends-page";
   root.innerHTML = "";
@@ -340,8 +360,19 @@ export async function FriendsView(root) {
         (p.status === "active" || p.status === "invited")
     ) || null;
 
-  const soloWatchingFor = (userId) =>
-    (userId && watchingByUser[userId]) || null;
+  const soloWatchingFor = (userId) => {
+    if (!userId) return null;
+    // Offline friends never show a live “Watching now” chip.
+    if (!isUserOnline(userId)) return null;
+    const row = watchingByUser[userId];
+    if (!row) return null;
+    const age = Date.now() - new Date(row.updated_at).getTime();
+    if (!Number.isFinite(age) || age > 6 * 60 * 1000) {
+      delete watchingByUser[userId];
+      return null;
+    }
+    return row;
+  };
 
   const sortedInboxFriends = (accepted, previews = chatPreviews) =>
     [...accepted].sort((a, b) => {
@@ -1366,7 +1397,9 @@ export async function FriendsView(root) {
     friendships = nextFriends;
     rememberLastSeen(friendships.map((f) => f.other).filter(Boolean));
     parties = nextParties;
-    watchingByUser = nextWatching;
+    watchingByUser = pruneWatchingMap(nextWatching || {}, {
+      isOnline: isUserOnline,
+    });
     activity = nextActivity;
     await Promise.all([refreshNotes(), refreshNotices()]);
   }
@@ -3608,7 +3641,10 @@ export async function FriendsView(root) {
       ? inboxSnapshot.friendships
       : [];
     parties = Array.isArray(inboxSnapshot.parties) ? inboxSnapshot.parties : [];
-    watchingByUser = inboxSnapshot.watchingByUser || {};
+    watchingByUser = pruneWatchingMap(
+      { ...(inboxSnapshot.watchingByUser || {}) },
+      { isOnline: isUserOnline }
+    );
     activity = inboxSnapshot.activity || activity;
     chatPreviews = inboxSnapshot.chatPreviews || {};
     friendNotes = inboxSnapshot.friendNotes || {};
@@ -3644,7 +3680,9 @@ export async function FriendsView(root) {
       noticesP,
     ]);
     parties = nextParties;
-    watchingByUser = nextWatching;
+    watchingByUser = pruneWatchingMap(nextWatching || {}, {
+      isOnline: isUserOnline,
+    });
     activity = nextActivity;
     writeInboxSnapshot();
     if (tab === "chat" && !activeChatId) {
@@ -3690,10 +3728,10 @@ export async function FriendsView(root) {
     },
     { pollMs: 12000, listenBadgeEvent: true }
   );
-  unsubPresence = onPresenceChange(() => syncPresenceUi());
-  syncPresenceUi();
-  // Refresh “5m ago” labels while the page is open
-  const lastSeenTick = window.setInterval(() => syncPresenceUi(), 60_000);
+  unsubPresence = onPresenceChange(() => syncWatchingPresence());
+  syncWatchingPresence();
+  // Refresh “5m ago” labels and drop stale / offline Watching-now chips
+  const lastSeenTick = window.setInterval(() => syncWatchingPresence(), 60_000);
 
   return {
     suspend() {

@@ -120,7 +120,7 @@ export async function getFriendWatchingNow(userId) {
   }
   if (!data?.updated_at) return null;
   const age = Date.now() - new Date(data.updated_at).getTime();
-  if (!Number.isFinite(age) || age > 45 * 60 * 1000) return null;
+  if (!Number.isFinite(age) || age > 6 * 60 * 1000) return null;
   return data;
 }
 
