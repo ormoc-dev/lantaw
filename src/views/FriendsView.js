@@ -68,6 +68,7 @@ import {
   wrapReplyMessage,
 } from "../lib/replyMessage.js";
 import {
+  ACTIVITY_NOTICE_EVENT,
   enableNotifications,
   notificationPermission,
 } from "../services/notifyService.js";
@@ -3936,6 +3937,16 @@ export async function FriendsView(root) {
   // Refresh “5m ago” labels and drop stale / offline Watching-now chips
   const lastSeenTick = window.setInterval(() => syncWatchingPresence(), 60_000);
 
+  const onActivityNotice = () => {
+    refreshNotices()
+      .then(() => {
+        syncTabBadgesOnly();
+        if (tab === "notices") renderPanel();
+      })
+      .catch(() => {});
+  };
+  window.addEventListener(ACTIVITY_NOTICE_EVENT, onActivityNotice);
+
   return {
     suspend() {
       page.querySelector("textarea")?.blur();
@@ -3948,7 +3959,9 @@ export async function FriendsView(root) {
     },
     unmount() {
       window.removeEventListener("popstate", onNotePop);
+      window.removeEventListener(ACTIVITY_NOTICE_EVENT, onActivityNotice);
       clearTimeout(liveTimer);
+      clearInterval(lastSeenTick);
       peerIsTyping = false;
       closeFriendProfile();
       unsubChat?.();

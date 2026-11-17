@@ -6344,21 +6344,15 @@ body.is-halloween .home-sticky__mark::after {
 
 @media (min-width: 720px) {
   .friends-feed__rail {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    overflow: visible;
-    scroll-snap-type: none;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
     gap: 0.65rem;
   }
 
   .friends-feed__card {
-    width: auto;
-  }
-}
-
-@media (min-width: 1100px) {
-  .friends-feed__rail {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 17.5rem;
   }
 }
 

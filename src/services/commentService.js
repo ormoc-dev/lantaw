@@ -119,7 +119,17 @@ export async function addTitleComment(tmdbId, mediaType, body, parentId = null) 
         ? `/tv/${created.tmdb_id}`
         : `/movie/${created.tmdb_id}`;
     const preview = text.replace(TOKEN_STRIP, "@$1").slice(0, 80);
+    const payloadBase = {
+      commentId: created.id,
+      fromId: user.id,
+      authorName: created.author_name,
+      authorAvatar: created.author_avatar,
+      body: text,
+      mediaType: created.media_type,
+      tmdbId: created.tmdb_id,
+    };
     for (const targetUserId of mentioned) {
+      pingMentionBroadcast(targetUserId, payloadBase).catch(() => {});
       dispatchRemotePush({
         targetUserId,
         kind: "mention",
@@ -132,6 +142,35 @@ export async function addTitleComment(tmdbId, mediaType, body, parentId = null) 
   }
 
   return created;
+}
+
+/** Live ping so the mentioned friend gets an in-app toast while LANTAW is open. */
+async function pingMentionBroadcast(targetUserId, payload) {
+  if (!targetUserId) return;
+  const sb = getSupabase();
+  const ch = sb.channel(`lantaw-mention:${targetUserId}`);
+  try {
+    await new Promise((resolve) => {
+      const timer = window.setTimeout(resolve, 1200);
+      ch.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          window.clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+    await ch.send({
+      type: "broadcast",
+      event: "mention",
+      payload: payload || {},
+    });
+  } finally {
+    try {
+      await sb.removeChannel(ch);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /** Toggle the signed-in user's like. Returns the next liked state. */

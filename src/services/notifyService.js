@@ -19,10 +19,39 @@ import {
 } from "./callService.js";
 import { linkTo } from "../router/index.js";
 
+export const ACTIVITY_NOTICE_EVENT = "lantaw:activity-notice";
+
 let myId = null;
 let channel = null;
+let mentionChannel = null;
 let swBound = false;
 const recentTags = new Map();
+
+function emitActivityNotice(detail = {}) {
+  try {
+    window.dispatchEvent(
+      new CustomEvent(ACTIVITY_NOTICE_EVENT, { detail: detail || {} })
+    );
+  } catch {
+    /* ignore */
+  }
+  import("./friendsService.js")
+    .then((m) => m.notifyFriendsBadge?.())
+    .catch(() => {});
+}
+
+function commentMentionsMe(body, userId) {
+  if (!body || !userId) return false;
+  return String(body).includes(`](${userId})`);
+}
+
+function mentionPreview(body) {
+  return String(body || "")
+    .replace(/@\[([^\]]+)\]\([0-9a-f-]{36}\)/gi, "@$1")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 90);
+}
 
 function rememberTag(tag, ms = 45_000) {
   if (!tag) return false;
@@ -209,6 +238,58 @@ export async function notifyChatMessage({ friendshipId, senderId, body, messageI
   }
 }
 
+export async function notifyMention({
+  commentId,
+  fromId,
+  authorName,
+  authorAvatar,
+  body,
+  mediaType,
+  tmdbId,
+}) {
+  if (!fromId || fromId === myId) return;
+  if (!commentMentionsMe(body, myId)) return;
+
+  const tag = `mention-${commentId || `${fromId}-${tmdbId}`}`;
+  if (rememberTag(tag, 30_000)) return;
+
+  const path =
+    mediaType === "tv" ? `/tv/${tmdbId}` : `/movie/${tmdbId}`;
+  const card = await profileCard(fromId);
+  const name = authorName || card.name || "Friend";
+  const avatar = authorAvatar || card.avatar || null;
+  const preview = mentionPreview(body) || "mentioned you in a comment";
+  const openTitle = () => {
+    location.hash = linkTo(path);
+  };
+
+  if (document.visibilityState === "visible") {
+    showInAppToast({
+      title: name,
+      body: `mentioned you · ${preview}`,
+      avatarUrl: avatar,
+      onClick: openTitle,
+    });
+  }
+  if (!appIsForeground()) {
+    await showAppNotification({
+      kind: "mention",
+      title: `${name} mentioned you`,
+      body: preview,
+      tag,
+      url: `#${path}`,
+      force: true,
+    });
+  }
+
+  emitActivityNotice({
+    kind: "mention",
+    commentId,
+    fromId,
+    href: path,
+  });
+}
+
 export async function notifyWatchInvite({ partyId, hostName, title, poster }) {
   if (!partyId) return;
   const tag = `wt-${partyId}`;
@@ -266,7 +347,8 @@ export async function startNotifyInbox() {
   myId = user.id;
   bindServiceWorkerActions();
 
-  channel = getSupabase()
+  const sb = getSupabase();
+  channel = sb
     .channel(`lantaw-notify:${user.id}`)
     .on(
       "postgres_changes",
@@ -295,6 +377,40 @@ export async function startNotifyInbox() {
         }).catch(() => {});
       }
     )
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "title_comments" },
+      (payload) => {
+        const row = payload?.new;
+        if (!row || row.user_id === myId) return;
+        if (!commentMentionsMe(row.body, myId)) return;
+        notifyMention({
+          commentId: row.id,
+          fromId: row.user_id,
+          authorName: row.author_name,
+          authorAvatar: row.author_avatar,
+          body: row.body,
+          mediaType: row.media_type,
+          tmdbId: row.tmdb_id,
+        }).catch(() => {});
+      }
+    )
+    .subscribe();
+
+  mentionChannel = sb
+    .channel(`lantaw-mention:${user.id}`)
+    .on("broadcast", { event: "mention" }, ({ payload }) => {
+      const row = payload || {};
+      notifyMention({
+        commentId: row.commentId,
+        fromId: row.fromId,
+        authorName: row.authorName,
+        authorAvatar: row.authorAvatar,
+        body: row.body,
+        mediaType: row.mediaType,
+        tmdbId: row.tmdbId,
+      }).catch(() => {});
+    })
     .subscribe();
 }
 
@@ -306,7 +422,15 @@ export async function stopNotifyInbox() {
       /* ignore */
     }
   }
+  if (mentionChannel) {
+    try {
+      await getSupabase().removeChannel(mentionChannel);
+    } catch {
+      /* ignore */
+    }
+  }
   channel = null;
+  mentionChannel = null;
   myId = null;
 }
 

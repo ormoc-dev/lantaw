@@ -11,7 +11,7 @@ import { RankingsView } from "./views/RankingsView.js";
 import { DiscoverView } from "./views/DiscoverView.js";
 import { MeView } from "./views/MeView.js?v=176";
 import { EditProfileView } from "./views/EditProfileView.js?v=176";
-import { FriendsView } from "./views/FriendsView.js?v=182";
+import { FriendsView } from "./views/FriendsView.js?v=184";
 import { WatchPartyView } from "./views/WatchPartyView.js?v=156";
 import { RecentView } from "./views/RecentView.js";
 import { RecommendView } from "./views/categories/RecommendView.js?v=180";
