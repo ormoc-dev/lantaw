@@ -14,8 +14,15 @@ import {
   TvNetworksRail,
 } from "../components/BrandRails.js?v=151";
 import { FeaturedHero } from "../components/FeaturedHero.js";
+import { FriendsActivityFeed } from "../components/FriendsActivityFeed.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
+import { getSession } from "../services/authService.js";
+import {
+  listFriendActivityFeed,
+  peekFriendActivityFeed,
+  subscribeFriendActivityFeed,
+} from "../services/friendActivityFeedService.js";
 
 /**
  * Separate page for one category (Recommend, Filipino, Movies, TV Show, Anime).
@@ -71,6 +78,42 @@ export async function CategoryView(root, { categoryId } = {}) {
   root.innerHTML = "";
   root.appendChild(page);
 
+  let feedItems = null;
+  let feedToken = 0;
+  let unsubFeed = null;
+  const showFriendsFeed = category.id === "recommend";
+
+  const mountFriendsFeed = () => {
+    if (!showFriendsFeed) return;
+    body.querySelector("#friends-activity")?.remove();
+    if (!feedItems?.length) return;
+    const head = body.querySelector(".category-page__head");
+    const feed = FriendsActivityFeed({ items: feedItems });
+    if (!feed || !head) return;
+    head.insertAdjacentElement("afterend", feed);
+  };
+
+  const refreshFriendsFeed = async ({ useCache = false } = {}) => {
+    if (!showFriendsFeed) return;
+    const token = ++feedToken;
+    if (useCache) {
+      const cached = await peekFriendActivityFeed();
+      if (token !== feedToken) return;
+      if (cached?.length) {
+        feedItems = cached;
+        mountFriendsFeed();
+      }
+    }
+    try {
+      const next = await listFriendActivityFeed({ limit: 20 });
+      if (token !== feedToken) return;
+      feedItems = next;
+      mountFriendsFeed();
+    } catch {
+      if (!feedItems) feedItems = [];
+    }
+  };
+
   const paintCatalog = (data) => {
     const results = data?.results || [];
     const sections = data?.sections || [];
@@ -92,6 +135,7 @@ export async function CategoryView(root, { categoryId } = {}) {
       <p class="muted">${escapeHtml(category.description)}</p>
     `;
     body.appendChild(head);
+    mountFriendsFeed();
 
     if (sections.length) {
       for (const section of sections) {
@@ -126,11 +170,34 @@ export async function CategoryView(root, { categoryId } = {}) {
     }
   };
 
+  const loadFriendsFeed = async () => {
+    if (!showFriendsFeed) return;
+    let session = null;
+    try {
+      session = await getSession();
+    } catch {
+      session = null;
+    }
+    if (!session?.user) {
+      feedItems = [];
+      return;
+    }
+
+    await refreshFriendsFeed({ useCache: true });
+
+    unsubFeed?.();
+    unsubFeed = subscribeFriendActivityFeed(() => {
+      refreshFriendsFeed({ useCache: false });
+    });
+  };
+
   // Show last visit instantly on weak networks, then refresh in background.
   const cached = peekCategoryItems(category.id);
   if (cached?.results?.length || cached?.sections?.length) {
     paintCatalog(cached);
   }
+
+  const feedP = loadFriendsFeed();
 
   try {
     const data = await getCategoryItems(category.id);
@@ -141,8 +208,13 @@ export async function CategoryView(root, { categoryId } = {}) {
     }
   }
 
+  await feedP.catch(() => {});
+
   return {
     unmount: () => {
+      feedToken += 1;
+      unsubFeed?.();
+      unsubFeed = null;
       body.querySelector(".home-hero")?._unmountFeatured?.();
       top.unmount();
     },

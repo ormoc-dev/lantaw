@@ -1,6 +1,6 @@
 import { createRouter } from "./router/index.js";
 import { createBottomNav } from "./components/BottomNav.js";
-import { HomeView } from "./views/HomeView.js?v=151";
+import { HomeView } from "./views/HomeView.js?v=179";
 import { MovieView, TvView } from "./views/MovieView.js?v=176";
 import { LoginView } from "./views/LoginView.js";
 import { PrivacyView } from "./views/PrivacyView.js?v=141";
@@ -14,7 +14,7 @@ import { EditProfileView } from "./views/EditProfileView.js?v=176";
 import { FriendsView } from "./views/FriendsView.js?v=176";
 import { WatchPartyView } from "./views/WatchPartyView.js?v=156";
 import { RecentView } from "./views/RecentView.js";
-import { RecommendView } from "./views/categories/RecommendView.js?v=151";
+import { RecommendView } from "./views/categories/RecommendView.js?v=179";
 import { FilipinoView } from "./views/categories/FilipinoView.js?v=168";
 import { MoviesView } from "./views/categories/MoviesView.js?v=151";
 import { TvShowView } from "./views/categories/TvShowView.js?v=151";
