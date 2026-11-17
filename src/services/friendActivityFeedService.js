@@ -283,7 +283,13 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
       action: "commented on",
       title: meta.title || "",
       poster: meta.poster || null,
-      preview: clip(row.body, 72),
+      preview: clip(
+        String(row.body || "").replace(
+          /@\[([^\]]+)\]\([0-9a-f-]{36}\)/gi,
+          "@$1"
+        ),
+        72
+      ),
       href: titlePath(row.media_type, row.tmdb_id),
       chatId: chatByUser[row.user_id] || null,
     });

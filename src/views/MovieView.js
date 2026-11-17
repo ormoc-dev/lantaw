@@ -13,6 +13,12 @@ import {
   listTitleComments,
   toggleTitleCommentLike,
 } from "../services/commentService.js";
+import { listFriendships } from "../services/friendsService.js";
+import {
+  attachMentionPicker,
+  encodeMentions,
+  formatMentionsHtml,
+} from "../lib/mentions.js";
 import { attachStreamAdGuard } from "../lib/streamGuard.js";
 import {
   STREAM_PROVIDERS,
@@ -58,6 +64,7 @@ async function renderMediaDetail(root, params, mediaType) {
   const id = params.id;
   let cleanupPlayerHistory = () => {};
   let cleanupStreamGuard = () => {};
+  let cleanupMentions = () => {};
   let playerOpen = false;
   let stopPlayer = () => {};
   let clearServerSwitchLoading = () => {};
@@ -718,6 +725,36 @@ async function renderMediaDetail(root, params, mediaType) {
     let comments = [];
     let meId = null;
     let replyToId = null;
+    let mentionFriends = [];
+    let detachComposeMentions = null;
+    let detachReplyMentions = null;
+    cleanupMentions = () => {
+      detachComposeMentions?.();
+      detachReplyMentions?.();
+      detachComposeMentions = null;
+      detachReplyMentions = null;
+    };
+
+    const getMentionFriends = async () => {
+      if (mentionFriends.length) return mentionFriends;
+      try {
+        const rows = await listFriendships();
+        mentionFriends = (rows || [])
+          .filter((f) => f.status === "accepted" && (f.other?.id || f.otherId))
+          .map((f) => ({
+            id: f.other?.id || f.otherId,
+            name:
+              f.other?.display_name ||
+              f.other?.email?.split("@")[0] ||
+              "Friend",
+            email: f.other?.email || "",
+            avatar_url: f.other?.avatar_url || null,
+          }));
+      } catch {
+        mentionFriends = [];
+      }
+      return mentionFriends;
+    };
 
     const formatCommentTime = (iso) => {
       const t = new Date(iso).getTime();
@@ -753,7 +790,7 @@ async function renderMediaDetail(root, params, mediaType) {
       const replyForm =
         !reply && replyToId === c.id
           ? `<form class="detail__comment-reply-form" data-reply-form="${escapeAttr(c.id)}">
-              <textarea rows="2" maxlength="1000" placeholder="Write a reply…" aria-label="Reply" required></textarea>
+              <textarea rows="2" maxlength="1000" placeholder="Write a reply… Use @ to mention" aria-label="Reply" required></textarea>
               <div class="detail__comment-reply-actions">
                 <button type="button" class="detail__comments-cancel" data-reply-cancel>Cancel</button>
                 <button type="submit" class="detail__comments-submit">Reply</button>
@@ -787,7 +824,7 @@ async function renderMediaDetail(root, params, mediaType) {
                   : ""
               }
             </div>
-            <p>${escapeHtml(c.body)}</p>
+            <p>${formatMentionsHtml(c.body)}</p>
             <div class="detail__comment-actions">
               <button
                 type="button"
@@ -811,6 +848,8 @@ async function renderMediaDetail(root, params, mediaType) {
     };
 
     const renderComments = () => {
+      detachReplyMentions?.();
+      detachReplyMentions = null;
       const roots = comments.filter((c) => !c.parent_id);
       const repliesOf = (parentId) =>
         comments
@@ -846,6 +885,14 @@ async function renderMediaDetail(root, params, mediaType) {
             </div>`;
         })
         .join("");
+      const replyInput = commentsList.querySelector(
+        "[data-reply-form] textarea"
+      );
+      if (replyInput) {
+        detachReplyMentions = attachMentionPicker(replyInput, {
+          getFriends: getMentionFriends,
+        });
+      }
     };
 
     const paintCompose = async (user) => {
@@ -858,6 +905,8 @@ async function renderMediaDetail(root, params, mediaType) {
         return;
       }
 
+      detachComposeMentions?.();
+      detachComposeMentions = null;
       commentsCompose.innerHTML = `
         <form class="detail__comments-form" id="comments-form" autocomplete="off">
           <div class="detail__comments-form-main">
@@ -865,7 +914,7 @@ async function renderMediaDetail(root, params, mediaType) {
               id="comment-input"
               rows="1"
               maxlength="1000"
-              placeholder="Add a comment…"
+              placeholder="Add a comment… Use @ to mention a friend"
               aria-label="Add a comment"
             ></textarea>
             <div class="detail__comments-form-actions" hidden>
@@ -884,6 +933,12 @@ async function renderMediaDetail(root, params, mediaType) {
       const sendBtn = commentsCompose.querySelector("#comment-send");
       const cancelBtn = commentsCompose.querySelector("#comment-cancel");
       const hint = commentsCompose.querySelector("#comment-hint");
+
+      if (input) {
+        detachComposeMentions = attachMentionPicker(input, {
+          getFriends: getMentionFriends,
+        });
+      }
 
       const syncCompose = () => {
         const hasText = Boolean(String(input?.value || "").trim());
@@ -918,8 +973,8 @@ async function renderMediaDetail(root, params, mediaType) {
 
       form?.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const text = String(input?.value || "").trim();
-        if (!text) {
+        const raw = String(input?.value || "").trim();
+        if (!raw) {
           input?.focus();
           return;
         }
@@ -929,6 +984,8 @@ async function renderMediaDetail(root, params, mediaType) {
         }
         if (hint) hint.textContent = "";
         try {
+          const friends = await getMentionFriends();
+          const text = encodeMentions(raw, friends);
           const created = await addTitleComment(Number(id), mediaType, text);
           comments = [created, ...comments];
           closeCompose();
@@ -1022,11 +1079,13 @@ async function renderMediaDetail(root, params, mediaType) {
       if (!requireCommentUser()) return;
       const parentId = form.getAttribute("data-reply-form");
       const input = form.querySelector("textarea");
-      const text = String(input?.value || "").trim();
-      if (!text || !parentId) return;
+      const raw = String(input?.value || "").trim();
+      if (!raw || !parentId) return;
       const sendBtn = form.querySelector("[type='submit']");
       if (sendBtn) sendBtn.disabled = true;
       try {
+        const friends = await getMentionFriends();
+        const text = encodeMentions(raw, friends);
         const created = await addTitleComment(
           Number(id),
           mediaType,
@@ -1067,6 +1126,7 @@ async function renderMediaDetail(root, params, mediaType) {
       if (playerOpen) stopPlayer();
       cleanupStreamGuard();
       cleanupPlayerHistory();
+      cleanupMentions();
     },
   };
 }

@@ -434,8 +434,12 @@ export async function sendMessage(friendshipId, body) {
       const name =
         user.user_metadata?.display_name || user.email || "Friend";
       let preview = text;
-      if (/^\[gif\]/i.test(text)) preview = "Sent a GIF";
-      else if (/^\[share\]/i.test(text)) preview = "Shared a title";
+      if (/^\[reply\]/i.test(text)) {
+        const nl = text.indexOf("\n");
+        preview = nl >= 0 ? text.slice(nl + 1) : text;
+      }
+      if (/^\[gif\]/i.test(preview)) preview = "Sent a GIF";
+      else if (/^\[share\]/i.test(preview)) preview = "Shared a title";
       else if (preview.length > 90) preview = `${preview.slice(0, 89)}…`;
       await dispatchRemotePush({
         targetUserId: peerId,

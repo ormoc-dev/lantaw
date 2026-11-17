@@ -49,10 +49,15 @@ function activeChatId() {
 }
 
 function previewBody(body) {
-  if (parseGifMessage(body)) return "Sent a GIF";
-  const share = parseShareMessage(body);
+  let raw = String(body || "");
+  if (/^\[reply\]/i.test(raw)) {
+    const nl = raw.indexOf("\n");
+    raw = nl >= 0 ? raw.slice(nl + 1) : raw;
+  }
+  if (parseGifMessage(raw)) return "Sent a GIF";
+  const share = parseShareMessage(raw);
   if (share) return `Shared ${share.title || "a title"}`;
-  const text = String(body || "").replace(/\s+/g, " ").trim();
+  const text = raw.replace(/\s+/g, " ").trim();
   if (!text) return "New message";
   return text.length > 90 ? `${text.slice(0, 89)}…` : text;
 }

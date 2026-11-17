@@ -63,6 +63,11 @@ import {
 } from "../lib/giphy.js";
 import { parseShareMessage, shareMessageBody } from "../lib/shareMessage.js";
 import {
+  parseReplyEnvelope,
+  unwrapReplyBody,
+  wrapReplyMessage,
+} from "../lib/replyMessage.js";
+import {
   enableNotifications,
   notificationPermission,
 } from "../services/notifyService.js";
@@ -332,22 +337,24 @@ export async function FriendsView(root) {
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
+  const chatBodyPreview = (rawBody) => {
+    const inner = unwrapReplyBody(rawBody);
+    if (parseGifMessage(inner)) return "GIF";
+    const shared = parseShareMessage(inner);
+    if (shared) {
+      const label = shared.title || "a title";
+      return `Shared ${label.length > 40 ? `${label.slice(0, 39)}…` : label}`;
+    }
+    return String(inner || "").replace(/\s+/g, " ").trim();
+  };
+
   const previewLine = (preview) => {
     if (!preview?.body && !preview?.deleted_at) return "Tap to say hi";
     const mine = preview.sender_id === me.id;
     if (preview.deleted_at) {
       return mine ? "You deleted a message" : "Message deleted";
     }
-    if (parseGifMessage(preview.body)) {
-      return mine ? "You: GIF" : "GIF";
-    }
-    const shared = parseShareMessage(preview.body);
-    if (shared) {
-      const label = shared.title || "a title";
-      const clipped = label.length > 40 ? `${label.slice(0, 39)}…` : label;
-      return mine ? `You: Shared ${clipped}` : `Shared ${clipped}`;
-    }
-    const text = String(preview.body).replace(/\s+/g, " ").trim();
+    const text = chatBodyPreview(preview.body);
     if (!text) return "Tap to say hi";
     const clipped = text.length > 64 ? `${text.slice(0, 63)}…` : text;
     return mine ? `You: ${clipped}` : clipped;
@@ -1445,7 +1452,7 @@ export async function FriendsView(root) {
           </div>`
         : emptyState(
             "No notifications yet",
-            "Replies, likes, and friend notes show up here."
+            "Mentions, replies, likes, and friend notes show up here."
           );
       panel.querySelectorAll("[data-notice]").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -1960,6 +1967,7 @@ export async function FriendsView(root) {
                     </div>`
                   : ""
               }
+              <div class="fp-reply-draft" id="reply-draft" hidden></div>
               <form class="fp-chat__compose" id="chat-form" autocomplete="off">
                 <button
                   type="button"
@@ -2047,6 +2055,10 @@ export async function FriendsView(root) {
       const box = panel.querySelector("#chat-messages");
       const chatId = activeChatId;
       const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+      let replyTarget = null;
+      const replyDraft = panel.querySelector("#reply-draft");
+      let paintReplyDraft = () => {};
+      let setReplyTarget = () => {};
 
       const groupReactions = (reactions = []) => {
         const map = new Map();
@@ -2142,8 +2154,14 @@ export async function FriendsView(root) {
             const showTime = !sameNext;
             const groups = groupReactions(m.reactions);
             const deleted = Boolean(m.deleted_at);
-            const gifUrl = deleted ? null : parseGifMessage(m.body);
-            const share = deleted || gifUrl ? null : parseShareMessage(m.body);
+            const envelope = deleted
+              ? { reply: null, body: m.body }
+              : parseReplyEnvelope(m.body);
+            const contentBody = envelope.body;
+            const replyMeta = envelope.reply;
+            const gifUrl = deleted ? null : parseGifMessage(contentBody);
+            const share =
+              deleted || gifUrl ? null : parseShareMessage(contentBody);
             const timeLabel = new Date(m.created_at).toLocaleTimeString([], {
               hour: "numeric",
               minute: "2-digit",
@@ -2163,6 +2181,10 @@ export async function FriendsView(root) {
                   })
                 )
               : "";
+            const replyWho =
+              replyMeta?.senderId && replyMeta.senderId === me.id
+                ? "You"
+                : current.other?.display_name || "Friend";
 
             return `
           <div
@@ -2172,6 +2194,9 @@ export async function FriendsView(root) {
             data-msg-id="${escapeHtml(m.id)}"
             data-msg-mine="${mine ? "1" : "0"}"
           >
+            <i class="fp-msg__reply-hint" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11Z" fill="currentColor"/></svg>
+            </i>
             ${
               !mine
                 ? `<div class="fp-msg__aside">${
@@ -2184,7 +2209,19 @@ export async function FriendsView(root) {
             <div class="fp-msg__stack">
               <div class="fp-bubble ${mine ? "is-me" : ""} ${cluster}${
                 gifUrl ? " is-gif" : ""
-              }${share ? " is-share" : ""}${deleted ? " is-deleted" : ""}">
+              }${share ? " is-share" : ""}${deleted ? " is-deleted" : ""}${
+                replyMeta ? " has-reply" : ""
+              }">
+                ${
+                  !deleted && replyMeta
+                    ? `<button type="button" class="fp-bubble__quote" data-jump-reply="${escapeHtml(
+                        replyMeta.id
+                      )}">
+                        <strong>${escapeHtml(replyWho)}</strong>
+                        <em>${escapeHtml(replyMeta.preview || "Message")}</em>
+                      </button>`
+                    : ""
+                }
                 ${
                   deleted
                     ? `<p class="fp-bubble__text fp-bubble__deleted">This message was deleted</p>`
@@ -2217,7 +2254,9 @@ export async function FriendsView(root) {
                               data-share-watch="${sharePayload}"
                             >Watch together</button>
                           </div>`
-                        : `<p class="fp-bubble__text">${escapeHtml(m.body)}</p>`
+                        : `<p class="fp-bubble__text">${escapeHtml(
+                            contentBody
+                          )}</p>`
                 }
                 ${
                   !deleted && groups.length
@@ -2280,6 +2319,9 @@ export async function FriendsView(root) {
                   ).join("")}
                 </div>
                 <div class="fp-bubble__actions">
+                  <button type="button" class="fp-bubble__reply" data-reply="${escapeHtml(
+                    m.id
+                  )}">Reply</button>
                   ${
                     mine && !gifUrl && !share
                       ? `<button type="button" class="fp-bubble__edit" data-edit="${escapeHtml(
@@ -2445,17 +2487,46 @@ export async function FriendsView(root) {
           return;
         }
 
+        const replyBtn = t.closest("[data-reply]");
+        if (replyBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const msg = threadMessages.find((row) => row.id === replyBtn.dataset.reply);
+          setReplyTarget(msg);
+          box.querySelectorAll(".fp-bubble__tools").forEach((el) => {
+            el.hidden = true;
+          });
+          return;
+        }
+
+        const jumpBtn = t.closest("[data-jump-reply]");
+        if (jumpBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const target = [...box.querySelectorAll(".fp-msg[data-msg-id]")].find(
+            (el) => el.dataset.msgId === jumpBtn.dataset.jumpReply
+          );
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+            target.classList.add("is-flash");
+            window.setTimeout(() => target.classList.remove("is-flash"), 900);
+          }
+          return;
+        }
+
         const editBtn = t.closest("[data-edit]");
         if (editBtn) {
           e.preventDefault();
           e.stopPropagation();
-          const row = editBtn.closest(".fp-msg");
-          const textEl = row?.querySelector(".fp-bubble__text:not(.fp-bubble__deleted)");
-          const currentBody = textEl?.textContent || "";
-          const next = window.prompt("Edit message", currentBody);
+          const msg = threadMessages.find((row) => row.id === editBtn.dataset.edit);
+          const envelope = parseReplyEnvelope(msg?.body || "");
+          const next = window.prompt("Edit message", envelope.body || "");
           if (next == null) return;
+          const saved = envelope.reply
+            ? wrapReplyMessage(envelope.reply, next)
+            : next;
           try {
-            await editMessage(editBtn.dataset.edit, next);
+            await editMessage(editBtn.dataset.edit, saved);
             await refreshThread();
           } catch (err) {
             alert(err.message || "Could not edit");
@@ -2657,6 +2728,123 @@ export async function FriendsView(root) {
       const shareDraft = panel.querySelector("#share-draft");
       const shareDraftSend = panel.querySelector("#share-draft-send");
       const shareDraftCancel = panel.querySelector("#share-draft-cancel");
+
+      paintReplyDraft = () => {
+        if (!replyDraft) return;
+        if (!replyTarget?.id) {
+          replyDraft.hidden = true;
+          replyDraft.innerHTML = "";
+          requestAnimationFrame(() => syncChatViewport?.());
+          return;
+        }
+        const who = replyTarget.mine
+          ? "Yourself"
+          : current.other?.display_name || "Friend";
+        replyDraft.hidden = false;
+        replyDraft.innerHTML = `
+          <div class="fp-reply-draft__bar" aria-hidden="true"></div>
+          <div class="fp-reply-draft__meta">
+            <strong>Replying to ${escapeHtml(who)}</strong>
+            <em>${escapeHtml(replyTarget.preview || "Message")}</em>
+          </div>
+          <button type="button" class="fp-text-btn" data-reply-cancel aria-label="Cancel reply">✕</button>`;
+        replyDraft
+          .querySelector("[data-reply-cancel]")
+          ?.addEventListener("click", () => {
+            replyTarget = null;
+            paintReplyDraft();
+          });
+        requestAnimationFrame(() => syncChatViewport?.());
+      };
+
+      setReplyTarget = (msg) => {
+        if (!msg || msg.deleted_at) return;
+        const preview = chatBodyPreview(msg.body) || "Message";
+        replyTarget = {
+          id: msg.id,
+          preview: preview.slice(0, 120),
+          senderId: msg.sender_id,
+          mine: msg.sender_id === me.id,
+        };
+        paintReplyDraft();
+        input?.focus({ preventScroll: true });
+        requestAnimationFrame(() => syncChatViewport?.());
+      };
+
+      // Messenger-style swipe right → reply
+      let swipe = null;
+      const resetSwipeVisual = (row) => {
+        if (!row) return;
+        const stack = row.querySelector(".fp-msg__stack");
+        if (stack) {
+          stack.style.transition = "transform 0.18s var(--ease, ease)";
+          stack.style.transform = "";
+          window.setTimeout(() => {
+            if (stack.isConnected) stack.style.transition = "";
+          }, 200);
+        }
+        row.classList.remove("is-swiping", "is-reply-ready");
+      };
+      box.addEventListener(
+        "touchstart",
+        (e) => {
+          const row = e.target.closest(".fp-msg[data-msg-id]");
+          if (!row || row.classList.contains("is-deleted")) return;
+          if (e.target.closest("button, a, input, textarea, .fp-bubble__tools")) {
+            return;
+          }
+          const t = e.changedTouches?.[0];
+          if (!t) return;
+          swipe = {
+            row,
+            id: row.dataset.msgId,
+            x0: t.clientX,
+            y0: t.clientY,
+            dx: 0,
+            armed: false,
+          };
+        },
+        { passive: true }
+      );
+      box.addEventListener(
+        "touchmove",
+        (e) => {
+          if (!swipe) return;
+          const t = e.changedTouches?.[0];
+          if (!t) return;
+          const dx = t.clientX - swipe.x0;
+          const dy = t.clientY - swipe.y0;
+          if (!swipe.armed) {
+            if (Math.abs(dy) > 12 && Math.abs(dy) >= Math.abs(dx)) {
+              swipe = null;
+              return;
+            }
+            if (dx > 10) swipe.armed = true;
+            else return;
+          }
+          swipe.dx = Math.max(0, Math.min(dx, 76));
+          const stack = swipe.row.querySelector(".fp-msg__stack");
+          if (stack) {
+            stack.style.transition = "none";
+            stack.style.transform = `translateX(${swipe.dx}px)`;
+          }
+          swipe.row.classList.toggle("is-swiping", swipe.dx > 8);
+          swipe.row.classList.toggle("is-reply-ready", swipe.dx >= 52);
+        },
+        { passive: true }
+      );
+      const endSwipe = () => {
+        if (!swipe) return;
+        const { row, dx, id } = swipe;
+        resetSwipeVisual(row);
+        if (dx >= 52) {
+          const msg = threadMessages.find((m) => m.id === id);
+          setReplyTarget(msg);
+        }
+        swipe = null;
+      };
+      box.addEventListener("touchend", endSwipe, { passive: true });
+      box.addEventListener("touchcancel", endSwipe, { passive: true });
 
       shareDraftCancel?.addEventListener("click", () => {
         clearPendingShare();
@@ -2885,16 +3073,22 @@ export async function FriendsView(root) {
 
       const sendChat = async (rawBody) => {
         if (sending) return;
-        const text = String(rawBody ?? input?.value ?? "").trim();
-        if (!text) {
+        const typed = String(rawBody ?? input?.value ?? "").trim();
+        if (!typed) {
           input?.focus();
           return;
         }
+        const pendingReply = replyTarget;
+        const text = pendingReply?.id
+          ? wrapReplyMessage(pendingReply, typed)
+          : typed;
         sending = true;
         stopTypingPing();
         clearTimeout(gifTimer);
         hideGifStrip();
         if (input) input.value = "";
+        replyTarget = null;
+        paintReplyDraft();
         syncSendEnabled();
         autosizeChatInput();
         // Show the bubble immediately — don't wait on the network round-trip
@@ -2915,9 +3109,18 @@ export async function FriendsView(root) {
           await sendMessage(chatId, text);
           await refreshThread();
         } catch (err) {
-          if (input && !parseGifMessage(text) && !parseShareMessage(text)) {
-            input.value = text;
+          const inner = unwrapReplyBody(text);
+          if (
+            input &&
+            !parseGifMessage(inner) &&
+            !parseShareMessage(inner)
+          ) {
+            input.value = inner;
             autosizeChatInput();
+          }
+          if (pendingReply?.id) {
+            replyTarget = pendingReply;
+            paintReplyDraft();
           }
           paint(threadMessages.filter((m) => m.id !== optimistic.id));
           alert(err.message);

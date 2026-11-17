@@ -87,10 +87,19 @@ export async function CategoryView(root, { categoryId } = {}) {
     if (!showFriendsFeed) return;
     body.querySelector("#friends-activity")?.remove();
     if (!feedItems?.length) return;
-    const head = body.querySelector(".category-page__head");
     const feed = FriendsActivityFeed({ items: feedItems });
-    if (!feed || !head) return;
-    head.insertAdjacentElement("afterend", feed);
+    if (!feed) return;
+    const hero = body.querySelector(".home-hero");
+    if (hero) {
+      hero.insertAdjacentElement("afterend", feed);
+      return;
+    }
+    const firstRow = body.querySelector(".category-row, .media-grid, .brand-rail");
+    if (firstRow) {
+      firstRow.insertAdjacentElement("beforebegin", feed);
+      return;
+    }
+    body.appendChild(feed);
   };
 
   const refreshFriendsFeed = async ({ useCache = false } = {}) => {
@@ -128,13 +137,16 @@ export async function CategoryView(root, { categoryId } = {}) {
       );
     }
 
-    const head = document.createElement("header");
-    head.className = "category-page__head";
-    head.innerHTML = `
-      <h1>${escapeHtml(category.title)}</h1>
-      <p class="muted">${escapeHtml(category.description)}</p>
-    `;
-    body.appendChild(head);
+    // Recommend uses the hero + rows; skip the redundant page heading.
+    if (category.id !== "recommend") {
+      const head = document.createElement("header");
+      head.className = "category-page__head";
+      head.innerHTML = `
+        <h1>${escapeHtml(category.title)}</h1>
+        <p class="muted">${escapeHtml(category.description)}</p>
+      `;
+      body.appendChild(head);
+    }
     mountFriendsFeed();
 
     if (sections.length) {

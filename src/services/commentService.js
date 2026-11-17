@@ -1,11 +1,14 @@
 import { getSupabase } from "../lib/supabase.js";
+import { extractMentionIds } from "../lib/mentions.js";
 import { getUser, resolveUserProfile } from "./authService.js";
+import { dispatchRemotePush } from "./pushService.js";
 
 const TABLE = "title_comments";
 const LIKES = "title_comment_likes";
 const MAX_LEN = 1000;
 const COMMENT_FIELDS =
   "id, user_id, tmdb_id, media_type, parent_id, body, author_name, author_avatar, created_at";
+const TOKEN_STRIP = /@\[([^\]]+)\]\([0-9a-f-]{36}\)/gi;
 
 function normalizeMediaType(mediaType) {
   return mediaType === "tv" ? "tv" : "movie";
@@ -101,7 +104,34 @@ export async function addTitleComment(tmdbId, mediaType, body, parentId = null) 
     }
     throw error;
   }
-  return { ...data, parent_id: data.parent_id || parentId || null, like_count: 0, liked: false };
+
+  const created = {
+    ...data,
+    parent_id: data.parent_id || parentId || null,
+    like_count: 0,
+    liked: false,
+  };
+
+  const mentioned = extractMentionIds(text).filter((id) => id && id !== user.id);
+  if (mentioned.length) {
+    const path =
+      created.media_type === "tv"
+        ? `/tv/${created.tmdb_id}`
+        : `/movie/${created.tmdb_id}`;
+    const preview = text.replace(TOKEN_STRIP, "@$1").slice(0, 80);
+    for (const targetUserId of mentioned) {
+      dispatchRemotePush({
+        targetUserId,
+        kind: "mention",
+        title: "Mentioned you",
+        body: `${created.author_name || "A friend"} mentioned you: ${preview}`,
+        url: `#${path}`,
+        tag: `mention-${created.id}-${targetUserId}`,
+      }).catch(() => {});
+    }
+  }
+
+  return created;
 }
 
 /** Toggle the signed-in user's like. Returns the next liked state. */

@@ -14,7 +14,7 @@ function titlePath(mediaType, tmdbId) {
 }
 
 /**
- * Facebook-style activity: replies and likes on your comments, plus friend notes.
+ * Facebook-style activity: mentions, replies, likes on your comments, plus friend notes.
  * Missing tables return the pieces that still exist.
  */
 export async function listActivityNotices({ friendIds = [], friendships = [] } = {}) {
@@ -61,10 +61,25 @@ export async function listActivityNotices({ friendIds = [], friendships = [] } =
     if (!likeRes.error) likes = likeRes.data || [];
   }
 
+  let mentions = [];
+  {
+    const { data, error } = await sb
+      .from("title_comments")
+      .select(
+        "id, user_id, body, author_name, author_avatar, created_at, tmdb_id, media_type"
+      )
+      .neq("user_id", user.id)
+      .ilike("body", `%](${user.id})%`)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (!error) mentions = data || [];
+  }
+
   const actorIds = [
     ...new Set([
       ...likes.map((row) => row.user_id),
       ...replies.map((row) => row.user_id),
+      ...mentions.map((row) => row.user_id),
     ]),
   ];
   const profiles = {};
@@ -81,6 +96,26 @@ export async function listActivityNotices({ friendIds = [], friendships = [] } =
     profiles[id]?.display_name ||
     profiles[id]?.email?.split("@")[0] ||
     "Someone";
+
+  for (const mention of mentions) {
+    items.push({
+      id: `mention:${mention.id}`,
+      kind: "mention",
+      at: mention.created_at,
+      actorName: nameOf(mention.user_id, mention.author_name),
+      actorAvatar:
+        mention.author_avatar || profiles[mention.user_id]?.avatar_url || null,
+      action: "mentioned you",
+      preview: clip(
+        String(mention.body || "").replace(
+          /@\[([^\]]+)\]\([0-9a-f-]{36}\)/gi,
+          "@$1"
+        )
+      ),
+      quote: "",
+      href: titlePath(mention.media_type, mention.tmdb_id),
+    });
+  }
 
   for (const reply of replies) {
     const parent = mineById[reply.parent_id];
