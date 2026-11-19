@@ -1,6 +1,6 @@
 import { createRouter } from "./router/index.js";
 import { createBottomNav } from "./components/BottomNav.js";
-import { HomeView } from "./views/HomeView.js?v=180";
+import { HomeView } from "./views/HomeView.js?v=188";
 import { MovieView, TvView } from "./views/MovieView.js?v=183";
 import { LoginView } from "./views/LoginView.js";
 import { PrivacyView } from "./views/PrivacyView.js?v=141";
@@ -14,13 +14,14 @@ import { EditProfileView } from "./views/EditProfileView.js?v=176";
 import { FriendsView } from "./views/FriendsView.js?v=184";
 import { WatchPartyView } from "./views/WatchPartyView.js?v=156";
 import { RecentView } from "./views/RecentView.js";
-import { RecommendView } from "./views/categories/RecommendView.js?v=180";
+import { RecommendView } from "./views/categories/RecommendView.js?v=188";
 import { FilipinoView } from "./views/categories/FilipinoView.js?v=168";
 import { MoviesView } from "./views/categories/MoviesView.js?v=151";
 import { TvShowView } from "./views/categories/TvShowView.js?v=151";
 import { AnimeView } from "./views/categories/AnimeView.js?v=151";
 import { KdramaView } from "./views/categories/KdramaView.js?v=151";
 import { VivamaxView } from "./views/categories/VivamaxView.js?v=151";
+import { VivaOneView } from "./views/categories/VivaOneView.js?v=185";
 import { BrandView } from "./views/BrandView.js";
 
 export function createApp(root) {
@@ -43,6 +44,7 @@ export function createApp(root) {
   router.add("/brand/:kind/:id", BrandView);
   router.add("/filipino", FilipinoView);
   router.add("/vivamax", VivamaxView);
+  router.add("/viva-one", VivaOneView);
   router.add("/movies", MoviesView);
   router.add("/tv-show", TvShowView);
   router.add("/anime", AnimeView);

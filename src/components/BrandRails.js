@@ -1,4 +1,4 @@
-import { TV_NETWORKS, MOVIE_STUDIOS } from "../config/brands.js";
+import { TV_NETWORKS, MOVIE_STUDIOS } from "../config/brands.js?v=185";
 import { linkTo } from "../router/index.js";
 import { tmdb, posterUrl } from "../lib/tmdb.js?v=151";
 
@@ -74,17 +74,6 @@ export function BrandRail({ title, brands, kind }) {
   `;
   const track = section.querySelector(".brand-rail__track");
   brands.forEach((brand) => track.appendChild(brandTile(brand, kind)));
-  // Duplicate for seamless loop
-  brands.forEach((brand) => {
-    const clone = brandTile(brand, kind);
-    clone.setAttribute("aria-hidden", "true");
-    clone.tabIndex = -1;
-    track.appendChild(clone);
-  });
-  track.classList.add("brand-rail__track--marquee");
-  // Duration scales with brand count so speed stays readable
-  const seconds = Math.max(28, brands.length * 3.2);
-  track.style.setProperty("--brand-marquee-duration", `${seconds}s`);
 
   hydrateLogos(section, brands, kind);
   return section;

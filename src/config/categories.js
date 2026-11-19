@@ -42,6 +42,12 @@ export const CATEGORIES = [
     title: "Vivamax",
     description: "Bold Filipino originals from Vivamax.",
   },
+  {
+    id: "viva-one",
+    path: "/viva-one",
+    title: "Viva One",
+    description: "Pinoy originals and series from Viva One.",
+  },
 ];
 
 export function getCategoryById(id) {

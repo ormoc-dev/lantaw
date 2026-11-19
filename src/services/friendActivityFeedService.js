@@ -27,22 +27,21 @@ function titleKey(mediaType, tmdbId) {
 function actorFrom(profile, fallbackId) {
   return {
     id: profile?.id || fallbackId || null,
-    display_name: profile?.display_name || profile?.email || "Friend",
+    display_name: profile?.display_name || profile?.email || "Fan",
     avatar_url: profile?.avatar_url || null,
     email: profile?.email || null,
   };
 }
 
 function cacheKey(userId) {
-  return `friends-activity:${userId}`;
+  return `activity-feed:${userId || "guest"}`;
 }
 
 /** Cached feed for instant Home paint (stale-while-revalidate). */
 export async function peekFriendActivityFeed() {
   const user = await getUser();
-  if (!user) return null;
   try {
-    const cached = await idbGet(cacheKey(user.id));
+    const cached = await idbGet(cacheKey(user?.id));
     if (!cached?.items || !Array.isArray(cached.items)) return null;
     if (Date.now() - Number(cached.at || 0) > 30 * 60 * 1000) return null;
     return cached.items;
@@ -96,7 +95,7 @@ async function resolveTitleMeta(need = []) {
   return out;
 }
 
-/** Collapse noisy duplicates: one view per friend+title; drop self rows. */
+/** Collapse noisy duplicates: one view per user+title; drop self rows. */
 function quietFilter(items, selfId, limit) {
   const out = [];
   const seenView = new Set();
@@ -114,44 +113,45 @@ function quietFilter(items, selfId, limit) {
   return out;
 }
 
+async function profilesByIds(ids = []) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return {};
+  const { data, error } = await getSupabase()
+    .from("profiles")
+    .select("id, display_name, avatar_url, email")
+    .in("id", unique.slice(0, 80));
+  if (error) return {};
+  const map = {};
+  for (const row of data || []) map[row.id] = row;
+  return map;
+}
+
 /**
- * Friends-only social timeline for Home.
- * @returns {Promise<Array<{
- *   id: string,
- *   kind: 'watching'|'view'|'comment'|'note',
- *   at: string,
- *   actor: object,
- *   action: string,
- *   title: string,
- *   poster: string|null,
- *   preview: string,
- *   href: string|null,
- *   chatId: string|null,
- * }>>}
+ * Global Home activity timeline (everyone, not just friends).
+ * Friend notes still only appear for accepted friends.
  */
 export async function listFriendActivityFeed({ limit = 20 } = {}) {
   const user = await getUser();
-  if (!user) return [];
+  const selfId = user?.id || null;
 
   let friendships = [];
-  try {
-    friendships = (await listFriendships()).filter((f) => f.status === "accepted");
-  } catch {
-    return [];
+  if (selfId) {
+    try {
+      friendships = (await listFriendships()).filter(
+        (f) => f.status === "accepted"
+      );
+    } catch {
+      friendships = [];
+    }
   }
 
-  if (!friendships.length) {
-    await idbSet(cacheKey(user.id), { at: Date.now(), items: [] });
-    return [];
-  }
-
-  const friendIds = friendships.map((f) => f.other?.id || f.otherId).filter(Boolean);
-  const byUser = {};
+  const friendIds = friendships
+    .map((f) => f.other?.id || f.otherId)
+    .filter(Boolean);
   const chatByUser = {};
   for (const f of friendships) {
     const id = f.other?.id || f.otherId;
     if (!id) continue;
-    byUser[id] = f.other || { id };
     chatByUser[id] = f.id;
   }
 
@@ -160,25 +160,24 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
 
   const [watchingMap, notesMap, viewsRes, commentsRes] = await Promise.all([
     listFriendsWatching().catch(() => ({})),
-    listFriendNotes(friendIds).catch(() => ({})),
+    friendIds.length
+      ? listFriendNotes(friendIds).catch(() => ({}))
+      : Promise.resolve({}),
     sb
       .from("title_views")
       .select("user_id, media_type, tmdb_id, title, poster, viewed_at")
-      .in("user_id", friendIds)
       .order("viewed_at", { ascending: false })
-      .limit(40),
+      .limit(50),
     sb
       .from("title_comments")
       .select(
         "id, user_id, body, tmdb_id, media_type, parent_id, author_name, author_avatar, created_at"
       )
-      .in("user_id", friendIds)
       .is("parent_id", null)
       .order("created_at", { ascending: false })
       .limit(40),
   ]);
 
-  // Fail soft per source when a table/RLS path is unavailable
   let views = [];
   if (!viewsRes.error) views = viewsRes.data || [];
 
@@ -191,11 +190,21 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
       .select(
         "id, user_id, body, tmdb_id, media_type, author_name, author_avatar, created_at"
       )
-      .in("user_id", friendIds)
       .order("created_at", { ascending: false })
       .limit(40);
     if (!fallback.error) comments = fallback.data || [];
   }
+
+  const actorIds = [
+    ...new Set([
+      ...Object.keys(watchingMap || {}),
+      ...views.map((row) => row.user_id),
+      ...comments.map((row) => row.user_id),
+      ...Object.keys(notesMap || {}),
+    ]),
+  ].filter((id) => id && id !== selfId);
+
+  const byUser = await profilesByIds(actorIds);
 
   const metaByKey = {};
   for (const row of Object.values(watchingMap || {})) {
@@ -228,7 +237,7 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
   const items = [];
 
   for (const [userId, row] of Object.entries(watchingMap || {})) {
-    if (!friendIds.includes(userId) || userId === user.id) continue;
+    if (selfId && userId === selfId) continue;
     const actor = actorFrom(byUser[userId], userId);
     items.push({
       id: `watching:${userId}:${row.tmdb_id}:${row.updated_at}`,
@@ -245,7 +254,7 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
   }
 
   for (const row of views) {
-    if (row.user_id === user.id) continue;
+    if (selfId && row.user_id === selfId) continue;
     const actor = actorFrom(byUser[row.user_id], row.user_id);
     items.push({
       id: `view:${row.user_id}:${row.media_type}:${row.tmdb_id}:${row.viewed_at}`,
@@ -262,7 +271,7 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
   }
 
   for (const row of comments) {
-    if (row.parent_id || row.user_id === user.id) continue;
+    if (row.parent_id || (selfId && row.user_id === selfId)) continue;
     const meta = metaByKey[titleKey(row.media_type, row.tmdb_id)] || {};
     const actor = actorFrom(
       {
@@ -296,7 +305,7 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
   }
 
   for (const [userId, note] of Object.entries(notesMap || {})) {
-    if (userId === user.id || !note?.body) continue;
+    if ((selfId && userId === selfId) || !note?.body) continue;
     if (!friendIds.includes(userId)) continue;
     const actor = actorFrom(byUser[userId], userId);
     items.push({
@@ -315,17 +324,16 @@ export async function listFriendActivityFeed({ limit = 20 } = {}) {
 
   const ranked = quietFilter(
     items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()),
-    user.id,
+    selfId,
     capped
   );
 
-  await idbSet(cacheKey(user.id), { at: Date.now(), items: ranked });
+  await idbSet(cacheKey(selfId), { at: Date.now(), items: ranked });
   return ranked;
 }
 
 /**
- * Light realtime refresh for the Home friends strip.
- * Fires on watching_now / notes / comments / views, debounced.
+ * Light realtime refresh for the Home activity strip.
  * @returns {() => void} unsubscribe
  */
 export function subscribeFriendActivityFeed(onChange, { debounceMs = 1600 } = {}) {
@@ -348,7 +356,7 @@ export function subscribeFriendActivityFeed(onChange, { debounceMs = 1600 } = {}
   try {
     channel = getSupabase()
       .channel(
-        `friends-activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        `activity-feed-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       )
       .on(
         "postgres_changes",

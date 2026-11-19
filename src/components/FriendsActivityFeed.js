@@ -72,21 +72,21 @@ function toastForItem(item) {
   const name = item.actor?.display_name || "Friend";
   if (item.kind === "watching") {
     return {
-      title: "From Friends",
+      title: "Activity",
       body: `${name} is watching ${item.title || "this"}`,
       avatarUrl: item.actor?.avatar_url || null,
     };
   }
   if (item.kind === "view") {
     return {
-      title: "From Friends",
+      title: "Activity",
       body: `${name} viewed ${item.title || "this"}`,
       avatarUrl: item.actor?.avatar_url || null,
     };
   }
   if (item.kind === "comment") {
     return {
-      title: "From Friends",
+      title: "Activity",
       body: `${name} commented${item.title ? ` on ${item.title}` : ""}`,
       avatarUrl: item.actor?.avatar_url || null,
     };

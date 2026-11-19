@@ -14,6 +14,7 @@ export const TV_NETWORKS = [
   { id: 2588, name: "Shudder", color: "#e50914" },
   { id: 174, name: "AMC+", color: "#02adc7" },
   { id: 6368, name: "MGM+", color: "#c5a572" },
+  { id: 6976, name: "Viva One", color: "#ff2d55" },
 ];
 
 export const MOVIE_STUDIOS = [

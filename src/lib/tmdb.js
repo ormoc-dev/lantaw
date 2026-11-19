@@ -178,10 +178,12 @@ export const tmdb = {
   topRated: (page = 1) => tmdbFetch("/movie/top_rated", { page }),
   nowPlaying: (page = 1) => tmdbFetch("/movie/now_playing", { page }),
   upcoming: (page = 1) => tmdbFetch("/movie/upcoming", { page }),
-  trending: (timeWindow = "week") => tmdbFetch(`/trending/movie/${timeWindow}`),
-  trendingTv: (timeWindow = "week") => tmdbFetch(`/trending/tv/${timeWindow}`),
-  trendingAll: (timeWindow = "week") =>
-    tmdbFetch(`/trending/all/${timeWindow}`),
+  trending: (timeWindow = "week", page = 1) =>
+    tmdbFetch(`/trending/movie/${timeWindow}`, { page }),
+  trendingTv: (timeWindow = "week", page = 1) =>
+    tmdbFetch(`/trending/tv/${timeWindow}`, { page }),
+  trendingAll: (timeWindow = "week", page = 1) =>
+    tmdbFetch(`/trending/all/${timeWindow}`, { page }),
   byGenre: (genreId, page = 1) =>
     tmdbFetch("/discover/movie", {
       with_genres: genreId,

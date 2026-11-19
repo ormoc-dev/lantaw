@@ -92,15 +92,15 @@ export async function clearWatchingNow() {
  */
 export async function listFriendsWatching() {
   const user = await getUser();
-  if (!user) return {};
-
-  const { data, error } = await getSupabase()
+  let query = getSupabase()
     .from("watching_now")
     .select("user_id, media_type, tmdb_id, title, poster, updated_at")
-    .neq("user_id", user.id)
     .gte("updated_at", new Date(Date.now() - STALE_MS).toISOString())
     .order("updated_at", { ascending: false })
     .limit(80);
+  if (user?.id) query = query.neq("user_id", user.id);
+
+  const { data, error } = await query;
 
   if (error) {
     if (/watching_now|schema cache|does not exist/i.test(error.message || "")) {

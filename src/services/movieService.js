@@ -10,6 +10,7 @@ function mapTitle(m) {
     overview: m.overview,
     releaseDate: m.release_date || m.first_air_date || null,
     rating: m.vote_average,
+    voteCount: m.vote_count ?? 0,
     poster: posterUrl(m.poster_path),
     backdrop: backdropUrl(m.backdrop_path),
     genreIds: m.genre_ids || [],
@@ -43,8 +44,8 @@ export async function getPopularMovies(page = 1) {
 
 /** Category grids — TMDB is 20/page. Keep shelves full without over-fetching. */
 const CATEGORY_LIST_LIMIT = 60;
-/** Recommend rows only need one page each. */
-const RECOMMEND_ROW_LIMIT = 20;
+/** Horizontal recommend rails: enough titles to scroll past the 4 on screen. */
+const RECOMMEND_ROW_LIMIT = 50;
 const CATEGORY_CACHE_TTL = 10 * 60 * 1000;
 const categoryMem = new Map();
 
@@ -129,6 +130,45 @@ function itemKey(item) {
   return `${item?.mediaType || "movie"}:${item?.id}`;
 }
 
+/** Drop junk / unrated / posterless titles so shelves stay real. */
+function isRealTitle(item, { minVotes = 40 } = {}) {
+  return Boolean(
+    item?.id &&
+      item?.title &&
+      item.title !== "Untitled" &&
+      item.poster &&
+      Number(item.rating) > 0 &&
+      Number(item.voteCount || 0) >= minVotes
+  );
+}
+
+function compareByRating(a, b) {
+  const ratingDiff = (b.rating || 0) - (a.rating || 0);
+  if (ratingDiff !== 0) return ratingDiff;
+  return (b.voteCount || 0) - (a.voteCount || 0);
+}
+
+/** Filter to real titles, then highest rating first. */
+function rankByRating(list, { limit, minVotes = 40 } = {}) {
+  const source = Array.isArray(list) ? list : [];
+  let ranked = source
+    .filter((item) => isRealTitle(item, { minVotes }))
+    .sort(compareByRating);
+
+  // If the vote floor leaves a thin shelf, relax once so rows still fill.
+  if (
+    typeof limit === "number" &&
+    ranked.length < Math.min(limit, 8) &&
+    minVotes > 5
+  ) {
+    ranked = source
+      .filter((item) => isRealTitle(item, { minVotes: 5 }))
+      .sort(compareByRating);
+  }
+
+  return typeof limit === "number" ? ranked.slice(0, limit) : ranked;
+}
+
 /** Merge lists, drop duplicates, sort highest rating first. */
 function mergeByRating(...lists) {
   const byKey = new Map();
@@ -142,7 +182,7 @@ function mergeByRating(...lists) {
       }
     }
   }
-  return [...byKey.values()].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  return rankByRating([...byKey.values()]);
 }
 
 /**
@@ -160,53 +200,89 @@ export async function getRecommended() {
     nowPlaying,
     anime,
     kdrama,
+    vivaOne,
   ] = await Promise.all([
-    tmdb.trendingAll("day").then((data) => mapList(data)),
-    tmdb.trendingAll("week").then((data) => mapList(data)),
-    getPopularMovies(),
-    getTvShows(),
-    getNowPlayingMovies(),
+    collectPages(
+      (page) => tmdb.trendingAll("day", page).then((data) => mapList(data)),
+      RECOMMEND_ROW_LIMIT
+    ),
+    collectPages(
+      (page) => tmdb.trendingAll("week", page).then((data) => mapList(data)),
+      RECOMMEND_ROW_LIMIT
+    ),
+    collectPages((page) => getPopularMovies(page), RECOMMEND_ROW_LIMIT),
+    collectPages((page) => getTvShows(page), RECOMMEND_ROW_LIMIT),
+    collectPages((page) => getNowPlayingMovies(page), RECOMMEND_ROW_LIMIT),
     getAnime({ limit: RECOMMEND_ROW_LIMIT }),
     getKdrama({ limit: RECOMMEND_ROW_LIMIT }),
+    getVivaOne({ limit: RECOMMEND_ROW_LIMIT }),
   ]);
 
-  const topToday = trendingToday.results || [];
+  const topTodayRanked = rankByRating(trendingToday.results, {
+    limit: RECOMMEND_ROW_LIMIT,
+    minVotes: 80,
+  });
   const sections = [
     {
       id: "top10-us",
       title: "Top 10 Today · United States",
-      items: topToday.slice(0, 10),
-      moreItems: topToday.slice(10, 20),
+      items: topTodayRanked,
     },
     {
       id: "trending-now",
       title: "Trending now",
-      items: (trendingNow.results || []).slice(0, 18),
+      items: rankByRating(trendingNow.results, {
+        limit: RECOMMEND_ROW_LIMIT,
+        minVotes: 80,
+      }),
     },
     {
       id: "popular-movies",
       title: "Popular movies",
-      items: (popularMovies.results || []).slice(0, 18),
+      items: rankByRating(popularMovies.results, {
+        limit: RECOMMEND_ROW_LIMIT,
+        minVotes: 100,
+      }),
     },
     {
       id: "popular-tv",
       title: "Popular TV shows",
-      items: (popularTv.results || []).slice(0, 18),
+      items: rankByRating(popularTv.results, {
+        limit: RECOMMEND_ROW_LIMIT,
+        minVotes: 80,
+      }),
     },
     {
       id: "now-playing",
       title: "New on air movies",
-      items: (nowPlaying.results || []).slice(0, 18),
+      items: rankByRating(nowPlaying.results, {
+        limit: RECOMMEND_ROW_LIMIT,
+        minVotes: 40,
+      }),
     },
     {
       id: "popular-anime",
       title: "Popular anime",
-      items: (anime.results || []).slice(0, 18),
+      items: rankByRating(anime.results, {
+        limit: RECOMMEND_ROW_LIMIT,
+        minVotes: 40,
+      }),
     },
     {
       id: "popular-kdrama",
       title: "Popular Kdrama",
-      items: (kdrama.results || []).slice(0, 18),
+      items: rankByRating(kdrama.results, {
+        limit: RECOMMEND_ROW_LIMIT,
+        minVotes: 40,
+      }),
+    },
+    {
+      id: "popular-viva-one",
+      title: "Popular Viva One",
+      items: rankByRating(vivaOne.results, {
+        limit: RECOMMEND_ROW_LIMIT,
+        minVotes: 5,
+      }),
     },
   ].filter((s) => s.items.length);
 
@@ -226,8 +302,18 @@ export async function getFilipino({ limit = CATEGORY_LIST_LIMIT } = {}) {
   const jobs = [];
   for (let page = 1; page <= pageCount; page += 1) {
     jobs.push(
-      tmdb.discoverMovies({ with_origin_country: "PH", page }),
-      tmdb.discoverTv({ with_origin_country: "PH", page })
+      tmdb.discoverMovies({
+        with_origin_country: "PH",
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 20,
+        page,
+      }),
+      tmdb.discoverTv({
+        with_origin_country: "PH",
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 20,
+        page,
+      })
     );
   }
   const raw = await Promise.all(jobs);
@@ -242,8 +328,7 @@ export async function getFilipino({ limit = CATEGORY_LIST_LIMIT } = {}) {
       merged.push(item);
     }
   }
-  merged.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-  return { results: merged.slice(0, limit) };
+  return { results: rankByRating(merged, { limit, minVotes: 20 }) };
 }
 
 export async function getTvShows(page = 1) {
@@ -258,11 +343,15 @@ export async function getAnime({ limit = CATEGORY_LIST_LIMIT } = {}) {
       tmdb.discoverMovies({
         with_genres: 16,
         with_original_language: "ja",
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 40,
         page,
       }),
       tmdb.discoverTv({
         with_genres: 16,
         with_original_language: "ja",
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 40,
         page,
       })
     );
@@ -279,8 +368,7 @@ export async function getAnime({ limit = CATEGORY_LIST_LIMIT } = {}) {
       merged.push(item);
     }
   }
-  merged.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-  return { results: merged.slice(0, limit) };
+  return { results: rankByRating(merged, { limit, minVotes: 40 }) };
 }
 
 /** Korean dramas — KR TV in Korean, Drama genre (skip variety / talk). */
@@ -294,11 +382,12 @@ export async function getKdrama({ limit = CATEGORY_LIST_LIMIT } = {}) {
         with_origin_country: "KR",
         with_genres: 18,
         without_genres: "10764,10767,10763",
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 40,
         page,
       })
     );
   }
-  // Keep TMDB popularity order (page 1 first) so familiar dramas surface.
   const raw = await Promise.all(jobs);
   const merged = [];
   const seen = new Set();
@@ -310,7 +399,7 @@ export async function getKdrama({ limit = CATEGORY_LIST_LIMIT } = {}) {
       merged.push(item);
     }
   }
-  return { results: merged.slice(0, limit) };
+  return { results: rankByRating(merged, { limit, minVotes: 40 }) };
 }
 
 /** Vivamax originals (TMDB company 149142) */
@@ -322,13 +411,15 @@ export async function getVivamax({ limit = CATEGORY_LIST_LIMIT } = {}) {
       tmdb.discoverMovies({
         with_companies: 149142,
         include_adult: true,
-        sort_by: "primary_release_date.desc",
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 5,
         page,
       }),
       tmdb.discoverTv({
         with_companies: 149142,
         include_adult: true,
-        sort_by: "first_air_date.desc",
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 5,
         page,
       })
     );
@@ -345,20 +436,73 @@ export async function getVivamax({ limit = CATEGORY_LIST_LIMIT } = {}) {
       merged.push(item);
     }
   }
-  merged.sort((a, b) => {
-    const da = a.releaseDate || "";
-    const db = b.releaseDate || "";
-    if (da !== db) return db.localeCompare(da);
-    return (b.rating || 0) - (a.rating || 0);
-  });
-  return { results: merged.slice(0, limit) };
+  return { results: rankByRating(merged, { limit, minVotes: 5 }) };
+}
+
+/**
+ * Viva One catalog:
+ * - TV network 6976
+ * - companies 204985 (Viva One PH) + 208474 (Vivaone)
+ * Network alone is tiny on TMDB; companies add the movies / extras.
+ */
+export async function getVivaOne({ limit = 100 } = {}) {
+  const pageCount = Math.max(1, Math.ceil(Math.min(limit, 100) / 20));
+  const companies = "204985|208474";
+  const jobs = [];
+  for (let page = 1; page <= pageCount; page += 1) {
+    jobs.push(
+      tmdb.discoverTv({
+        with_networks: 6976,
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 5,
+        page,
+      }),
+      tmdb.discoverTv({
+        with_companies: companies,
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 5,
+        page,
+      }),
+      tmdb.discoverMovies({
+        with_companies: companies,
+        sort_by: "vote_average.desc",
+        "vote_count.gte": 5,
+        page,
+      })
+    );
+  }
+  const raw = await Promise.all(jobs);
+  const merged = [];
+  const seen = new Set();
+  for (let i = 0; i < raw.length; i += 1) {
+    // jobs cycle: network-tv, company-tv, company-movie
+    const kind = i % 3;
+    const mediaType = kind === 2 ? "movie" : "tv";
+    for (const item of mapList(raw[i], mediaType).results) {
+      const key = itemKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  return { results: rankByRating(merged, { limit, minVotes: 5 }) };
+}
+
+const CATEGORY_CACHE_VER = "v4";
+
+function categoryCacheKey(categoryId) {
+  return `lantaw-cat-${CATEGORY_CACHE_VER}-${categoryId}`;
+}
+
+function categoryIdbKey(categoryId) {
+  return `cat:${CATEGORY_CACHE_VER}:${categoryId}`;
 }
 
 function readCategoryCache(categoryId) {
   const hit = categoryMem.get(categoryId);
   if (hit?.data) return hit.data;
   try {
-    const raw = sessionStorage.getItem(`lantaw-cat-${categoryId}`);
+    const raw = sessionStorage.getItem(categoryCacheKey(categoryId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.data) return null;
@@ -373,17 +517,18 @@ function writeCategoryCache(categoryId, data) {
   const entry = { expires: Date.now() + CATEGORY_CACHE_TTL, data };
   categoryMem.set(categoryId, entry);
   try {
-    sessionStorage.setItem(`lantaw-cat-${categoryId}`, JSON.stringify(entry));
+    sessionStorage.setItem(categoryCacheKey(categoryId), JSON.stringify(entry));
   } catch {
     /* quota */
   }
-  idbSet(`cat:${categoryId}`, entry);
+  idbSet(categoryIdbKey(categoryId), entry);
 }
 
 const CATALOG_IDS = [
   "recommend",
   "filipino",
   "vivamax",
+  "viva-one",
   "movies",
   "tv-show",
   "anime",
@@ -395,7 +540,7 @@ export async function hydrateCatalogCache() {
   await Promise.all(
     CATALOG_IDS.map(async (id) => {
       if (categoryMem.has(id)) return;
-      const entry = await idbGet(`cat:${id}`);
+      const entry = await idbGet(categoryIdbKey(id));
       if (entry?.data) categoryMem.set(id, entry);
     })
   );
@@ -414,10 +559,32 @@ async function loadCategoryItems(categoryId) {
       return getFilipino();
     case "vivamax":
       return getVivamax();
-    case "movies":
-      return collectPages((page) => getPopularMovies(page), CATEGORY_LIST_LIMIT);
-    case "tv-show":
-      return collectPages((page) => getTvShows(page), CATEGORY_LIST_LIMIT);
+    case "viva-one":
+      return getVivaOne();
+    case "movies": {
+      const data = await collectPages(
+        (page) => getPopularMovies(page),
+        CATEGORY_LIST_LIMIT
+      );
+      return {
+        results: rankByRating(data.results, {
+          limit: CATEGORY_LIST_LIMIT,
+          minVotes: 100,
+        }),
+      };
+    }
+    case "tv-show": {
+      const data = await collectPages(
+        (page) => getTvShows(page),
+        CATEGORY_LIST_LIMIT
+      );
+      return {
+        results: rankByRating(data.results, {
+          limit: CATEGORY_LIST_LIMIT,
+          minVotes: 80,
+        }),
+      };
+    }
     case "anime":
       return getAnime();
     case "kdrama":
@@ -475,16 +642,30 @@ function pickHeroes(...lists) {
 
 /** Home: hero carousel + separate sections per category */
 export async function getHomeCatalog() {
-  const [recommend, filipino, vivamax, movies, tv, anime, kdrama] =
+  const [recommend, filipino, vivamax, vivaOne, moviesRaw, tvRaw, anime, kdrama] =
     await Promise.all([
       getRecommended(),
       getFilipino(),
       getVivamax(),
+      getVivaOne(),
       getPopularMovies(),
       getTvShows(),
       getAnime(),
       getKdrama(),
     ]);
+
+  const movies = {
+    results: rankByRating(moviesRaw.results, {
+      limit: CATEGORY_LIST_LIMIT,
+      minVotes: 100,
+    }),
+  };
+  const tv = {
+    results: rankByRating(tvRaw.results, {
+      limit: CATEGORY_LIST_LIMIT,
+      minVotes: 80,
+    }),
+  };
 
   const heroes = pickHeroes(
     recommend.results,
@@ -548,6 +729,13 @@ export async function getHomeCatalog() {
         description: "Bold Filipino originals from Vivamax.",
         path: "/vivamax",
         items: previewList(vivamax.results, heroes),
+      },
+      {
+        id: "viva-one",
+        title: "Viva One",
+        description: "Pinoy originals and series from Viva One.",
+        path: "/viva-one",
+        items: previewList(vivaOne.results, heroes),
       },
     ],
   };

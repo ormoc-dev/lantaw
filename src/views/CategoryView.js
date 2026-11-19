@@ -1,10 +1,10 @@
-import { getCategoryById } from "../config/categories.js?v=147";
+import { getCategoryById } from "../config/categories.js?v=185";
 import {
   getCategoryItems,
   peekCategoryItems,
   searchMovies,
-} from "../services/movieService.js?v=151";
-import { CategoryChips } from "../components/CategoryChips.js?v=147";
+} from "../services/movieService.js?v=186";
+import { CategoryChips } from "../components/CategoryChips.js?v=185";
 import { HomeSearchBar } from "../components/HomeSearchBar.js";
 import { HomeSticky } from "../components/HomeSticky.js";
 import { MediaGrid } from "../components/MediaGrid.js";
@@ -12,12 +12,11 @@ import { CategoryRow } from "../components/CategoryRow.js";
 import {
   MovieStudiosRail,
   TvNetworksRail,
-} from "../components/BrandRails.js?v=151";
+} from "../components/BrandRails.js?v=188";
 import { FeaturedHero } from "../components/FeaturedHero.js";
 import { FriendsActivityFeed } from "../components/FriendsActivityFeed.js";
 import { loadingHtml } from "../components/Loading.js";
 import { linkTo } from "../router/index.js";
-import { getSession } from "../services/authService.js";
 import {
   listFriendActivityFeed,
   peekFriendActivityFeed,
@@ -184,17 +183,8 @@ export async function CategoryView(root, { categoryId } = {}) {
 
   const loadFriendsFeed = async () => {
     if (!showFriendsFeed) return;
-    let session = null;
-    try {
-      session = await getSession();
-    } catch {
-      session = null;
-    }
-    if (!session?.user) {
-      feedItems = [];
-      return;
-    }
 
+    // Global feed — signed-in or guest (comments always; views/watching after RLS update)
     await refreshFriendsFeed({ useCache: true });
 
     unsubFeed?.();

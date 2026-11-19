@@ -2,9 +2,9 @@ import { linkTo } from "../router/index.js";
 
 /**
  * Featured banner — one title, or a rotating set on home.
- * @param {{ item?: object, items?: object[] }} options
+ * @param {{ item?: object, items?: object[], footer?: HTMLElement|null }} options
  */
-export function FeaturedHero({ item, items } = {}) {
+export function FeaturedHero({ item, items, footer = null } = {}) {
   const list = (items?.length ? items : item ? [item] : []).filter(Boolean);
   const hero = document.createElement("section");
   hero.className = "home-hero";
@@ -70,6 +70,10 @@ export function FeaturedHero({ item, items } = {}) {
         </div>
       </div>
     `;
+
+    if (footer) {
+      hero.querySelector(".home-hero__content")?.appendChild(footer);
+    }
 
     if (list.length > 1) {
       hero.querySelectorAll(".home-hero__dot").forEach((dot) => {
