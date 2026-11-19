@@ -279,10 +279,7 @@ export async function getRecommended() {
     {
       id: "popular-viva-one",
       title: "Popular Viva One",
-      items: rankByRating(vivaOne.results, {
-        limit: RECOMMEND_ROW_LIMIT,
-        minVotes: 5,
-      }),
+      items: (vivaOne.results || []).slice(0, RECOMMEND_ROW_LIMIT),
     },
   ].filter((s) => s.items.length);
 
@@ -444,29 +441,27 @@ export async function getVivamax({ limit = CATEGORY_LIST_LIMIT } = {}) {
  * - TV network 6976
  * - companies 204985 (Viva One PH) + 208474 (Vivaone)
  * Network alone is tiny on TMDB; companies add the movies / extras.
+ * Keep the vote floor low — many Pinoy titles have few TMDB votes.
  */
-export async function getVivaOne({ limit = 100 } = {}) {
-  const pageCount = Math.max(1, Math.ceil(Math.min(limit, 100) / 20));
+export async function getVivaOne({ limit = 200 } = {}) {
+  const pageCount = Math.max(1, Math.ceil(Math.min(limit, 200) / 20));
   const companies = "204985|208474";
   const jobs = [];
   for (let page = 1; page <= pageCount; page += 1) {
     jobs.push(
       tmdb.discoverTv({
         with_networks: 6976,
-        sort_by: "vote_average.desc",
-        "vote_count.gte": 5,
+        sort_by: "popularity.desc",
         page,
       }),
       tmdb.discoverTv({
         with_companies: companies,
-        sort_by: "vote_average.desc",
-        "vote_count.gte": 5,
+        sort_by: "popularity.desc",
         page,
       }),
       tmdb.discoverMovies({
         with_companies: companies,
-        sort_by: "vote_average.desc",
-        "vote_count.gte": 5,
+        sort_by: "popularity.desc",
         page,
       })
     );
@@ -481,14 +476,22 @@ export async function getVivaOne({ limit = 100 } = {}) {
     for (const item of mapList(raw[i], mediaType).results) {
       const key = itemKey(item);
       if (seen.has(key)) continue;
+      if (!item?.poster || !item?.title || item.title === "Untitled") continue;
       seen.add(key);
       merged.push(item);
     }
   }
-  return { results: rankByRating(merged, { limit, minVotes: 5 }) };
+  // Prefer rated titles first, but keep unrated posters so the shelf stays full.
+  merged.sort((a, b) => {
+    const ar = Number(a.rating) > 0 ? Number(a.rating) : -1;
+    const br = Number(b.rating) > 0 ? Number(b.rating) : -1;
+    if (br !== ar) return br - ar;
+    return (b.voteCount || 0) - (a.voteCount || 0);
+  });
+  return { results: merged.slice(0, limit) };
 }
 
-const CATEGORY_CACHE_VER = "v4";
+const CATEGORY_CACHE_VER = "v5";
 
 function categoryCacheKey(categoryId) {
   return `lantaw-cat-${CATEGORY_CACHE_VER}-${categoryId}`;

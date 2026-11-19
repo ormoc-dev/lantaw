@@ -5764,6 +5764,7 @@ body.is-halloween .home-sticky__mark::after {
   .home-sticky .category-chips {
     display: flex;
     flex-wrap: nowrap;
+    align-items: stretch;
     justify-content: stretch;
     gap: 0.25rem;
     overflow-x: auto;
@@ -5777,12 +5778,14 @@ body.is-halloween .home-sticky__mark::after {
 
   .home-sticky .category-chip {
     flex: 1 1 0;
+    min-width: 0;
     text-align: center;
     border: 0;
     border-radius: 10px;
     background: transparent;
-    padding: 0.58rem 0.7rem;
-    font-size: 0.84rem;
+    padding: 0.5rem 0.35rem;
+    font-size: 0.78rem;
+    white-space: nowrap;
   }
 
   .home-sticky .category-chip.is-active {
@@ -5830,11 +5833,11 @@ body.is-halloween .home-sticky__mark::after {
   }
 
   .home-sticky .category-chips {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 0.3rem;
-    overflow: visible;
+    display: flex;
     flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.3rem;
+    overflow-x: auto;
     padding: 0.3rem;
     border-radius: 16px;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -5844,14 +5847,17 @@ body.is-halloween .home-sticky__mark::after {
   .home-sticky .category-chip {
     display: grid;
     place-items: center;
-    width: 100%;
-    padding: 0.7rem 0.55rem;
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    padding: 0.62rem 0.4rem;
     border-radius: 11px;
     border: 0;
     background: transparent;
-    font-size: 0.9rem;
+    font-size: 0.84rem;
     font-weight: 600;
     letter-spacing: -0.01em;
+    white-space: nowrap;
     transition:
       background 160ms var(--ease),
       color 160ms var(--ease),
@@ -7042,8 +7048,13 @@ body.is-halloween .home-sticky__mark::after {
 }
 
 @media (min-width: 480px) {
+  /* Genre filters (Discover) may wrap; home category tabs stay one row */
   .category-chips {
     flex-wrap: wrap;
+  }
+
+  .home-sticky .category-chips {
+    flex-wrap: nowrap;
   }
 }
 
