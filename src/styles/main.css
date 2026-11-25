@@ -5686,13 +5686,14 @@ body.is-halloween .home-sticky__mark::after {
   }
 
   .home-sticky .category-chips {
-    gap: 0.3rem;
-    padding: 0;
+    gap: 0.4rem;
+    padding: 0.05rem 0 0.1rem;
   }
 
   .home-sticky .category-chip {
-    padding: 0.22rem 0.55rem;
-    font-size: 0.7rem;
+    padding: 0.38rem 0.72rem;
+    font-size: 0.8rem;
+    line-height: 1.15;
     border-radius: 999px;
   }
 
@@ -7031,6 +7032,38 @@ body.is-halloween .home-sticky__mark::after {
   margin-top: 0.3rem;
 }
 
+.category-chips-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  /* Soft edge fade = “more this way” without covering chip text */
+  --chips-fade-left: 0rem;
+  --chips-fade-right: 0rem;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--chips-fade-left),
+    #000 calc(100% - var(--chips-fade-right)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--chips-fade-left),
+    #000 calc(100% - var(--chips-fade-right)),
+    transparent 100%
+  );
+}
+
+.category-chips-wrap.has-left {
+  --chips-fade-left: 1.1rem;
+}
+
+.category-chips-wrap.has-right {
+  --chips-fade-right: 1.1rem;
+}
+
 .category-chips {
   display: flex;
   flex-wrap: nowrap;
@@ -7041,7 +7074,8 @@ body.is-halloween .home-sticky__mark::after {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  padding: 0.1rem 0 0.15rem;
+  padding: 0.1rem 0.15rem 0.15rem;
+  scroll-padding-inline: 0.75rem;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   box-sizing: border-box;

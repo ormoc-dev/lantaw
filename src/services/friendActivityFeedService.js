@@ -34,7 +34,7 @@ function actorFrom(profile, fallbackId) {
 }
 
 function cacheKey(userId) {
-  return `activity-feed:${userId || "guest"}`;
+  return `activity-feed:v2:${userId || "guest"}`;
 }
 
 /** Cached feed for instant Home paint (stale-while-revalidate). */
@@ -95,17 +95,33 @@ async function resolveTitleMeta(need = []) {
   return out;
 }
 
-/** Collapse noisy duplicates: one view per user+title; drop self rows. */
+/** Stable user+title key so watching/view/href variants collapse together. */
+function activityTitleKey(item) {
+  const actor = item?.actor?.id || "anon";
+  const href = String(item?.href || "");
+  const match = href.match(/\/(movie|tv)\/(\d+)/i);
+  if (match) return `${actor}:${match[1].toLowerCase()}:${match[2]}`;
+  const title = String(item?.title || "")
+    .trim()
+    .toLowerCase();
+  return title ? `${actor}:title:${title}` : `${actor}:id:${item?.id || ""}`;
+}
+
+/**
+ * Collapse noisy duplicates:
+ * - drop self rows
+ * - one card per user+title across watching + viewed (prefer whichever is newer)
+ */
 function quietFilter(items, selfId, limit) {
   const out = [];
-  const seenView = new Set();
+  const seenTitle = new Set();
   for (const item of items) {
     if (!item?.at) continue;
     if (selfId && item.actor?.id && item.actor.id === selfId) continue;
-    if (item.kind === "view") {
-      const key = `${item.actor?.id}:${item.href || item.title}`;
-      if (seenView.has(key)) continue;
-      seenView.add(key);
+    if (item.kind === "view" || item.kind === "watching") {
+      const key = activityTitleKey(item);
+      if (seenTitle.has(key)) continue;
+      seenTitle.add(key);
     }
     out.push(item);
     if (out.length >= limit) break;

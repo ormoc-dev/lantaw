@@ -35,6 +35,36 @@ async function assertAcceptedFriend(targetUserId) {
   return user;
 }
 
+/** Avoid bumping the same title in the activity feed on every back/forward. */
+const VIEW_COOLDOWN_MS = 30 * 60 * 1000;
+const viewCooldownMem = new Map();
+
+function viewCooldownKey(userId, mediaType, tmdbId) {
+  return `${userId}:${mediaType}:${tmdbId}`;
+}
+
+function readViewCooldown(key) {
+  const hit = viewCooldownMem.get(key);
+  if (hit) return hit;
+  try {
+    const raw = sessionStorage.getItem(`lantaw-view-cd:${key}`);
+    const ts = raw ? Number(raw) : 0;
+    if (ts) viewCooldownMem.set(key, ts);
+    return ts || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeViewCooldown(key, ts) {
+  viewCooldownMem.set(key, ts);
+  try {
+    sessionStorage.setItem(`lantaw-view-cd:${key}`, String(ts));
+  } catch {
+    /* quota */
+  }
+}
+
 /** Upsert a viewed title for the signed-in user (friends can see these). */
 export async function recordTitleView({
   mediaType,
@@ -45,10 +75,18 @@ export async function recordTitleView({
   const user = await getUser();
   if (!user || !tmdbId || !title) return null;
 
+  const media = mediaType === "tv" ? "tv" : "movie";
+  const id = Number(tmdbId);
+  const cdKey = viewCooldownKey(user.id, media, id);
+  const last = readViewCooldown(cdKey);
+  const now = Date.now();
+  // Same title again within 30m (e.g. open → back → open) — don't spam the feed.
+  if (last && now - last < VIEW_COOLDOWN_MS) return null;
+
   const row = {
     user_id: user.id,
-    media_type: mediaType === "tv" ? "tv" : "movie",
-    tmdb_id: Number(tmdbId),
+    media_type: media,
+    tmdb_id: id,
     title: String(title).slice(0, 200),
     poster: poster || null,
     viewed_at: new Date().toISOString(),
@@ -64,6 +102,7 @@ export async function recordTitleView({
     }
     throw error;
   }
+  writeViewCooldown(cdKey, now);
   return row;
 }
 

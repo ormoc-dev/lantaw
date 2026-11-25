@@ -3,9 +3,13 @@ import { linkTo } from "../router/index.js";
 
 /**
  * Category tab nav — each chip opens its own page view.
+ * Soft edge fade hints when more tabs are off-screen (no overlay badge).
  * @param {{ activeId?: string }} [options]
  */
 export function CategoryChips({ activeId = "" } = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = "category-chips-wrap";
+
   const nav = document.createElement("nav");
   nav.className = "category-chips";
   nav.setAttribute("aria-label", "Categories");
@@ -23,8 +27,8 @@ export function CategoryChips({ activeId = "" } = {}) {
       e.preventDefault();
       const hash = linkTo(cat.path);
       if (location.hash === hash) {
-        // Re-tap active chip: scroll chips into view only
-        a.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+        bringChipIntoView(a);
+        syncOverflow();
         return;
       }
       location.hash = hash;
@@ -32,13 +36,43 @@ export function CategoryChips({ activeId = "" } = {}) {
     nav.appendChild(a);
   });
 
-  // Keep the active chip visible in the horizontal scroller
+  wrap.append(nav);
+
+  const syncOverflow = () => {
+    const max = Math.max(0, nav.scrollWidth - nav.clientWidth);
+    const left = nav.scrollLeft > 2;
+    const right = nav.scrollLeft < max - 2;
+    wrap.classList.toggle("is-scrollable", max > 2);
+    wrap.classList.toggle("has-left", left);
+    wrap.classList.toggle("has-right", right);
+  };
+
+  /** Keep the chip fully visible with a little side breathing room (no mid-word clip). */
+  const bringChipIntoView = (chip, behavior = "smooth") => {
+    if (!chip) return;
+    const pad = 12;
+    const left = chip.offsetLeft;
+    const right = left + chip.offsetWidth;
+    const viewLeft = nav.scrollLeft;
+    const viewRight = viewLeft + nav.clientWidth;
+    if (left < viewLeft + pad) {
+      nav.scrollTo({ left: Math.max(0, left - pad), behavior });
+    } else if (right > viewRight - pad) {
+      nav.scrollTo({
+        left: Math.min(nav.scrollWidth - nav.clientWidth, right - nav.clientWidth + pad),
+        behavior,
+      });
+    }
+  };
+
+  nav.addEventListener("scroll", syncOverflow, { passive: true });
+  const ro = new ResizeObserver(syncOverflow);
+  ro.observe(nav);
+
   requestAnimationFrame(() => {
-    nav.querySelector(".category-chip.is-active")?.scrollIntoView({
-      inline: "center",
-      block: "nearest",
-    });
+    bringChipIntoView(nav.querySelector(".category-chip.is-active"), "auto");
+    syncOverflow();
   });
 
-  return nav;
+  return wrap;
 }

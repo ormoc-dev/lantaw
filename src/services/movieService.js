@@ -14,8 +14,37 @@ function mapTitle(m) {
     poster: posterUrl(m.poster_path),
     backdrop: backdropUrl(m.backdrop_path),
     genreIds: m.genre_ids || [],
+    originalLanguage: m.original_language || null,
+    originCountry: Array.isArray(m.origin_country) ? m.origin_country : [],
     raw: m,
   };
+}
+
+/** Japanese/Korean animation (anime / aeni) — keep off the US Top 10 shelf. */
+function isAnimeTitle(item) {
+  const genres = item?.genreIds || item?.raw?.genre_ids || [];
+  if (!genres.includes(16)) return false;
+  const lang =
+    item?.originalLanguage || item?.raw?.original_language || "";
+  return lang === "ja" || lang === "ko" || lang === "zh";
+}
+
+/** US-origin catalog titles only (no anime). */
+function isUsCatalogTitle(item) {
+  if (!item?.id || isAnimeTitle(item)) return false;
+  const countries = item.originCountry?.length
+    ? item.originCountry
+    : item.raw?.origin_country || [];
+  if (Array.isArray(countries) && countries.length) {
+    return countries.includes("US");
+  }
+  const lang =
+    item?.originalLanguage || item?.raw?.original_language || "";
+  // List payloads often omit country on movies — allow English only, block foreign langs.
+  if (["ja", "ko", "zh", "th", "hi", "tl", "id", "es", "pt", "fr", "de", "it", "tr"].includes(lang)) {
+    return false;
+  }
+  return lang === "en";
 }
 
 export function mapList(data, mediaType) {
@@ -186,11 +215,31 @@ function mergeByRating(...lists) {
 }
 
 /**
+ * Fill a shelf from a ranked pool, skipping titles already used higher up
+ * so Recommend rows don't feel redundant.
+ */
+function takeUnique(pool, used, limit = RECOMMEND_ROW_LIMIT) {
+  const out = [];
+  for (const item of pool || []) {
+    if (!item?.id) continue;
+    const key = itemKey(item);
+    if (used.has(key)) continue;
+    used.add(key);
+    out.push(item);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
  * Recommend page rows:
  * Top 10 Today · US, Trending, Popular movies/TV, New on air, Popular anime.
  * (TV Networks + Movie Studios are logo rails above the list.)
  */
 export async function getRecommended() {
+  // Pull extra candidates so cross-row dedupe still leaves full shelves.
+  const poolLimit = Math.max(RECOMMEND_ROW_LIMIT * 3, 100);
+
   // Truly parallel — never `await` inside the Promise.all array.
   const [
     trendingToday,
@@ -201,85 +250,144 @@ export async function getRecommended() {
     anime,
     kdrama,
     vivaOne,
+    usMovies,
+    usTv,
   ] = await Promise.all([
     collectPages(
       (page) => tmdb.trendingAll("day", page).then((data) => mapList(data)),
-      RECOMMEND_ROW_LIMIT
+      poolLimit
     ),
     collectPages(
       (page) => tmdb.trendingAll("week", page).then((data) => mapList(data)),
-      RECOMMEND_ROW_LIMIT
+      poolLimit
     ),
-    collectPages((page) => getPopularMovies(page), RECOMMEND_ROW_LIMIT),
-    collectPages((page) => getTvShows(page), RECOMMEND_ROW_LIMIT),
-    collectPages((page) => getNowPlayingMovies(page), RECOMMEND_ROW_LIMIT),
-    getAnime({ limit: RECOMMEND_ROW_LIMIT }),
-    getKdrama({ limit: RECOMMEND_ROW_LIMIT }),
-    getVivaOne({ limit: RECOMMEND_ROW_LIMIT }),
+    collectPages((page) => getPopularMovies(page), poolLimit),
+    collectPages((page) => getTvShows(page), poolLimit),
+    collectPages((page) => getNowPlayingMovies(page), poolLimit),
+    getAnime({ limit: poolLimit }),
+    getKdrama({ limit: poolLimit }),
+    getVivaOne({ limit: poolLimit }),
+    collectPages(
+      (page) =>
+        tmdb
+          .discoverMovies({
+            with_origin_country: "US",
+            sort_by: "popularity.desc",
+            page,
+          })
+          .then((data) => mapList(data, "movie")),
+      poolLimit
+    ),
+    collectPages(
+      (page) =>
+        tmdb
+          .discoverTv({
+            with_origin_country: "US",
+            sort_by: "popularity.desc",
+            page,
+          })
+          .then((data) => mapList(data, "tv")),
+      poolLimit
+    ),
   ]);
 
-  const topTodayRanked = rankByRating(trendingToday.results, {
-    limit: RECOMMEND_ROW_LIMIT,
-    minVotes: 80,
-  });
+  // Top 10 US: US-origin only, no anime (trending today + US discover).
+  const usTopPool = mergeByRating(
+    (trendingToday.results || []).filter(isUsCatalogTitle),
+    (usMovies.results || []).filter(isUsCatalogTitle),
+    (usTv.results || []).filter(isUsCatalogTitle)
+  );
+
+  const used = new Set();
   const sections = [
     {
       id: "top10-us",
       title: "Top 10 Today · United States",
-      items: topTodayRanked,
+      items: takeUnique(
+        rankByRating(usTopPool, {
+          limit: poolLimit,
+          minVotes: 80,
+        }),
+        used,
+        RECOMMEND_ROW_LIMIT
+      ),
     },
     {
       id: "trending-now",
       title: "Trending now",
-      items: rankByRating(trendingNow.results, {
-        limit: RECOMMEND_ROW_LIMIT,
-        minVotes: 80,
-      }),
+      items: takeUnique(
+        rankByRating(trendingNow.results, {
+          limit: poolLimit,
+          minVotes: 80,
+        }),
+        used,
+        RECOMMEND_ROW_LIMIT
+      ),
     },
     {
       id: "popular-movies",
       title: "Popular movies",
-      items: rankByRating(popularMovies.results, {
-        limit: RECOMMEND_ROW_LIMIT,
-        minVotes: 100,
-      }),
+      items: takeUnique(
+        rankByRating(popularMovies.results, {
+          limit: poolLimit,
+          minVotes: 100,
+        }),
+        used,
+        RECOMMEND_ROW_LIMIT
+      ),
     },
     {
       id: "popular-tv",
       title: "Popular TV shows",
-      items: rankByRating(popularTv.results, {
-        limit: RECOMMEND_ROW_LIMIT,
-        minVotes: 80,
-      }),
+      items: takeUnique(
+        rankByRating(popularTv.results, {
+          limit: poolLimit,
+          minVotes: 80,
+        }),
+        used,
+        RECOMMEND_ROW_LIMIT
+      ),
     },
     {
       id: "now-playing",
       title: "New on air movies",
-      items: rankByRating(nowPlaying.results, {
-        limit: RECOMMEND_ROW_LIMIT,
-        minVotes: 40,
-      }),
+      items: takeUnique(
+        rankByRating(nowPlaying.results, {
+          limit: poolLimit,
+          minVotes: 40,
+        }),
+        used,
+        RECOMMEND_ROW_LIMIT
+      ),
     },
     {
       id: "popular-anime",
       title: "Popular anime",
-      items: rankByRating(anime.results, {
-        limit: RECOMMEND_ROW_LIMIT,
-        minVotes: 40,
-      }),
+      items: takeUnique(
+        rankByRating(anime.results, {
+          limit: poolLimit,
+          minVotes: 40,
+        }),
+        used,
+        RECOMMEND_ROW_LIMIT
+      ),
     },
     {
       id: "popular-kdrama",
       title: "Popular Kdrama",
-      items: rankByRating(kdrama.results, {
-        limit: RECOMMEND_ROW_LIMIT,
-        minVotes: 40,
-      }),
+      items: takeUnique(
+        rankByRating(kdrama.results, {
+          limit: poolLimit,
+          minVotes: 40,
+        }),
+        used,
+        RECOMMEND_ROW_LIMIT
+      ),
     },
     {
       id: "popular-viva-one",
       title: "Popular Viva One",
-      items: (vivaOne.results || []).slice(0, RECOMMEND_ROW_LIMIT),
+      items: takeUnique(vivaOne.results || [], used, RECOMMEND_ROW_LIMIT),
     },
   ].filter((s) => s.items.length);
 
@@ -491,7 +599,7 @@ export async function getVivaOne({ limit = 200 } = {}) {
   return { results: merged.slice(0, limit) };
 }
 
-const CATEGORY_CACHE_VER = "v5";
+const CATEGORY_CACHE_VER = "v7";
 
 function categoryCacheKey(categoryId) {
   return `lantaw-cat-${CATEGORY_CACHE_VER}-${categoryId}`;
