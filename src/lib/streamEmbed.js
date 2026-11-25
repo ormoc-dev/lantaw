@@ -13,7 +13,7 @@ const ACCENT_QS = `%23${ACCENT_HEX}`;
 
 /** @typedef {"cinesrc"|"vidcore"|"braflix"} StreamProviderId */
 
-/** @type {Array<{id: StreamProviderId, label: string, origin: string, hint: string, remoteSync: boolean, allowSandbox: boolean}>} */
+/** @type {Array<{id: StreamProviderId, label: string, origin: string, hint: string, remoteSync: boolean, allowSandbox: boolean, referrerPolicy: string}>} */
 export const STREAM_PROVIDERS = [
   {
     id: "cinesrc",
@@ -22,6 +22,8 @@ export const STREAM_PROVIDERS = [
     hint: "Recommended · best for Watch together",
     remoteSync: true,
     allowSandbox: true,
+    // Strip referrer to cut some ad chains on this provider.
+    referrerPolicy: "no-referrer",
   },
   {
     id: "vidcore",
@@ -30,6 +32,7 @@ export const STREAM_PROVIDERS = [
     hint: "Backup server",
     remoteSync: false,
     allowSandbox: true,
+    referrerPolicy: "origin",
   },
   {
     id: "braflix",
@@ -37,7 +40,10 @@ export const STREAM_PROVIDERS = [
     origin: "https://braflix.dev",
     hint: "Multi-source backup",
     remoteSync: false,
-    allowSandbox: true,
+    // Braflix shows “unable to view” under a tight sandbox / empty referrer
+    // even when a source still plays — match their docs (open iframe).
+    allowSandbox: false,
+    referrerPolicy: "origin",
   },
 ];
 
@@ -221,18 +227,20 @@ function iframeAttrs(streamUrl, { deferSrc = false, provider = getStreamProvider
   const srcAttr = deferSrc
     ? `src="about:blank" data-src="${escapeAttr(streamUrl)}"`
     : `src="${escapeAttr(streamUrl)}"`;
-  const allowSandbox = getStreamProviderMeta(provider).allowSandbox;
+  const meta = getStreamProviderMeta(provider);
+  const allowSandbox = meta.allowSandbox;
   // Intentionally omit allow-popups and allow-top-navigation*.
   const sandboxAttr = allowSandbox
     ? `sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"`
     : "";
+  const referrerPolicy = meta.referrerPolicy || "origin";
   return `
           id="stream-iframe"
           ${srcAttr}
           title="Streaming player"
           frameborder="0"
           style="border: 0; border-radius: 12px;"
-          referrerpolicy="no-referrer"
+          referrerpolicy="${escapeAttr(referrerPolicy)}"
           allow="autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
           allowfullscreen
           ${sandboxAttr}

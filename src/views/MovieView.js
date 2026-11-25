@@ -462,8 +462,8 @@ async function renderMediaDetail(root, params, mediaType) {
       closePlayerProviderModal();
       if (iframe) {
         iframe.removeAttribute("data-src");
-        const allowSandbox = getStreamProviderMeta(next).allowSandbox;
-        if (allowSandbox) {
+        const nextMeta = getStreamProviderMeta(next);
+        if (nextMeta.allowSandbox) {
           iframe.setAttribute(
             "sandbox",
             "allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock"
@@ -471,7 +471,10 @@ async function renderMediaDetail(root, params, mediaType) {
         } else {
           iframe.removeAttribute("sandbox");
         }
-        iframe.setAttribute("referrerpolicy", "no-referrer");
+        iframe.setAttribute(
+          "referrerpolicy",
+          nextMeta.referrerPolicy || "origin"
+        );
         iframe.setAttribute(
           "allow",
           "autoplay; fullscreen; picture-in-picture; encrypted-media; screen-wake-lock"
